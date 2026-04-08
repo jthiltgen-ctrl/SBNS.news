@@ -1,0 +1,47 @@
+name: Build & Deploy to GreenGeeks
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build React + FTP Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repo
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Set up Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # 3. Install dependencies
+      - name: Install
+        run: npm ci
+
+      # 4. Build the React app
+      #    VITE_API_URL tells the app where the PHP proxy lives
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_URL: https://www.shockedbutnotsurprised.news/api/stories.php
+
+      # 5. Deploy dist/ to GreenGeeks via FTP
+      - name: FTP Deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./dist/
+          server-dir: /public_html/
+          # Exclude the PHP api folder from being overwritten by the React build
+          exclude: |
+            **/api/**
