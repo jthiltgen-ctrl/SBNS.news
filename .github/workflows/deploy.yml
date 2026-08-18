@@ -4,36 +4,40 @@ on:
   push:
     branches:
       - main
+  schedule:
+    # 4x/day: 6am, 11am, 4pm, 9pm CT (11:00, 16:00, 21:00, 02:00 UTC)
+    - cron: '0 11 * * *'
+    - cron: '0 16 * * *'
+    - cron: '0 21 * * *'
+    - cron: '0  2 * * *'
 
 jobs:
+
+  # ── React build + FTP deploy — runs only on push to main ──────────────────
   deploy:
     name: Build React + FTP Deploy
     runs-on: ubuntu-latest
+    if: github.event_name == 'push'
 
     steps:
-      # 1. Check out the repo
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Set up Node
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
-      # 3. Install dependencies
       - name: Install
         run: npm ci
 
-      # 4. Build the React app
-      #    VITE_API_URL tells the app where the PHP proxy lives
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: https://www.shockedbutnotsurprised.news/api/stories.php
+          # Points the React app at the curated published endpoint
+          VITE_API_URL: https://www.shockedbutnotsurprised.news/api/published.php
 
-      # 5. Deploy dist/ to GreenGeeks via FTP
       - name: FTP Deploy
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -42,6 +46,27 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
           server-dir: /public_html/
-          # Exclude the PHP api folder from being overwritten by the React build
+          # Never overwrite the PHP api folder or data store
           exclude: |
             **/api/**
+            **/data/**
+
+  # ── Story fetch — runs on schedule only ───────────────────────────────────
+  fetch-stories:
+    name: Fetch Stories
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Trigger story fetch
+        run: |
+          STATUS=$(curl -s -o /tmp/fetch_response.json -w "%{http_code}" \
+            -X POST \
+            -H "X-Fetch-Token: ${{ secrets.FETCH_SECRET_TOKEN }}" \
+            https://www.shockedbutnotsurprised.news/api/fetch-stories.php)
+          echo "HTTP $STATUS"
+          cat /tmp/fetch_response.json
+          if [ "$STATUS" != "200" ]; then
+            echo "Fetch failed with status $STATUS"
+            exit 1
+          fi
