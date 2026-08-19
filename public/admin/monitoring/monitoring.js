@@ -14,6 +14,7 @@ const DECISIONS = [
 const fixtureByRecommendation = new Map();
 const fixtureByUrl = new Map();
 let current = null;
+let decisionPanel = null;
 
 const form = document.querySelector("#monitor-form");
 const urlInput = document.querySelector("#development-url");
@@ -144,11 +145,11 @@ function invalidateDecision() {
   current.proposalChanged = true;
 }
 
-function bind(control, object, field, rerender, transform = (value) => value) {
+function bind(control, object, field, transform = (value) => value) {
   control.addEventListener(control.tagName === "SELECT" ? "change" : "input", () => {
     object[field] = transform(control.value);
     invalidateDecision();
-    rerender();
+    refreshDecisionPanel();
     setStatus("Proposed editorial content changed locally. Record the human decision again.");
   });
 }
@@ -166,10 +167,9 @@ function renderFollowUp(analysis) {
     fml_kicker: input("follow-kicker", proposal.fml_kicker, true), category: select("follow-category", ["International", "National", "Local"], proposal.category),
     severity: select("follow-severity", [1, 2, 3, 4, 5], proposal.severity), tags: input("follow-tags", proposal.topic_tags.join(", "))
   };
-  const rerender = () => renderCurrent();
-  bind(controls.id, proposal, "id", rerender); bind(controls.headline, proposal, "headline", rerender); bind(controls.summary, proposal, "summary", rerender);
-  bind(controls.fml_kicker, proposal, "fml_kicker", rerender); bind(controls.category, proposal, "category", rerender); bind(controls.severity, proposal, "severity", rerender, Number);
-  bind(controls.tags, proposal, "topic_tags", rerender, normalizeTags);
+  bind(controls.id, proposal, "id"); bind(controls.headline, proposal, "headline"); bind(controls.summary, proposal, "summary");
+  bind(controls.fml_kicker, proposal, "fml_kicker"); bind(controls.category, proposal, "category"); bind(controls.severity, proposal, "severity", Number);
+  bind(controls.tags, proposal, "topic_tags", normalizeTags);
   for (const [key, label] of [["id", "Story ID"], ["headline", "Headline"], ["summary", "Summary"], ["fml_kicker", "Kicker"], ["category", "Category"], ["severity", "Severity"], ["tags", "Tags"]]) formNode.append(field(label, controls[key]));
   section.append(formNode, el("h3", { text: "Read-only sources" }));
   const sources = el("div", { className: "source-list" }); for (const source of proposal.sources) sources.append(safeLink(source.name, source.url)); section.append(sources);
@@ -185,11 +185,11 @@ function renderCorrection(analysis) {
   section.append(compare, el("h3", { text: "Why correction is required" }), el("p", { text: correction.correction_reason }));
   const note = input("correction-note", correction.correction_note, true);
   section.append(field("Proposed correction note", note));
-  bind(note, correction, "correction_note", () => renderCurrent());
+  bind(note, correction, "correction_note");
   section.append(el("h3", { text: "Proposed revised fields" }));
   for (const [name, value] of Object.entries(correction.revised_fields)) {
     const control = input(`correction-${name}`, value, true); section.append(field(titleCase(name), control));
-    bind(control, correction.revised_fields, name, () => renderCurrent());
+    bind(control, correction.revised_fields, name);
   }
   section.append(el("h3", { text: "Supporting sources" }));
   list(section, correction.source_refs.map((ref) => analysis.sources.find((source) => source.source_id === ref)?.name ?? ref));
@@ -201,7 +201,7 @@ function renderUpdate() {
   const section = panel("PROPOSED UPDATE — REVIEW ONLY", "proposal-panel");
   section.append(el("p", { className: "ephemeral-note", text: "The original reporting remains materially accurate. This proposal adds later context." }));
   const note = input("update-note", update.update_note, true); const changes = input("update-changes", update.suggested_changes, true);
-  section.append(field("Update note", note), field("Suggested changes", changes)); bind(note, update, "update_note", () => renderCurrent()); bind(changes, update, "suggested_changes", () => renderCurrent());
+  section.append(field("Update note", note), field("Suggested changes", changes)); bind(note, update, "update_note"); bind(changes, update, "suggested_changes");
   return section;
 }
 
@@ -223,15 +223,23 @@ function renderDecision(analysis) {
   const actions = el("div", { className: "monitor-decision-actions", attributes: { role: "group", "aria-label": "Monitoring human decision" } });
   for (const [label, value] of DECISIONS) {
     const button = el("button", { text: label, attributes: { type: "button", "aria-pressed": String(current.humanDecision === value) } });
-    button.addEventListener("click", () => { current.humanDecision = value; current.decisionInvalidated = false; renderCurrent(); setStatus(`Temporary monitoring decision recorded: ${label}. Nothing was changed or published.`); }); actions.append(button);
+    button.addEventListener("click", () => { current.humanDecision = value; current.decisionInvalidated = false; refreshDecisionPanel(); setStatus(`Temporary monitoring decision recorded: ${label}. Nothing was changed or published.`); }); actions.append(button);
   }
-  const clear = el("button", { className: "clear-decision", text: "Clear decision", attributes: { type: "button" } }); clear.addEventListener("click", () => { current.humanDecision = null; current.decisionInvalidated = false; renderCurrent(); setStatus("Temporary monitoring decision cleared."); }); actions.append(clear); section.append(actions);
+  const clear = el("button", { className: "clear-decision", text: "Clear decision", attributes: { type: "button" } }); clear.addEventListener("click", () => { current.humanDecision = null; current.decisionInvalidated = false; refreshDecisionPanel(); setStatus("Temporary monitoring decision cleared."); }); actions.append(clear); section.append(actions);
   return section;
+}
+
+function refreshDecisionPanel() {
+  if (!decisionPanel || !current) return;
+  const nextPanel = renderDecision(current.fixture.analysis);
+  decisionPanel.replaceWith(nextPanel);
+  decisionPanel = nextPanel;
 }
 
 function renderCurrent() {
   const analysis = current.fixture.analysis;
-  result.replaceChildren(renderRecommendation(analysis), renderBaseline(current.fixture.baseline_story), renderDevelopment(analysis), renderChanged(analysis), renderWarnings(analysis), renderProposal(analysis), renderDecision(analysis));
+  decisionPanel = renderDecision(analysis);
+  result.replaceChildren(renderRecommendation(analysis), renderBaseline(current.fixture.baseline_story), renderDevelopment(analysis), renderChanged(analysis), renderWarnings(analysis), renderProposal(analysis), decisionPanel);
 }
 
 function loadFixture(fixture) {
@@ -245,6 +253,7 @@ function loadFixture(fixture) {
 
 function renderUnconnected() {
   current = null;
+  decisionPanel = null;
   const section = panel("LIVE MONITORING NOT CONNECTED", "neutral-state");
   section.append(el("p", { text: "The URL was accepted, but Phase E performs no live monitoring, crawling, or analysis. No recommendation was generated." }));
   result.replaceChildren(section); setStatus("Valid URL accepted. No external URL was fetched and no monitoring analysis was performed.");
