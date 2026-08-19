@@ -1,0 +1,28 @@
+{
+  "id": "doj-task-force-training-gao-review",
+  "status": "draft",
+  "content_type": "reporting",
+  "category": "National",
+  "headline": "Three DOJ Agencies Let Deputized Officers Operate Before Completing Federal Task-Force Training",
+  "summary": "The Government Accountability Office found that ATF, DEA and FBI allow state, local, tribal and territorial officers deputized for federal task forces to participate in operations before completing initial task-force training on federal legal authorities, policies and procedures. The four Justice Department components GAO reviewed partnered with nonfederal officers on 1,663 task forces as of April 2026 and allocated nearly $2 billion to them in fiscal 2025. GAO also found that ATF, DEA, FBI and the U.S. Marshals Service lack field-management guidelines for consistently adjudicating misconduct allegations against nonfederal task-force officers. DOJ agreed with all seven recommendations.",
+  "fml_kicker": "Federal powers first. Federal training later. Consistent misconduct rules are still waiting for orientation.",
+  "severity": 4,
+  "topic_tags": [
+    "DOJ",
+    "law enforcement",
+    "task forces",
+    "training",
+    "oversight"
+  ],
+  "sources": [
+    {
+      "name": "U.S. Government Accountability Office — report summary",
+      "url": "https://www.gao.gov/products/gao-26-108468"
+    },
+    {
+      "name": "U.S. Government Accountability Office — full report",
+      "url": "https://files.gao.gov/reports/GAO-26-108468/index.html"
+    }
+  ],
+  "published_at": null
+}
