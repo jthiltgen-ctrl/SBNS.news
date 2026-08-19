@@ -1,5 +1,41 @@
 [
   {
+    "id": "dea-fentanyl-shipments-oig-review",
+    "status": "published",
+    "content_type": "reporting",
+    "category": "National",
+    "headline": "DOJ Watchdog Opens Review of DEA Tactic That Let Fentanyl Shipments Keep Moving",
+    "summary": "The Justice Department inspector general has opened a review of department policies and wiretap investigations in which the DEA may have known fentanyl deliveries were coming but did not interdict them while pursuing larger prosecutions. The review follows an Associated Press investigation that found DEA agents in New Mexico monitored major fentanyl deliveries without seizing them between 2023 and 2025, including a 2023 delivery of 74,000 pills. DEA Administrator Terrance Cole, who requested an independent OIG review in June, said his request should not be interpreted as a lack of confidence in DEA personnel.",
+    "fml_kicker": "One Pill Can Kill. The watchdog now gets to ask why 74,000 were allowed to keep moving.",
+    "severity": 5,
+    "topic_tags": [
+      "DEA",
+      "fentanyl",
+      "DOJ",
+      "oversight",
+      "law enforcement"
+    ],
+    "sources": [
+      {
+        "name": "Associated Press — DOJ watchdog launches review",
+        "url": "https://apnews.com/article/ce6ec1d47307ffc9d66d63c394df36c5"
+      },
+      {
+        "name": "Associated Press — original DEA fentanyl investigation",
+        "url": "https://apnews.com/article/8f5b546e668e5007c64078da74b90903"
+      },
+      {
+        "name": "Drug Enforcement Administration — request for independent review",
+        "url": "https://www.dea.gov/documents/2026/2026-06/2026-06-25/statement-dea-administrator-terrance-c-cole-regarding-request-for"
+      },
+      {
+        "name": "Drug Enforcement Administration — One Pill Can Kill",
+        "url": "https://www.dea.gov/onepill"
+      }
+    ],
+    "published_at": "2026-08-19T03:31:19Z"
+  },
+  {
     "id": "ministry-committee-study",
     "status": "published",
     "content_type": "sample",
