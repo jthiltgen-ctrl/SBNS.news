@@ -1,10 +1,10 @@
 {
   "id": "dea-fentanyl-shipments-oig-review",
-  "status": "draft",
+  "status": "published",
   "content_type": "reporting",
   "category": "National",
   "headline": "DOJ Watchdog Opens Review of DEA Tactic That Let Fentanyl Shipments Keep Moving",
-  "summary": "The Justice Department inspector general has opened a review of DEA policies and wiretap investigations after an Associated Press investigation found agents in New Mexico monitored major fentanyl deliveries without seizing them while pursuing larger trafficking cases. AP reported one 2023 delivery involved 74,000 pills. DEA Administrator Terrance Cole, who requested independent OIG review in June, said the request did not reflect a lack of confidence in DEA personnel or the investigative decisions at issue.",
+  "summary": "The Justice Department inspector general has opened a review of department policies and wiretap investigations in which the DEA may have known fentanyl deliveries were coming but did not interdict them while pursuing larger prosecutions. The review follows an Associated Press investigation that found DEA agents in New Mexico monitored major fentanyl deliveries without seizing them between 2023 and 2025, including a 2023 delivery of 74,000 pills. DEA Administrator Terrance Cole, who requested an independent OIG review in June, said his request should not be interpreted as a lack of confidence in DEA personnel.",
   "fml_kicker": "One Pill Can Kill. The watchdog now gets to ask why 74,000 were allowed to keep moving.",
   "severity": 5,
   "topic_tags": [
@@ -32,5 +32,5 @@
       "url": "https://www.dea.gov/onepill"
     }
   ],
-  "published_at": null
+  "published_at": "2026-08-19T03:31:19Z"
 }
