@@ -12,5 +12,13 @@
   },
   "observability": {
     "enabled": true
-  }
+  },
+  "d1_databases": [
+    {
+      "binding": "SBNS_DB",
+      "database_name": "sbns-editorial-staging",
+      "database_id": "66e016c7-928b-47e2-9bda-af411971910e",
+      "migrations_dir": "migrations"
+    }
+  ]
 }

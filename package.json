@@ -13,12 +13,14 @@
     "monitoring:build": "node scripts/monitoring.mjs build",
     "monitoring:check": "node scripts/monitoring.mjs check",
     "monitoring:test": "node scripts/monitoring.mjs test",
+    "persistence:check": "node scripts/persistence.mjs check",
+    "persistence:test": "node scripts/persistence.mjs test",
     "publication:check": "node scripts/publish.mjs check",
     "publication:test": "node scripts/publish.mjs test",
     "publish:check": "node scripts/publish.mjs check",
     "publish:prepare": "node scripts/publish.mjs prepare",
     "dev": "npm run content:build && npm run intake:build && npm run monitoring:build && wrangler dev",
-    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && npm run monitoring:check && npm run monitoring:test && npm run publication:check && npm run publication:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check scripts/monitoring.mjs && node --check scripts/publish.mjs && node --check public/app.js && node --check public/admin/admin.js && node --check public/admin/monitoring/monitoring.js && node --check src/index.js && wrangler deploy --dry-run"
+    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && npm run monitoring:check && npm run monitoring:test && npm run publication:check && npm run publication:test && npm run persistence:check && npm run persistence:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check scripts/monitoring.mjs && node --check scripts/persistence.mjs && node --check scripts/publish.mjs && node --check src/persistence.js && node --check public/app.js && node --check public/admin/admin.js && node --check public/admin/monitoring/monitoring.js && node --check src/index.js && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.124.0"
