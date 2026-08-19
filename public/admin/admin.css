@@ -1,0 +1,395 @@
+.admin-page {
+  color: var(--ink);
+}
+
+.admin-masthead {
+  color: var(--paper);
+  background: var(--ink);
+  border-bottom: 5px solid var(--red);
+}
+
+.admin-header-inner,
+.admin-main {
+  width: min(1040px, calc(100% - 2rem));
+  margin: auto;
+}
+
+.admin-header-inner {
+  padding: 1.2rem 0 2rem;
+}
+
+.back-link {
+  display: inline-block;
+  min-height: 44px;
+  padding: 0.7rem 0;
+  color: var(--paper);
+  font-family: "Barlow Condensed", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-decoration-thickness: 2px;
+  text-transform: uppercase;
+}
+
+.admin-eyebrow,
+.admin-section-label,
+.metric dt,
+.card-label,
+.readonly-notice strong,
+.admin-status,
+.demo-controls button,
+.decision-actions button,
+.source-type,
+.claim-state,
+.risk-heading {
+  font-family: "Barlow Condensed", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.admin-eyebrow {
+  margin: 1.2rem 0 0.25rem;
+  color: #efb3b3;
+  font-size: 0.82rem;
+}
+
+.admin-masthead h1 {
+  margin: 0;
+  font-size: clamp(3.5rem, 14vw, 7rem);
+}
+
+.admin-tagline {
+  margin: 0.8rem 0 0;
+  color: rgb(242 237 227 / 75%);
+  font-family: "Special Elite", monospace;
+}
+
+.admin-main {
+  padding: 1.5rem 0 4rem;
+}
+
+.readonly-notice {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  color: var(--paper);
+  background: var(--red);
+  border: 3px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.readonly-notice strong {
+  font-size: 1.05rem;
+}
+
+.intake-card,
+.panel,
+.recommendation-card {
+  margin-bottom: 1.25rem;
+  padding: 1.15rem;
+  background: rgb(242 237 227 / 90%);
+  border: 2px solid var(--border);
+  box-shadow: 4px 4px 0 rgb(26 23 20 / 12%);
+}
+
+.admin-section-label,
+.card-label {
+  margin-bottom: 0.35rem;
+  color: var(--red);
+  font-size: 0.78rem;
+}
+
+.intake-card h2,
+.panel h2,
+.panel h3 {
+  font-family: "Bebas Neue", sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.intake-card h2,
+.panel h2 {
+  margin-bottom: 1rem;
+  font-size: clamp(2rem, 8vw, 3rem);
+}
+
+.panel h3 {
+  margin: 1.2rem 0 0.6rem;
+  font-size: 1.7rem;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-family: "Barlow Condensed", sans-serif;
+  font-weight: 700;
+}
+
+.url-controls {
+  display: grid;
+  gap: 0.65rem;
+}
+
+input,
+.admin-page button {
+  min-height: 48px;
+  border: 2px solid var(--ink);
+  border-radius: 0;
+}
+
+input {
+  width: 100%;
+  padding: 0.75rem;
+  color: var(--ink);
+  background: #fffdf8;
+  font: inherit;
+}
+
+.admin-page button {
+  padding: 0.7rem 1rem;
+  color: var(--paper);
+  background: var(--ink);
+  cursor: pointer;
+}
+
+.admin-page button:hover:not(:disabled) {
+  background: var(--red);
+}
+
+.admin-page button:disabled {
+  color: var(--muted);
+  background: var(--paper-dark);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+input:focus-visible,
+.admin-page button:focus-visible,
+.back-link:focus-visible,
+.source-link:focus-visible {
+  outline: 4px solid #f3be38;
+  outline-offset: 3px;
+}
+
+.demo-controls,
+.decision-actions {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 1rem;
+}
+
+.demo-controls button {
+  color: var(--ink);
+  background: var(--paper-dark);
+}
+
+.admin-status {
+  min-height: 1.4em;
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.neutral-state {
+  border-left: 8px solid var(--border);
+}
+
+.neutral-state strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-family: "Bebas Neue", sans-serif;
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 0.03em;
+}
+
+.recommendation-card {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.recommendation-card.publish {
+  border-top: 8px solid #477b53;
+}
+
+.recommendation-card.hold {
+  border-top: 8px solid #d09a22;
+}
+
+.recommendation-card.reject {
+  border-top: 8px solid var(--red);
+}
+
+.recommendation-title {
+  margin: 0 0 1rem;
+  font-family: "Bebas Neue", sans-serif;
+  font-size: clamp(3rem, 14vw, 5.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.metric {
+  padding-top: 0.65rem;
+  border-top: 1px solid rgb(242 237 227 / 28%);
+}
+
+.metric dt {
+  color: rgb(242 237 227 / 65%);
+  font-size: 0.68rem;
+}
+
+.metric dd {
+  margin: 0.2rem 0 0;
+  font-weight: 600;
+}
+
+.panel-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.panel-list li + li {
+  margin-top: 0.5rem;
+}
+
+.do-not-claim {
+  color: var(--paper);
+  background: var(--red);
+  border: 4px solid var(--ink);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+.do-not-claim h2 {
+  margin-bottom: 0.65rem;
+  font-size: clamp(2.6rem, 11vw, 4.3rem);
+}
+
+.ledger,
+.source-list,
+.conflict-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.claim,
+.source,
+.conflict,
+.causation-item {
+  padding: 1rem;
+  background: #fffdf8;
+  border: 1px solid var(--border);
+}
+
+.claim-meta,
+.source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+
+.claim-state,
+.source-type {
+  display: inline-block;
+  padding: 0.25rem 0.45rem;
+  color: var(--paper);
+  background: var(--ink);
+  font-size: 0.7rem;
+}
+
+.claim-state.unverified,
+.claim-state.disputed {
+  background: var(--red);
+}
+
+.qualification {
+  padding-left: 0.75rem;
+  border-left: 4px solid var(--red);
+}
+
+.source-link {
+  overflow-wrap: anywhere;
+  color: var(--red);
+  font-weight: 600;
+}
+
+.causation-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.causation-item .card-label {
+  display: block;
+}
+
+.proposed-kicker {
+  padding: 1rem;
+  color: var(--paper);
+  background: #141210;
+  font-family: "Special Elite", monospace;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-list li {
+  padding: 0.3rem 0.5rem;
+  background: var(--paper-dark);
+  border: 1px solid var(--border);
+  font-family: "Barlow Condensed", sans-serif;
+}
+
+.decision-note {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.admin-footer {
+  padding: 1.5rem 1rem;
+  color: var(--paper);
+  background: var(--ink);
+  text-align: center;
+}
+
+.admin-footer p {
+  margin: 0;
+}
+
+@media (min-width: 680px) {
+  .url-controls {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .demo-controls,
+  .decision-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .causation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .intake-card,
+  .panel,
+  .recommendation-card {
+    padding: 1.5rem;
+  }
+}
