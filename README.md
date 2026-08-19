@@ -1,8 +1,8 @@
 # Shocked But Not Surprised
 
-SBNS v1 is a minimal Cloudflare Workers Static Assets application. It has no
-Worker script, database, or runtime bindings. The site is served directly from
-`public/` and uses a small static JSON file as its initial story feed.
+SBNS v1 is a minimal Cloudflare Worker with Static Assets. The Worker owns the
+`/api/` namespace, while all other requests are served from `public/` through
+the `ASSETS` binding. The prototype has no database or persistent storage.
 
 ## Local development
 
@@ -19,6 +19,12 @@ npm run check
 
 `npm run check` performs a Wrangler dry run. It validates and packages the
 application locally; it does not deploy.
+
+## API
+
+- `GET /api/health` returns the prototype identity and status.
+- Every other `/api/` route returns a JSON 404 response.
+- Non-API requests are served from Static Assets.
 
 ## Content
 

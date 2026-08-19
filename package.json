@@ -2,6 +2,7 @@
   "name": "sbns-news",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "check": "wrangler deploy --dry-run"
