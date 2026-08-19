@@ -1,0 +1,36 @@
+{
+  "id": "uk-electronic-monitoring-expansion-watchdog",
+  "status": "draft",
+  "content_type": "reporting",
+  "category": "International",
+  "headline": "15% of People Under Electronic-Monitoring Orders Had No Equipment as England and Wales Plan Expansion",
+  "summary": "The UK National Audit Office warned that electronic monitoring in England and Wales was not working effectively and that further expansion could increase public-protection risks unless weaknesses in governance, data quality and system-wide operations were addressed. Ministry of Justice management information published in July showed that 5,043 people, or 15 percent of those subject to an electronic-monitoring order, had no monitoring equipment as of June 30, while another 1,596 people had equipment that had not communicated with central monitoring systems for at least 14 days. The ministry notes that missing equipment can result from individual actions as well as service-delivery issues. In August, HM Chief Inspector of Probation Martin Jones said an early inspection found probation officers wrongly assuming they would automatically be notified about some exclusion-zone breaches and that monitoring data was not being proactively analyzed. The government says electronic-monitoring installation performance has improved and it is investing in both tagging and probation.",
+  "fml_kicker": "The backup plan for overcrowded prisons is more tags. The tagging system is still working on the monitoring part.",
+  "severity": 4,
+  "topic_tags": [
+    "United Kingdom",
+    "electronic monitoring",
+    "probation",
+    "public safety",
+    "oversight"
+  ],
+  "sources": [
+    {
+      "name": "UK National Audit Office — electronic monitoring report",
+      "url": "https://www.nao.org.uk/reports/electronic-monitoring-improving-resilience-to-meet-increasing-demand/"
+    },
+    {
+      "name": "UK Ministry of Justice — June 2026 monitoring status statistics",
+      "url": "https://www.gov.uk/government/statistics/electronic-monitoring-statistics-publication-june-2026/annex-management-information-electronic-monitoring-status-statistics-june-2026"
+    },
+    {
+      "name": "The Guardian — probation inspector warns about breach monitoring",
+      "url": "https://www.theguardian.com/society/2026/aug/04/electronic-tagging-unprepared-offenders-prisoners-watchdog"
+    },
+    {
+      "name": "The Guardian — NAO warning and Ministry of Justice response",
+      "url": "https://www.theguardian.com/society/2026/jul/10/expansion-electronic-tagging-public-risk-upgrade-watchdog"
+    }
+  ],
+  "published_at": null
+}
