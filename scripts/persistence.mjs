@@ -110,11 +110,11 @@ async function test() {
 
     await execute(persist, `INSERT INTO sources (id,intake_id,url,normalized_url,name,source_type,verification_status,extracted_text,extraction_format,created_at) VALUES ('source-1','intake-1','https://example.com/report','https://example.com/report','Synthetic report','audit','verified','Bounded evidence text','text','${now}')`);
     await execute(persist, `INSERT INTO claims VALUES ('claim-1','intake-1','analysis-1','A synthetic material claim',1,'verified',NULL,'${now}')`);
-    await execute(persist, "INSERT INTO claim_sources VALUES ('claim-1','source-1')");
+    await execute(persist, "INSERT INTO claim_sources VALUES ('claim-1','source-1','intake-1')");
     const links = await execute(persist, "SELECT COUNT(*) AS count FROM claim_sources WHERE claim_id='claim-1' AND source_id='source-1'");
     pass(links[0]?.count === 1, "source/claim relationship failed");
 
-    await expectSqlFailure("unresolved relationship", persist, "INSERT INTO claim_sources VALUES ('claim-1','missing-source')");
+    await expectSqlFailure("unresolved relationship", persist, "INSERT INTO claim_sources VALUES ('claim-1','missing-source','intake-1')");
     count += 1;
 
     await execute(persist, `INSERT INTO editorial_drafts VALUES ('draft-1','intake-1',1,'story-1','Headline one','Summary one','Kicker one','Local',2,'["audit"]','${now}','editor@example.com')`);
@@ -164,7 +164,30 @@ async function test() {
     const bounded = await execute(persist, "SELECT extracted_text, extraction_format, content_hash, source_title FROM sources WHERE id='source-1'");
     pass(bounded[0]?.extracted_text === "Bounded evidence text" && bounded[0]?.extraction_format === "text", "bounded source fields failed");
 
-    expect(count === 25, `Expected 25 persistence scenarios, got ${count}`);
+    await execute(persist, `INSERT INTO analyses VALUES ('analysis-b','intake-visitor','1.0','hold','medium','Local',2,1,'{}','${now}',NULL)`);
+    await expectSqlFailure("cross-intake claim analysis", persist, `INSERT INTO claims VALUES ('claim-cross','intake-1','analysis-b','Cross-intake claim',1,'verified',NULL,'${now}')`);
+    count += 1;
+    await execute(persist, `INSERT INTO claims VALUES ('claim-b','intake-visitor','analysis-b','Same-intake claim',1,'verified',NULL,'${now}')`);
+    pass((await execute(persist, "SELECT intake_id FROM claims WHERE id='claim-b'"))[0]?.intake_id === "intake-visitor", "same-intake claim analysis failed");
+
+    await execute(persist, `INSERT INTO editorial_drafts VALUES ('draft-b','intake-visitor',1,'story-b','Headline B','Summary B','Kicker B','Local',2,'[]','${now}','editor@example.com')`);
+    await expectSqlFailure("cross-intake decision draft", persist, `INSERT INTO editorial_decisions VALUES ('decision-cross','intake-1','draft-b','approve','editor@example.com','${now}',NULL)`);
+    count += 1;
+    await execute(persist, `INSERT INTO editorial_decisions VALUES ('decision-b','intake-visitor','draft-b','approve','editor@example.com','${now}',NULL)`);
+    pass((await execute(persist, "SELECT intake_id FROM editorial_decisions WHERE id='decision-b'"))[0]?.intake_id === "intake-visitor", "same-intake decision draft failed");
+
+    await expectSqlFailure("cross-intake publication draft", persist, `INSERT INTO publication_attempts (id,intake_id,draft_id,state,started_at) VALUES ('publication-cross','intake-1','draft-b','queued','${now}')`);
+    count += 1;
+    await execute(persist, `INSERT INTO publication_attempts (id,intake_id,draft_id,state,started_at) VALUES ('publication-b','intake-visitor','draft-b','queued','${now}')`);
+    pass((await execute(persist, "SELECT intake_id FROM publication_attempts WHERE id='publication-b'"))[0]?.intake_id === "intake-visitor", "same-intake publication draft failed");
+
+    await execute(persist, `INSERT INTO sources (id,intake_id,url,normalized_url,name,source_type,verification_status,created_at) VALUES ('source-b','intake-visitor','https://example.com/b','https://example.com/b','Source B','audit','verified','${now}')`);
+    await expectSqlFailure("cross-intake claim source", persist, "INSERT INTO claim_sources VALUES ('claim-1','source-b','intake-1')");
+    count += 1;
+    await execute(persist, "INSERT INTO claim_sources VALUES ('claim-b','source-b','intake-visitor')");
+    pass((await execute(persist, "SELECT intake_id FROM claim_sources WHERE claim_id='claim-b' AND source_id='source-b'"))[0]?.intake_id === "intake-visitor", "same-intake claim source failed");
+
+    expect(count === 33, `Expected 33 persistence scenarios, got ${count}`);
     console.log(`Persistence tests passed: ${count} local D1 scenarios, including constraints, relationships, immutable revisions, and audit safety.`);
   });
 }

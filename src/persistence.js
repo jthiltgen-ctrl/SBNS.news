@@ -50,8 +50,8 @@ export async function insertClaim(env, claim) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [claim.id, claim.intake_id, claim.analysis_id, claim.claim_text, claim.material ? 1 : 0, claim.verification_status, claim.qualification ?? null, claim.created_at]);
 }
 
-export async function linkClaimSource(env, claimId, sourceId) {
-  return run(env, "INSERT INTO claim_sources (claim_id, source_id) VALUES (?, ?)", [claimId, sourceId]);
+export async function linkClaimSource(env, claimId, sourceId, intakeId) {
+  return run(env, "INSERT INTO claim_sources (claim_id, source_id, intake_id) VALUES (?, ?, ?)", [claimId, sourceId, intakeId]);
 }
 
 export async function insertDraft(env, draft) {

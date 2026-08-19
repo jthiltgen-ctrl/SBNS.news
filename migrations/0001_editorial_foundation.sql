@@ -31,6 +31,7 @@ CREATE TABLE analyses (
   raw_analysis_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   superseded_at TEXT,
+  UNIQUE (id, intake_id),
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT
 );
 
@@ -50,6 +51,7 @@ CREATE TABLE sources (
   extracted_text TEXT,
   extraction_format TEXT CHECK (extraction_format IS NULL OR extraction_format IN ('text', 'html_to_text', 'pdf_text')),
   created_at TEXT NOT NULL,
+  UNIQUE (id, intake_id),
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT
 );
 
@@ -62,16 +64,18 @@ CREATE TABLE claims (
   verification_status TEXT NOT NULL CHECK (verification_status IN ('verified', 'verified_with_qualification', 'disputed', 'unverified')),
   qualification TEXT,
   created_at TEXT NOT NULL,
+  UNIQUE (id, intake_id),
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT,
-  FOREIGN KEY (analysis_id) REFERENCES analyses(id) ON DELETE RESTRICT
+  FOREIGN KEY (analysis_id, intake_id) REFERENCES analyses(id, intake_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE claim_sources (
   claim_id TEXT NOT NULL,
   source_id TEXT NOT NULL,
+  intake_id TEXT NOT NULL,
   PRIMARY KEY (claim_id, source_id),
-  FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE RESTRICT,
-  FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE RESTRICT
+  FOREIGN KEY (claim_id, intake_id) REFERENCES claims(id, intake_id) ON DELETE RESTRICT,
+  FOREIGN KEY (source_id, intake_id) REFERENCES sources(id, intake_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE editorial_drafts (
@@ -88,6 +92,7 @@ CREATE TABLE editorial_drafts (
   created_at TEXT NOT NULL,
   created_by TEXT NOT NULL,
   UNIQUE (intake_id, revision),
+  UNIQUE (id, intake_id),
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT
 );
 
@@ -101,7 +106,7 @@ CREATE TABLE editorial_decisions (
   notes TEXT,
   CHECK ((decision = 'approve' AND draft_id IS NOT NULL) OR decision IN ('hold', 'reject')),
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT,
-  FOREIGN KEY (draft_id) REFERENCES editorial_drafts(id) ON DELETE RESTRICT
+  FOREIGN KEY (draft_id, intake_id) REFERENCES editorial_drafts(id, intake_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE publication_attempts (
@@ -117,7 +122,7 @@ CREATE TABLE publication_attempts (
   started_at TEXT NOT NULL,
   completed_at TEXT,
   FOREIGN KEY (intake_id) REFERENCES intakes(id) ON DELETE RESTRICT,
-  FOREIGN KEY (draft_id) REFERENCES editorial_drafts(id) ON DELETE RESTRICT
+  FOREIGN KEY (draft_id, intake_id) REFERENCES editorial_drafts(id, intake_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE monitoring_events (
