@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shockedbutnotsurprised.news/schemas/monitoring-analysis-1.0.json",
+  "title": "SBNS monitoring analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "monitoring_id", "story_id", "checked_at", "development_url", "development_type",
+    "recommendation", "recommendation_confidence", "recommendation_reasons", "original_story_accurate",
+    "material_change", "materiality_rationale", "development_summary", "sources", "claims", "source_conflicts",
+    "qualification_required", "do_not_claim", "factual_risk", "legal_risk", "sensitive_subject",
+    "victim_targeting_risk", "affected_original_claims", "superseded_facts", "proposed_update",
+    "proposed_correction", "proposed_follow_up", "human_decision", "human_notes", "reviewed_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "monitoring_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "story_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "development_url": { "type": "string", "format": "uri" },
+    "development_type": { "enum": ["corrected_statistic", "new_audit_finding", "recommendation_implemented", "institution_response", "litigation", "investigation", "material_factual_correction", "policy_change", "status_change", "other"] },
+    "recommendation": { "enum": ["no_action", "update_review", "correction_review", "follow_up"] },
+    "recommendation_confidence": { "enum": ["high", "medium", "low"] },
+    "recommendation_reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "original_story_accurate": { "enum": [true, false, "uncertain"] },
+    "material_change": { "type": "boolean" },
+    "materiality_rationale": { "type": "string", "minLength": 1 },
+    "development_summary": { "type": "string", "minLength": 1 },
+    "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/source" } },
+    "claims": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/claim" } },
+    "source_conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } },
+    "qualification_required": { "type": "boolean" },
+    "do_not_claim": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "factual_risk": { "enum": ["low", "medium", "high"] },
+    "legal_risk": { "enum": ["low", "medium", "high"] },
+    "sensitive_subject": { "type": "boolean" },
+    "victim_targeting_risk": { "enum": ["low", "medium", "high"] },
+    "affected_original_claims": { "type": "array", "items": { "$ref": "#/$defs/affectedClaim" } },
+    "superseded_facts": { "type": "array", "items": { "$ref": "#/$defs/supersededFact" } },
+    "proposed_update": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/update" }] },
+    "proposed_correction": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/correction" }] },
+    "proposed_follow_up": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/followUp" }] },
+    "human_decision": { "type": "null" },
+    "human_notes": { "type": "array", "maxItems": 0 },
+    "reviewed_at": { "type": "null" }
+  },
+  "$defs": {
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "name", "url", "source_type", "claims_supported"],
+      "properties": {
+        "source_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "name": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri" },
+        "source_type": { "enum": ["primary", "government", "watchdog", "audit", "court", "official_response", "independent_reporting", "other"] },
+        "claims_supported": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "claim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["claim_id", "claim_text", "material", "verification_status", "source_refs", "qualification"],
+      "properties": {
+        "claim_id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "claim_text": { "type": "string", "minLength": 1 },
+        "material": { "type": "boolean" },
+        "verification_status": { "enum": ["verified", "verified_with_qualification", "disputed", "unverified"] },
+        "source_refs": { "type": "array", "items": { "type": "string" } },
+        "qualification": { "type": "string" }
+      }
+    },
+    "conflict": {
+      "type": "object", "additionalProperties": false,
+      "required": ["description", "source_refs", "resolved"],
+      "properties": {
+        "description": { "type": "string", "minLength": 1 },
+        "source_refs": { "type": "array", "items": { "type": "string" } },
+        "resolved": { "type": "boolean" }
+      }
+    },
+    "affectedClaim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["field", "original_text", "impact"],
+      "properties": {
+        "field": { "enum": ["headline", "summary", "fml_kicker", "severity", "topic_tags", "sources"] },
+        "original_text": { "type": "string", "minLength": 1 },
+        "impact": { "enum": ["still_accurate", "outdated", "needs_context", "potentially_inaccurate", "inaccurate"] }
+      }
+    },
+    "supersededFact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["original_fact", "current_fact", "original_was_accurate"],
+      "properties": {
+        "original_fact": { "type": "string", "minLength": 1 },
+        "current_fact": { "type": "string", "minLength": 1 },
+        "original_was_accurate": { "type": "boolean" }
+      }
+    },
+    "proposalSource": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "url"],
+      "properties": { "name": { "type": "string", "minLength": 1 }, "url": { "type": "string", "format": "uri" } }
+    },
+    "update": {
+      "type": "object", "additionalProperties": false,
+      "required": ["update_note", "suggested_changes", "sources"],
+      "properties": {
+        "update_note": { "type": "string", "minLength": 1 },
+        "suggested_changes": { "type": "string", "minLength": 1 },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/proposalSource" } }
+      }
+    },
+    "correction": {
+      "type": "object", "additionalProperties": false,
+      "required": ["original_fact", "corrected_fact", "correction_reason", "source_refs", "correction_note", "revised_fields"],
+      "properties": {
+        "original_fact": { "type": "string", "minLength": 1 },
+        "corrected_fact": { "type": "string", "minLength": 1 },
+        "correction_reason": { "type": "string", "minLength": 1 },
+        "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "correction_note": { "type": "string", "minLength": 1 },
+        "revised_fields": { "type": "object", "additionalProperties": false, "properties": { "headline": { "type": "string" }, "summary": { "type": "string" }, "fml_kicker": { "type": "string" } } }
+      }
+    },
+    "followUp": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "headline", "summary", "fml_kicker", "category", "severity", "topic_tags", "sources"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+        "headline": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "fml_kicker": { "type": "string", "minLength": 1 },
+        "category": { "enum": ["International", "National", "Local"] },
+        "severity": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "topic_tags": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/proposalSource" } }
+      }
+    }
+  }
+}

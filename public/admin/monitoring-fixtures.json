@@ -1,0 +1,299 @@
+{
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "name": "correction-review.json",
+      "analysis": {
+        "schema_version": "1.0",
+        "monitoring_id": "synthetic-rail-correction-review",
+        "story_id": "imaginary-rail-upgrade",
+        "checked_at": "2026-08-20T14:00:00Z",
+        "development_url": "https://example.com/synthetic-rail-engineering-correction",
+        "development_type": "material_factual_correction",
+        "recommendation": "correction_review",
+        "recommendation_confidence": "high",
+        "recommendation_reasons": [
+          "A synthetic authoritative engineering correction says the fictional platforms did fit the fictional trains, directly contradicting a material assertion in the original sample."
+        ],
+        "original_story_accurate": false,
+        "material_change": true,
+        "materiality_rationale": "The corrected fictional engineering record changes the identified cause of the failure rather than merely describing a later event.",
+        "development_summary": "SYNTHETIC MONITORING EXAMPLE: A made-up engineering office says its fictional earlier notice misstated the problem; the imaginary platforms fit, but imaginary signal software prevented service.",
+        "sources": [
+          {
+            "source_id": "synthetic-engineering-correction",
+            "name": "Synthetic Rail Engineering Correction — not real",
+            "url": "https://example.com/synthetic-rail-engineering-correction",
+            "source_type": "official_response",
+            "claims_supported": [
+              "platforms-fit"
+            ]
+          }
+        ],
+        "claims": [
+          {
+            "claim_id": "platforms-fit",
+            "claim_text": "The fictional platforms fit the fictional trains; incompatible fictional signal software was the actual cause.",
+            "material": true,
+            "verification_status": "verified",
+            "source_refs": [
+              "synthetic-engineering-correction"
+            ],
+            "qualification": "This correction scenario and every entity in it are synthetic."
+          }
+        ],
+        "source_conflicts": [
+          {
+            "description": "The synthetic correction conflicts with the original fictional platform-fit assertion and resolves it in favor of the later engineering record.",
+            "source_refs": [
+              "synthetic-engineering-correction"
+            ],
+            "resolved": true
+          }
+        ],
+        "qualification_required": true,
+        "do_not_claim": [
+          "Do not attribute the fictional error to misconduct or deception without evidence.",
+          "Do not present this synthetic correction as a real rail event."
+        ],
+        "factual_risk": "medium",
+        "legal_risk": "low",
+        "sensitive_subject": false,
+        "victim_targeting_risk": "low",
+        "affected_original_claims": [
+          {
+            "field": "summary",
+            "original_text": "The invented transit authority renovates an invented station before discovering its imaginary platforms do not fit the imaginary trains.",
+            "impact": "inaccurate"
+          }
+        ],
+        "superseded_facts": [],
+        "proposed_update": null,
+        "proposed_correction": {
+          "original_fact": "The fictional platforms did not fit the fictional trains.",
+          "corrected_fact": "The fictional platforms fit; fictional signal software prevented service.",
+          "correction_reason": "The synthetic engineering office corrected the same-period technical record underlying the original fictional assertion.",
+          "source_refs": [
+            "synthetic-engineering-correction"
+          ],
+          "correction_note": "Correction: This fictional sample originally said the imaginary platforms did not fit. The synthetic corrected record says the platforms fit and imaginary signal software caused the failure.",
+          "revised_fields": {
+            "summary": "This story is entirely fictional and exists only to demonstrate the interface. The invented transit authority renovated an invented station before discovering that imaginary signal software, not platform dimensions, prevented its imaginary trains from operating."
+          }
+        },
+        "proposed_follow_up": null,
+        "human_decision": null,
+        "human_notes": [],
+        "reviewed_at": null
+      },
+      "baseline_story": {
+        "id": "imaginary-rail-upgrade",
+        "category": "International",
+        "headline": "FICTIONAL SAMPLE — Imaginary Rail Upgrade Forgets the Trains",
+        "summary": "This story is entirely fictional and exists only to demonstrate the interface. The invented transit authority renovates an invented station before discovering its imaginary platforms do not fit the imaginary trains.",
+        "fml_kicker": "FICTIONAL KICKER: The ribbon-cutting remains perfectly compatible with the platform.",
+        "severity": 3,
+        "topic_tags": [
+          "prototype",
+          "transit"
+        ],
+        "sources": [
+          {
+            "name": "Made-Up Continental Dispatch — not a real publication",
+            "url": null
+          }
+        ],
+        "published_at": "2026-08-18T11:00:00Z"
+      }
+    },
+    {
+      "name": "follow-up.json",
+      "analysis": {
+        "schema_version": "1.0",
+        "monitoring_id": "synthetic-federal-portal-follow-up",
+        "story_id": "federal-portal-login-reset",
+        "checked_at": "2026-08-20T13:00:00Z",
+        "development_url": "https://example.com/synthetic-portal-expansion",
+        "development_type": "policy_change",
+        "recommendation": "follow_up",
+        "recommendation_confidence": "high",
+        "recommendation_reasons": [
+          "The fictional agency expanded the same circular login requirement to a second major service, creating a distinct and materially broader systemic development."
+        ],
+        "original_story_accurate": true,
+        "material_change": true,
+        "materiality_rationale": "The original fictional account-recovery failure remains accurate, while expansion to benefit enrollment substantially broadens the affected process and supports a separate follow-up.",
+        "development_summary": "SYNTHETIC MONITORING EXAMPLE: The invented national agency extended its imaginary login-to-reset-login rule to a fictional benefit-enrollment portal.",
+        "sources": [
+          {
+            "source_id": "synthetic-expansion-bulletin",
+            "name": "Synthetic Federal Portal Bulletin — not real",
+            "url": "https://example.com/synthetic-portal-expansion",
+            "source_type": "government",
+            "claims_supported": [
+              "portal-expanded"
+            ]
+          }
+        ],
+        "claims": [
+          {
+            "claim_id": "portal-expanded",
+            "claim_text": "The fictional circular authentication rule was extended to a second fictional federal service.",
+            "material": true,
+            "verification_status": "verified",
+            "source_refs": [
+              "synthetic-expansion-bulletin"
+            ],
+            "qualification": "The agency, service, and bulletin are synthetic test data."
+          }
+        ],
+        "source_conflicts": [],
+        "qualification_required": true,
+        "do_not_claim": [
+          "Do not imply that a real federal service adopted this fictional policy.",
+          "Do not describe later expansion as proof the original fictional account was inaccurate."
+        ],
+        "factual_risk": "low",
+        "legal_risk": "low",
+        "sensitive_subject": false,
+        "victim_targeting_risk": "low",
+        "affected_original_claims": [
+          {
+            "field": "summary",
+            "original_text": "An invented national agency launches an imaginary account-recovery system that requires users to access the account they cannot access.",
+            "impact": "still_accurate"
+          }
+        ],
+        "superseded_facts": [],
+        "proposed_update": null,
+        "proposed_correction": null,
+        "proposed_follow_up": {
+          "id": "fictional-federal-portal-expands-login-loop",
+          "headline": "FICTIONAL FOLLOW-UP — Federal Login Loop Expands to Benefits Portal",
+          "summary": "This is a synthetic monitoring fixture, not reporting. An invented agency has extended its imaginary circular account-recovery rule to a second fictional service, materially broadening the same made-up institutional failure.",
+          "fml_kicker": "FICTIONAL KICKER: One locked door has achieved federal scalability.",
+          "category": "National",
+          "severity": 3,
+          "topic_tags": [
+            "synthetic monitoring",
+            "technology",
+            "follow-up"
+          ],
+          "sources": [
+            {
+              "name": "Synthetic Federal Portal Bulletin — not real",
+              "url": "https://example.com/synthetic-portal-expansion"
+            }
+          ]
+        },
+        "human_decision": null,
+        "human_notes": [],
+        "reviewed_at": null
+      },
+      "baseline_story": {
+        "id": "federal-portal-login-reset",
+        "category": "National",
+        "headline": "FICTIONAL SAMPLE — Federal Portal Adds Login to Reset Login",
+        "summary": "This is fictional sample content, not reporting. An invented national agency launches an imaginary account-recovery system that requires users to access the account they cannot access.",
+        "fml_kicker": "FICTIONAL KICKER: Security is strongest when nobody can get in, including you.",
+        "severity": 2,
+        "topic_tags": [
+          "prototype",
+          "technology"
+        ],
+        "sources": [
+          {
+            "name": "Fictional National Record — not a real publication",
+            "url": null
+          }
+        ],
+        "published_at": "2026-08-18T10:00:00Z"
+      }
+    },
+    {
+      "name": "no-action.json",
+      "analysis": {
+        "schema_version": "1.0",
+        "monitoring_id": "synthetic-bus-lane-no-action",
+        "story_id": "city-bus-lane-parked-cars",
+        "checked_at": "2026-08-20T12:00:00Z",
+        "development_url": "https://example.com/synthetic-bus-lane-signage",
+        "development_type": "status_change",
+        "recommendation": "no_action",
+        "recommendation_confidence": "high",
+        "recommendation_reasons": [
+          "The fictional city added temporary signs, but the development does not alter the fictional lane design or the accuracy and significance of the original sample."
+        ],
+        "original_story_accurate": true,
+        "material_change": false,
+        "materiality_rationale": "Temporary signage is routine context and does not materially advance or contradict the fictional institutional failure.",
+        "development_summary": "SYNTHETIC MONITORING EXAMPLE: The fictional transportation department placed temporary signs beside the already completed imaginary bus lane while leaving the imaginary parked cars in place.",
+        "sources": [
+          {
+            "source_id": "synthetic-sign-notice",
+            "name": "Synthetic City Sign Notice — not real",
+            "url": "https://example.com/synthetic-bus-lane-signage",
+            "source_type": "government",
+            "claims_supported": [
+              "signs-added"
+            ]
+          }
+        ],
+        "claims": [
+          {
+            "claim_id": "signs-added",
+            "claim_text": "The fictional city added temporary signs beside the fictional lane.",
+            "material": false,
+            "verification_status": "verified",
+            "source_refs": [
+              "synthetic-sign-notice"
+            ],
+            "qualification": "This is an entirely synthetic fixture and not a real municipal development."
+          }
+        ],
+        "source_conflicts": [],
+        "qualification_required": true,
+        "do_not_claim": [
+          "Do not treat routine fictional signage as proof that the original sample was false or corrected."
+        ],
+        "factual_risk": "low",
+        "legal_risk": "low",
+        "sensitive_subject": false,
+        "victim_targeting_risk": "low",
+        "affected_original_claims": [
+          {
+            "field": "summary",
+            "original_text": "An imaginary transportation department completes an imaginary bus lane without moving the imaginary vehicles blocking it.",
+            "impact": "still_accurate"
+          }
+        ],
+        "superseded_facts": [],
+        "proposed_update": null,
+        "proposed_correction": null,
+        "proposed_follow_up": null,
+        "human_decision": null,
+        "human_notes": [],
+        "reviewed_at": null
+      },
+      "baseline_story": {
+        "id": "city-bus-lane-parked-cars",
+        "category": "Local",
+        "headline": "FICTIONAL SAMPLE — City Paints Bus Lane Around Parked Cars",
+        "summary": "This event, city, and source are fictional and provided only as prototype content. An imaginary transportation department completes an imaginary bus lane without moving the imaginary vehicles blocking it.",
+        "fml_kicker": "FICTIONAL KICKER: Public transit now includes a scenic tour of municipal surrender.",
+        "severity": 2,
+        "topic_tags": [
+          "prototype",
+          "infrastructure"
+        ],
+        "sources": [
+          {
+            "name": "Fictional Neighborhood Gazette — not a real publication",
+            "url": null
+          }
+        ],
+        "published_at": "2026-08-18T08:00:00Z"
+      }
+    }
+  ]
+}

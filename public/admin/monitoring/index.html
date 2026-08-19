@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="SBNS synthetic monitoring and corrections review prototype." />
+    <meta name="theme-color" content="#1a1714" />
+    <title>SBNS Editorial Desk — Monitoring &amp; Corrections</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&amp;family=Bebas+Neue&amp;family=Lora:ital,wght@0,400;0,600;1,400&amp;family=Special+Elite&amp;display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+    <script src="/admin/monitoring/monitoring.js" type="module"></script>
+  </head>
+  <body class="admin-page monitoring-page">
+    <header class="admin-masthead">
+      <div class="admin-header-inner">
+        <a class="back-link" href="/admin/">← Intake Review</a>
+        <p class="admin-eyebrow">SBNS Editorial Desk</p>
+        <h1>Monitoring &amp; Corrections</h1>
+        <p class="admin-tagline">Later development is not the same thing as original error.</p>
+      </div>
+    </header>
+    <main class="admin-main">
+      <aside class="readonly-notice" aria-label="Phase E monitoring prototype notice">
+        <strong>PHASE E MONITORING &amp; CORRECTIONS PROTOTYPE</strong>
+        <span>Review post-publication developments against the original SBNS record. Monitoring does not change or republish a story.</span>
+      </aside>
+      <aside class="synthetic-warning"><strong>SYNTHETIC MONITORING EXAMPLE</strong><span>Every demonstration development is fictional test data and must not be mistaken for reporting.</span></aside>
+      <section class="intake-card" aria-labelledby="monitor-title">
+        <p class="admin-section-label">Published story → New evidence → Human review</p>
+        <h2 id="monitor-title">Review a monitoring candidate</h2>
+        <form id="monitor-form">
+          <label for="development-url">Development URL</label>
+          <div class="url-controls">
+            <input id="development-url" type="url" inputmode="url" placeholder="https://example.com/development" required />
+            <button type="submit">Review preview</button>
+          </div>
+        </form>
+        <div class="demo-controls" role="group" aria-label="Load synthetic monitoring examples">
+          <button type="button" data-monitor-demo="no_action">Load NO ACTION example</button>
+          <button type="button" data-monitor-demo="follow_up">Load FOLLOW-UP example</button>
+          <button type="button" data-monitor-demo="correction_review">Load CORRECTION example</button>
+        </div>
+        <p id="monitor-status" class="admin-status" role="status" aria-live="polite">Loading validated synthetic monitoring fixtures…</p>
+      </section>
+      <section id="monitor-result" class="result-region" aria-live="polite" aria-label="Monitoring analysis result"></section>
+    </main>
+    <footer class="admin-footer"><p>Phase E review only. No story mutation, publication, or live monitoring occurs here.</p></footer>
+  </body>
+</html>
