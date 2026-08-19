@@ -1,0 +1,294 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shockedbutnotsurprised.news/schemas/intake-analysis-1.0.json",
+  "title": "SBNS intake analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "intake_id",
+    "submitted_url",
+    "submitted_at",
+    "analysis_status",
+    "recommendation",
+    "recommendation_confidence",
+    "recommendation_reasons",
+    "hold_reasons",
+    "reject_reasons",
+    "category",
+    "category_confidence",
+    "systemic_failure",
+    "failure_type",
+    "consequence_significance",
+    "primary_source_available",
+    "independent_source_available",
+    "authoritative_source_available",
+    "institution_response_present",
+    "sources",
+    "claims",
+    "source_conflicts",
+    "observed_condition",
+    "attributable_failure",
+    "causation_supported",
+    "specific_harm_causation",
+    "qualification_required",
+    "sensitive_subject",
+    "victim_targeting_risk",
+    "factual_risk",
+    "legal_risk",
+    "duplication_risk",
+    "related_story_ids",
+    "severity",
+    "severity_rationale",
+    "kicker_target",
+    "kicker_safety",
+    "why_sbns",
+    "do_not_claim",
+    "proposed_headline",
+    "proposed_summary",
+    "proposed_fml_kicker",
+    "proposed_topic_tags",
+    "proposed_sources",
+    "human_decision",
+    "human_edits",
+    "approved_at",
+    "published_at"
+  ],
+  "$defs": {
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "confidence": {
+      "enum": ["high", "medium", "low"]
+    },
+    "risk": {
+      "enum": ["low", "medium", "high"]
+    },
+    "timestampOrNull": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "name",
+        "url",
+        "source_type",
+        "authority",
+        "recency",
+        "claims_supported"
+      ],
+      "properties": {
+        "source_id": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "source_type": {
+          "enum": [
+            "primary",
+            "government",
+            "watchdog",
+            "audit",
+            "court",
+            "official_response",
+            "independent_reporting",
+            "other"
+          ]
+        },
+        "authority": { "$ref": "#/$defs/nonEmptyString" },
+        "recency": { "$ref": "#/$defs/nonEmptyString" },
+        "claims_supported": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim_id",
+        "claim_text",
+        "material",
+        "verification_status",
+        "source_refs",
+        "qualification",
+        "conflict"
+      ],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/nonEmptyString" },
+        "claim_text": { "$ref": "#/$defs/nonEmptyString" },
+        "material": { "type": "boolean" },
+        "verification_status": {
+          "enum": [
+            "verified",
+            "verified_with_qualification",
+            "disputed",
+            "unverified"
+          ]
+        },
+        "source_refs": { "$ref": "#/$defs/stringArray" },
+        "qualification": { "$ref": "#/$defs/nullableString" },
+        "conflict": { "type": "boolean" }
+      }
+    },
+    "sourceConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conflict_id",
+        "statements",
+        "source_refs",
+        "resolvable",
+        "affects_publication",
+        "proposed_story_avoids_unresolved_claim"
+      ],
+      "properties": {
+        "conflict_id": { "$ref": "#/$defs/nonEmptyString" },
+        "statements": { "$ref": "#/$defs/stringArray" },
+        "source_refs": { "$ref": "#/$defs/stringArray" },
+        "resolvable": { "type": "boolean" },
+        "affects_publication": { "type": "boolean" },
+        "proposed_story_avoids_unresolved_claim": { "type": "boolean" }
+      }
+    },
+    "proposedSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        }
+      }
+    },
+    "humanEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "previous_value", "new_value", "edited_at"],
+      "properties": {
+        "field": { "$ref": "#/$defs/nonEmptyString" },
+        "previous_value": {},
+        "new_value": {},
+        "edited_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "intake_id": { "$ref": "#/$defs/nonEmptyString" },
+    "submitted_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "submitted_at": { "type": "string", "format": "date-time" },
+    "analysis_status": {
+      "enum": [
+        "submitted",
+        "analyzing",
+        "review_ready",
+        "held",
+        "rejected",
+        "approved",
+        "publishing",
+        "published",
+        "publish_failed"
+      ]
+    },
+    "recommendation": { "enum": ["publish", "hold", "reject"] },
+    "recommendation_confidence": { "$ref": "#/$defs/confidence" },
+    "recommendation_reasons": { "$ref": "#/$defs/stringArray" },
+    "hold_reasons": { "$ref": "#/$defs/stringArray" },
+    "reject_reasons": { "$ref": "#/$defs/stringArray" },
+    "category": { "enum": ["International", "National", "Local"] },
+    "category_confidence": { "$ref": "#/$defs/confidence" },
+    "systemic_failure": { "type": "boolean" },
+    "failure_type": { "$ref": "#/$defs/nullableString" },
+    "consequence_significance": { "$ref": "#/$defs/nullableString" },
+    "primary_source_available": { "type": "boolean" },
+    "independent_source_available": { "type": "boolean" },
+    "authoritative_source_available": { "type": "boolean" },
+    "institution_response_present": { "type": "boolean" },
+    "sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/source" }
+    },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/claim" }
+    },
+    "source_conflicts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sourceConflict" }
+    },
+    "observed_condition": { "$ref": "#/$defs/nullableString" },
+    "attributable_failure": { "$ref": "#/$defs/nullableString" },
+    "causation_supported": { "type": "boolean" },
+    "specific_harm_causation": { "$ref": "#/$defs/nullableString" },
+    "qualification_required": { "type": "boolean" },
+    "sensitive_subject": { "type": "boolean" },
+    "victim_targeting_risk": { "$ref": "#/$defs/risk" },
+    "factual_risk": { "$ref": "#/$defs/risk" },
+    "legal_risk": { "$ref": "#/$defs/risk" },
+    "duplication_risk": { "$ref": "#/$defs/risk" },
+    "related_story_ids": { "$ref": "#/$defs/stringArray" },
+    "severity": {
+      "anyOf": [
+        { "type": "integer", "minimum": 1, "maximum": 5 },
+        { "type": "null" }
+      ]
+    },
+    "severity_rationale": { "$ref": "#/$defs/nullableString" },
+    "kicker_target": { "$ref": "#/$defs/nullableString" },
+    "kicker_safety": {
+      "enum": ["acceptable", "rewrite", "not_applicable"]
+    },
+    "why_sbns": { "$ref": "#/$defs/nonEmptyString" },
+    "do_not_claim": { "$ref": "#/$defs/stringArray" },
+    "proposed_headline": { "$ref": "#/$defs/nullableString" },
+    "proposed_summary": { "$ref": "#/$defs/nullableString" },
+    "proposed_fml_kicker": { "$ref": "#/$defs/nullableString" },
+    "proposed_topic_tags": { "$ref": "#/$defs/stringArray" },
+    "proposed_sources": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/proposedSource" }
+    },
+    "human_decision": {
+      "enum": ["approve", "hold", "reject", null]
+    },
+    "human_edits": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/humanEdit" }
+    },
+    "approved_at": { "$ref": "#/$defs/timestampOrNull" },
+    "published_at": { "$ref": "#/$defs/timestampOrNull" }
+  }
+}
