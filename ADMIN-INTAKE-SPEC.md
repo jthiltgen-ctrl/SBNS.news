@@ -474,18 +474,19 @@ human_decision
 human_edits
 approved_at
 published_at
+```
 
 This internal model does not change the current public story schema.
 
-16. Confidence
+## 16. Confidence
 
 Confidence should be explicit.
 
 Recommended values:
 
-* high
-* medium
-* low
+- `high`
+- `medium`
+- `low`
 
 Confidence describes the strength of the recommendation or classification.
 
@@ -493,105 +494,105 @@ It is not a substitute for evidence.
 
 A high-confidence recommendation with an unverified material claim is invalid.
 
-17. Administrator user experience
+## 17. Administrator user experience
 
 The initial administrator interface should optimize for one primary workflow:
 
-Paste URL -> Analyze -> Review -> Edit -> Approve & Publish
+`Paste URL -> Analyze -> Review -> Edit -> Approve & Publish`
 
-Intake view
+### Intake view
 
 The administrator submits one URL.
 
 The system displays analysis progress and then produces a review card.
 
-Recommendation card
+### Recommendation card
 
 The most important result should be immediately visible:
 
-RECOMMEND PUBLISH
+`RECOMMEND PUBLISH`
 
-HOLD
+`HOLD`
 
 or:
 
-REJECT
+`REJECT`
 
 The card should also show:
 
-* confidence
-* category
-* severity
-* systemic-failure determination
-* source sufficiency
-* institution response status
-* major qualifications
-* factual/legal risk
-* duplicate risk
+- confidence
+- category
+- severity
+- systemic-failure determination
+- source sufficiency
+- institution response status
+- major qualifications
+- factual/legal risk
+- duplicate risk
 
-Why SBNS
+### Why SBNS
 
 The system should provide a concise explanation of why the candidate does or does not belong on SBNS.
 
-Do not claim
+### Do not claim
 
 The interface should explicitly surface unsupported or dangerous interpretations.
 
 Example:
 
-Do not claim that the monitoring agency caused every unmonitored case.
+`Do not claim that the monitoring agency caused every unmonitored case.`
 
 Example:
 
-Do not characterize this budget-control finding as missing money or fraud.
+`Do not characterize this budget-control finding as missing money or fraud.`
 
 This is a required editorial feature, not optional explanatory text.
 
-Evidence view
+### Evidence view
 
 The administrator should be able to inspect:
 
-* source list
-* claim ledger
-* qualifications
-* source conflicts
-* institution response
+- source list
+- claim ledger
+- qualifications
+- source conflicts
+- institution response
 
 The initial UI does not need to expose every internal field simultaneously.
 
-Story editor
+### Story editor
 
 The system should present editable proposed values for:
 
-* headline
-* summary
-* kicker
-* severity
-* category
-* tags
-* sources
+- headline
+- summary
+- kicker
+- severity
+- category
+- tags
+- sources
 
 Human edits must remain visible in the resulting story payload.
 
-Decision actions
+### Decision actions
 
 The administrator should be able to:
 
-* approve and publish
-* hold
-* reject
-* re-analyze after changing or adding a source
+- approve and publish
+- hold
+- reject
+- re-analyze after changing or adding a source
 
-18. Publication behavior
+## 18. Publication behavior
 
 After explicit human approval, the future system may automate deterministic publication work.
 
 That workflow may include:
 
 1. Generate the final repository-managed story JSON.
-2. Set status to published.
+2. Set `status` to `published`.
 3. Set the actual UTC ISO-8601 publication timestamp.
-4. Rebuild public/stories.json.
+4. Rebuild `public/stories.json`.
 5. Run repository validation.
 6. Commit the approved change.
 7. Merge through the approved repository workflow.
@@ -602,49 +603,49 @@ Human approval must occur before the publication-state mutation.
 
 Until production deployment is explicitly enabled, automated publication work must remain limited to the existing authorized workers.dev staging environment.
 
-19. Publication failure
+## 19. Publication failure
 
 A failed build, validation, merge, or deployment must not be represented as successful publication.
 
 The intake record should retain:
 
-* human approval
-* failure stage
-* error state
-* whether repository publication completed
-* whether deployment completed
+- human approval
+- failure stage
+- error state
+- whether repository publication completed
+- whether deployment completed
 
 Retrying deterministic publication after an operational failure should not require repeating editorial analysis unless story content or source facts changed.
 
-20. Corrections and updates
+## 20. Corrections and updates
 
 A published story should be capable of later monitoring.
 
 Meaningful developments may include:
 
-* corrected official statistics
-* new audit findings
-* implementation of recommendations
-* institution response
-* litigation or official investigation
-* material factual correction
-* a major policy change
+- corrected official statistics
+- new audit findings
+- implementation of recommendations
+- institution response
+- litigation or official investigation
+- material factual correction
+- a major policy change
 
 Monitoring is not publication.
 
 A substantive follow-up or correction must return to human editorial review before changing published content.
 
-21. Lessons from Stories #001-#005
+## 21. Lessons from Stories #001-#005
 
-Story #001
+### Story #001
 
 A serious institutional practice can support Severity 5 without claiming a specific death or injury was caused by the documented practice.
 
 Lesson:
 
-institutional_failure != proven_specific_harm_causation
+`institutional_failure != proven_specific_harm_causation`
 
-Story #002
+### Story #002
 
 An oversight report can establish a system-wide policy weakness even when field-level sampling is limited.
 
@@ -652,122 +653,122 @@ Lesson:
 
 distinguish component-wide policy findings from nongeneralizable sampled observations.
 
-Story #003
+### Story #003
 
 Sensitive communities require explicit tone and causation safeguards.
 
 Lesson:
 
-sensitive_subject = true increases editorial review requirements but does not itself determine publishability.
+`sensitive_subject = true` increases editorial review requirements but does not itself determine publishability.
 
-Story #004
+### Story #004
 
 A concerning statistic can coexist with multiple causes.
 
 Lesson:
 
-observed_condition != attributable_failure
+`observed_condition != attributable_failure`
 
 Qualification must survive into final copy.
 
-Story #005
+### Story #005
 
 A clean financial-statement opinion can coexist with statutory budget findings.
 
 Lesson:
 
-clean_audit != no_findings
+`clean_audit != no_findings`
 
 Technical audit terminology must be interpreted according to its actual scope.
 
-22. Non-goals for this specification milestone
+## 22. Non-goals for this specification milestone
 
 This v1.4 specification does not authorize implementation of:
 
-* a database
-* D1
-* authentication
-* administrator routes
-* administrator UI
-* new Worker APIs
-* AI provider integration
-* automatic web research code
-* GitHub write automation
-* automatic merge behavior
-* production deployment
-* DNS changes
-* nameserver changes
-* production-domain migration
-* GreenGeeks changes
+- a database
+- D1
+- authentication
+- administrator routes
+- administrator UI
+- new Worker APIs
+- AI provider integration
+- automatic web research code
+- GitHub write automation
+- automatic merge behavior
+- production deployment
+- DNS changes
+- nameserver changes
+- production-domain migration
+- GreenGeeks changes
 
 Those are implementation decisions for a subsequent approved milestone.
 
-23. Architecture constraints for implementation
+## 23. Architecture constraints for implementation
 
 Future implementation must preserve these constraints unless explicitly changed:
 
-* existing public story JSON remains repository-managed
-* publication remains human-gated
-* drafts remain excluded from the public feed
-* generated public/stories.json is never edited directly
-* source URLs must be real and verified
-* public source links must retain safe external-link rendering
-* infrastructure changes require explicit approval
-* D1 is not assumed merely because internal metadata eventually requires persistence
-* production DNS/domain changes are outside the administrator-intake feature unless separately approved
-* legacy GreenGeeks deployment files remain untouched unless separately approved
+- existing public story JSON remains repository-managed
+- publication remains human-gated
+- drafts remain excluded from the public feed
+- generated `public/stories.json` is never edited directly
+- source URLs must be real and verified
+- public source links must retain safe external-link rendering
+- infrastructure changes require explicit approval
+- D1 is not assumed merely because internal metadata eventually requires persistence
+- production DNS/domain changes are outside the administrator-intake feature unless separately approved
+- legacy GreenGeeks deployment files remain untouched unless separately approved
 
-24. Future implementation sequence
+## 24. Future implementation sequence
 
 Recommended implementation order after approval of this specification:
 
-Phase A — Intake analysis contract
+### Phase A — Intake analysis contract
 
 Define machine-readable request and response structures for URL analysis.
 
 Establish fixtures representing PUBLISH, HOLD, and REJECT candidates.
 
-Phase B — Read-only administrator prototype
+### Phase B — Read-only administrator prototype
 
 Build the intake form and analysis/review interface without publication mutation.
 
-Phase C — Editable story proposal
+### Phase C — Editable story proposal
 
 Add human editing of the proposed public story fields and validation.
 
-Phase D — Human-gated publication
+### Phase D — Human-gated publication
 
 Connect explicit administrator approval to the existing repository publication workflow.
 
-Phase E — Monitoring and corrections
+### Phase E — Monitoring and corrections
 
 Add post-publication update detection and correction/follow-up review.
 
 Authentication, persistence, and deployment architecture should be selected when their actual implementation requirements are known rather than assumed in this specification.
 
-25. v1.4 implementation acceptance criteria
+## 25. v1.4 implementation acceptance criteria
 
 A future v1.4 administrator implementation should not be considered complete until:
 
-* an administrator can submit a URL
-* the system returns PUBLISH, HOLD, or REJECT
-* the system explains its recommendation
-* verified sources are visible
-* material claims have evidence status
-* important qualifications are surfaced
-* unsupported interpretations appear under a clear Do not claim warning
-* systemic-failure fit is explicit
-* category and confidence are explicit
-* severity and rationale are explicit
-* duplicate risk is evaluated
-* sensitive-subject safeguards are evaluated
-* the proposed public story is editable
-* public story output conforms to the existing story schema
-* no AI recommendation can publish without an explicit human action
-* publication validation must succeed before a deployment is treated as successful
-* generated feed state and live deployment can be verified after publication
+- an administrator can submit a URL
+- the system returns PUBLISH, HOLD, or REJECT
+- the system explains its recommendation
+- verified sources are visible
+- material claims have evidence status
+- important qualifications are surfaced
+- unsupported interpretations appear under a clear `Do not claim` warning
+- systemic-failure fit is explicit
+- category and confidence are explicit
+- severity and rationale are explicit
+- duplicate risk is evaluated
+- sensitive-subject safeguards are evaluated
+- the proposed public story is editable
+- public story output conforms to the existing story schema
+- no AI recommendation can publish without an explicit human action
+- publication validation must succeed before a deployment is treated as successful
+- generated feed state and live deployment can be verified after publication
 
-26. Editorial invariant
+## 26. Editorial invariant
 
 The administrator system exists to make careful editorial work faster.
 
