@@ -1,6 +1,6 @@
 {
   "id": "doj-savannas-act-mmip-oig-review",
-  "status": "draft",
+  "status": "published",
   "content_type": "reporting",
   "category": "National",
   "headline": "DOJ Watchdog Finds Savanna’s Act Compliance Gaps and 40% Vacancy in MMIP Outreach Program",
@@ -28,5 +28,5 @@
       "url": "https://www.justice.gov/tribal/mmip/SavannasAct"
     }
   ],
-  "published_at": null
+  "published_at": "2026-08-19T04:02:24Z"
 }
