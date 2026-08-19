@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Read-only SBNS editorial intake demonstration." />
+    <meta name="theme-color" content="#1a1714" />
+    <title>SBNS Editorial Desk — Intake Review</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Bebas+Neue&family=Lora:ital,wght@0,400;0,600;1,400&family=Special+Elite&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/admin/admin.css" />
+    <script src="/admin/admin.js" type="module"></script>
+  </head>
+  <body class="admin-page">
+    <header class="admin-masthead">
+      <div class="admin-header-inner">
+        <a class="back-link" href="/">← Back to SBNS</a>
+        <p class="admin-eyebrow">SBNS Editorial Desk</p>
+        <h1>Intake Review</h1>
+        <p class="admin-tagline">Evidence first. Editorial judgment always human.</p>
+      </div>
+    </header>
+
+    <main class="admin-main">
+      <aside class="readonly-notice" aria-label="Read-only prototype notice">
+        <strong>READ-ONLY PROTOTYPE</strong>
+        <span>Phase B uses validated demonstration fixtures. No live research, AI analysis, editorial mutation, or publication occurs here.</span>
+      </aside>
+
+      <section class="intake-card" aria-labelledby="intake-title">
+        <p class="admin-section-label">Paste URL → Review recommendation</p>
+        <h2 id="intake-title">Preview an intake analysis</h2>
+        <form id="intake-form">
+          <label for="submitted-url">Source URL</label>
+          <div class="url-controls">
+            <input
+              id="submitted-url"
+              name="submitted-url"
+              type="url"
+              inputmode="url"
+              autocomplete="url"
+              placeholder="https://example.com/source"
+              required
+            />
+            <button type="submit">Analyze preview</button>
+          </div>
+        </form>
+
+        <div class="demo-controls" role="group" aria-label="Load demonstration intake examples">
+          <button type="button" data-demo="publish">Load PUBLISH example</button>
+          <button type="button" data-demo="hold">Load HOLD example</button>
+          <button type="button" data-demo="reject">Load REJECT example</button>
+        </div>
+
+        <p id="intake-status" class="admin-status" role="status" aria-live="polite">Loading validated demonstration fixtures…</p>
+      </section>
+
+      <section id="intake-result" class="result-region" aria-live="polite" aria-label="Intake analysis result"></section>
+    </main>
+
+    <footer class="admin-footer">
+      <p>Read-only Phase B prototype. Publication remains a human decision.</p>
+    </footer>
+  </body>
+</html>

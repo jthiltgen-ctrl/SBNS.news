@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA_DIR = path.join(ROOT, "intake", "schemas");
 const FIXTURE_DIR = path.join(ROOT, "intake", "fixtures");
-const COMMANDS = new Set(["check", "test"]);
+const ADMIN_BUNDLE = path.join(ROOT, "public", "admin", "intake-fixtures.json");
+const COMMANDS = new Set(["build", "check", "test"]);
 
 function fail(message) {
   throw new Error(message);
@@ -315,6 +316,40 @@ async function checkContract() {
   return { schemas, fixtures };
 }
 
+function generateAdminBundle(fixtures) {
+  return {
+    schema_version: "1.0",
+    fixtures: [...fixtures.entries()].map(([name, fixture]) => ({
+      name,
+      request: fixture.request,
+      analysis: fixture.analysis
+    }))
+  };
+}
+
+function serializeAdminBundle(fixtures) {
+  return `${JSON.stringify(generateAdminBundle(fixtures), null, 2)}\n`;
+}
+
+async function buildAdminBundle() {
+  const { fixtures } = await checkContract();
+  await writeFile(ADMIN_BUNDLE, serializeAdminBundle(fixtures), "utf8");
+  return fixtures.size;
+}
+
+async function verifyAdminBundle(fixtures) {
+  const expected = serializeAdminBundle(fixtures);
+  let actual;
+  try {
+    actual = await readFile(ADMIN_BUNDLE, "utf8");
+  } catch {
+    fail("public/admin/intake-fixtures.json is missing; run npm run intake:build");
+  }
+  if (actual !== expected) {
+    fail("public/admin/intake-fixtures.json is stale; run npm run intake:build");
+  }
+}
+
 async function runTests() {
   const { schemas, fixtures } = await checkContract();
   const publish = fixtureByName(fixtures, "publish-story-005.json");
@@ -372,14 +407,18 @@ async function runTests() {
 
 const command = process.argv[2];
 if (!COMMANDS.has(command) || process.argv.length !== 3) {
-  console.error("Usage: node scripts/intake.mjs <check|test>");
+  console.error("Usage: node scripts/intake.mjs <build|check|test>");
   process.exit(1);
 }
 
 try {
-  if (command === "check") {
+  if (command === "build") {
+    const fixtureCount = await buildAdminBundle();
+    console.log(`Built admin intake bundle: ${fixtureCount} validated fixtures.`);
+  } else if (command === "check") {
     const { fixtures } = await checkContract();
-    console.log(`Intake contract valid: 2 schemas, ${fixtures.size} golden fixtures.`);
+    await verifyAdminBundle(fixtures);
+    console.log(`Intake contract valid: 2 schemas, ${fixtures.size} golden fixtures, admin bundle current.`);
   } else {
     const tests = await runTests();
     console.log(`Intake contract tests passed: 3 golden fixtures, ${tests.length} negative tests.`);
