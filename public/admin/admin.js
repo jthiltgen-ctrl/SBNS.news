@@ -1,8 +1,10 @@
 "use strict";
 
 const FIXTURE_BUNDLE_URL = "/admin/intake-fixtures.json";
+const CATEGORIES = ["International", "National", "Local"];
 const fixtureByRecommendation = new Map();
 const fixtureByUrl = new Map();
+let currentReview = null;
 
 const form = document.querySelector("#intake-form");
 const urlInput = document.querySelector("#submitted-url");
@@ -14,9 +16,7 @@ function createElement(tagName, options = {}) {
   const node = document.createElement(tagName);
   if (options.className) node.className = options.className;
   if (options.text !== undefined) node.textContent = String(options.text);
-  for (const [name, value] of Object.entries(options.attributes ?? {})) {
-    node.setAttribute(name, value);
-  }
+  for (const [name, value] of Object.entries(options.attributes ?? {})) node.setAttribute(name, value);
   return node;
 }
 
@@ -28,19 +28,27 @@ function displayValue(value, neutral = "—") {
 
 function titleCase(value) {
   if (value === null || value === undefined) return "—";
-  return String(value)
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+  return String(value).split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
 }
 
 function normalizeUrl(value) {
   const url = new URL(value);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("Only HTTP and HTTPS source URLs are accepted.");
-  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS source URLs are accepted.");
   url.hash = "";
   return url.href;
+}
+
+function normalizeTags(value) {
+  const seen = new Set();
+  const tags = [];
+  for (const part of value.split(",")) {
+    const tag = part.trim();
+    if (tag && !seen.has(tag)) {
+      seen.add(tag);
+      tags.push(tag);
+    }
+  }
+  return tags;
 }
 
 function setStatus(message) {
@@ -65,21 +73,58 @@ function recommendationHeading(recommendation) {
   return "REJECT";
 }
 
+function analysisHasDraft(analysis) {
+  return Boolean(analysis.proposed_headline && analysis.proposed_summary && analysis.proposed_fml_kicker);
+}
+
+function draftFromAnalysis(analysis) {
+  if (!analysisHasDraft(analysis)) return null;
+  return {
+    headline: analysis.proposed_headline,
+    summary: analysis.proposed_summary,
+    kicker: analysis.proposed_fml_kicker,
+    category: analysis.category,
+    severity: analysis.severity,
+    tags: [...analysis.proposed_topic_tags]
+  };
+}
+
+function neutralDraft(analysis) {
+  return { headline: "", summary: "", kicker: "", category: analysis.category, severity: analysis.severity, tags: [] };
+}
+
+function availableDraftSources(analysis) {
+  if (analysis.proposed_sources.length > 0) return analysis.proposed_sources;
+  return analysis.sources.map((source) => ({ name: source.name, url: source.url }));
+}
+
+function valuesEqual(first, second) {
+  return JSON.stringify(first) === JSON.stringify(second);
+}
+
+function draftChanged() {
+  return Boolean(currentReview && !valuesEqual(currentReview.originalDraft, currentReview.workingDraft));
+}
+
+function hasEditorialState() {
+  return Boolean(currentReview && (draftChanged() || currentReview.humanDecision !== null));
+}
+
+function confirmDiscard() {
+  return !hasEditorialState() || window.confirm("Discard current editorial changes and load another intake?");
+}
+
 function renderRecommendation(analysis) {
   const card = createElement("section", {
     className: `recommendation-card ${analysis.recommendation}`,
     attributes: { "aria-labelledby": "recommendation-title" }
   });
   card.append(
-    createElement("p", { className: "card-label", text: "Editorial recommendation" }),
-    createElement("h2", {
-      className: "recommendation-title",
-      text: recommendationHeading(analysis.recommendation),
-      attributes: { id: "recommendation-title" }
-    })
+    createElement("p", { className: "card-label", text: "Analyzer recommendation" }),
+    createElement("h2", { className: "recommendation-title", text: recommendationHeading(analysis.recommendation), attributes: { id: "recommendation-title" } })
   );
-
   const metrics = [
+    ["Intake origin", titleCase(analysis.intake_origin)],
     ["Confidence", titleCase(analysis.recommendation_confidence)],
     ["Category", analysis.category],
     ["Category confidence", titleCase(analysis.category_confidence)],
@@ -107,11 +152,8 @@ function renderRecommendation(analysis) {
 
 function renderReasons(analysis) {
   const panel = createPanel("Why SBNS");
-  panel.append(createElement("p", { text: analysis.why_sbns }));
-
-  panel.append(createElement("h3", { text: "Recommendation reasons" }));
+  panel.append(createElement("p", { text: analysis.why_sbns }), createElement("h3", { text: "Recommendation reasons" }));
   appendList(panel, analysis.recommendation_reasons);
-
   if (analysis.hold_reasons.length > 0) {
     panel.append(createElement("h3", { text: "Hold reasons" }));
     appendList(panel, analysis.hold_reasons);
@@ -133,41 +175,24 @@ function renderClaims(analysis) {
   const panel = createPanel("Claim ledger");
   const sourcesById = new Map(analysis.sources.map((source) => [source.source_id, source.name]));
   const ledger = createElement("div", { className: "ledger" });
-
   for (const claim of analysis.claims) {
     const card = createElement("article", { className: "claim" });
     const meta = createElement("div", { className: "claim-meta" });
     meta.append(
-      createElement("span", {
-        className: `claim-state ${claim.verification_status}`,
-        text: titleCase(claim.verification_status)
-      }),
-      createElement("span", {
-        className: "claim-state",
-        text: claim.material ? "Material" : "Non-material"
-      })
+      createElement("span", { className: `claim-state ${claim.verification_status}`, text: titleCase(claim.verification_status) }),
+      createElement("span", { className: "claim-state", text: claim.material ? "Material" : "Non-material" })
     );
     card.append(meta, createElement("p", { text: claim.claim_text }));
-
     const qualification = createElement("p", { className: "qualification" });
-    qualification.append(
-      createElement("strong", { text: "Qualification: " }),
-      document.createTextNode(displayValue(claim.qualification, "None recorded"))
-    );
+    qualification.append(createElement("strong", { text: "Qualification: " }), document.createTextNode(displayValue(claim.qualification, "None recorded")));
     card.append(qualification);
-
     const conflict = createElement("p");
-    conflict.append(
-      createElement("strong", { text: "Conflict: " }),
-      document.createTextNode(claim.conflict ? "Recorded" : "None recorded")
-    );
+    conflict.append(createElement("strong", { text: "Conflict: " }), document.createTextNode(claim.conflict ? "Recorded" : "None recorded"));
     card.append(conflict);
-
-    const sourceRefs = claim.source_refs.map((sourceId) => sourcesById.get(sourceId) ?? sourceId);
     const supporting = createElement("p");
     supporting.append(
       createElement("strong", { text: "Supporting sources: " }),
-      document.createTextNode(sourceRefs.join("; "))
+      document.createTextNode(claim.source_refs.map((sourceId) => sourcesById.get(sourceId) ?? sourceId).join("; "))
     );
     card.append(supporting);
     ledger.append(card);
@@ -179,34 +204,17 @@ function renderClaims(analysis) {
 function renderSources(analysis) {
   const panel = createPanel("Sources");
   const sourceList = createElement("div", { className: "source-list" });
-
   for (const source of analysis.sources) {
     const card = createElement("article", { className: "source" });
     const meta = createElement("div", { className: "source-meta" });
     meta.append(createElement("span", { className: "source-type", text: titleCase(source.source_type) }));
     card.append(meta, createElement("h3", { text: source.name }));
-
-    for (const [label, value] of [
-      ["Authority", source.authority],
-      ["Recency", source.recency],
-      ["Claims supported", source.claims_supported.join(", ")]
-    ]) {
+    for (const [label, value] of [["Authority", source.authority], ["Recency", source.recency], ["Claims supported", source.claims_supported.join(", ")]]) {
       const item = createElement("p");
       item.append(createElement("strong", { text: `${label}: ` }), document.createTextNode(value));
       card.append(item);
     }
-
-    card.append(
-      createElement("a", {
-        className: "source-link",
-        text: "Open external source",
-        attributes: {
-          href: source.url,
-          target: "_blank",
-          rel: "noopener noreferrer"
-        }
-      })
-    );
+    card.append(createElement("a", { className: "source-link", text: "Open external source", attributes: { href: source.url, target: "_blank", rel: "noopener noreferrer" } }));
     sourceList.append(card);
   }
   panel.append(sourceList);
@@ -219,7 +227,6 @@ function renderConflicts(analysis) {
     panel.append(createElement("p", { text: "No material source conflicts recorded." }));
     return panel;
   }
-
   const sourcesById = new Map(analysis.sources.map((source) => [source.source_id, source.name]));
   const list = createElement("div", { className: "conflict-list" });
   for (const conflict of analysis.source_conflicts) {
@@ -261,94 +268,276 @@ function renderCausation(analysis) {
   return panel;
 }
 
-function hasProposedStory(analysis) {
-  return Boolean(analysis.proposed_headline && analysis.proposed_summary && analysis.proposed_fml_kicker);
+function createField(labelText, control, fieldName) {
+  const wrapper = createElement("div", { className: "editorial-field" });
+  const heading = createElement("div", { className: "field-heading" });
+  heading.append(
+    createElement("label", { text: labelText, attributes: { for: control.id } }),
+    createElement("span", { className: "field-origin", text: "Analyzer proposal", attributes: { "data-field-marker": fieldName } })
+  );
+  wrapper.append(heading, control);
+  return wrapper;
 }
 
-function renderProposedStory(analysis) {
-  const panel = createPanel("Proposed story");
-  if (!hasProposedStory(analysis)) {
-    panel.append(createElement("p", { text: "No publication draft proposed at this stage." }));
-    return panel;
+function createTextControl(id, value, multiline = false) {
+  const control = createElement(multiline ? "textarea" : "input", { attributes: { id } });
+  if (!multiline) control.type = "text";
+  control.value = value;
+  return control;
+}
+
+function createSelectControl(id, values, selectedValue, emptyLabel = null) {
+  const select = createElement("select", { attributes: { id } });
+  if (emptyLabel !== null) select.append(createElement("option", { text: emptyLabel, attributes: { value: "" } }));
+  for (const value of values) {
+    const option = createElement("option", { text: value, attributes: { value: String(value) } });
+    if (value === selectedValue) option.selected = true;
+    select.append(option);
   }
+  return select;
+}
 
-  panel.append(
-    createElement("p", { className: "card-label", text: `${analysis.category} · Severity ${analysis.severity}` }),
-    createElement("h3", { text: analysis.proposed_headline }),
-    createElement("p", { text: analysis.proposed_summary }),
-    createElement("p", { className: "proposed-kicker", text: analysis.proposed_fml_kicker })
-  );
-
-  const tagsHeading = createElement("h3", { text: "Topic tags" });
-  const tags = createElement("ul", { className: "tag-list" });
-  for (const tag of analysis.proposed_topic_tags) tags.append(createElement("li", { text: tag }));
-  panel.append(tagsHeading, tags, createElement("h3", { text: "Proposed sources" }));
-
-  const sourceList = createElement("div", { className: "source-list" });
-  for (const source of analysis.proposed_sources) {
+function renderReadOnlyProposedSources(analysis) {
+  const wrapper = createElement("div", { className: "read-only-sources" });
+  wrapper.append(createElement("h3", { text: "Proposed sources — read only" }));
+  const list = createElement("div", { className: "source-list" });
+  for (const source of availableDraftSources(analysis)) {
     const item = createElement("div", { className: "source" });
     item.append(
       createElement("p", { text: source.name }),
-      createElement("a", {
-        className: "source-link",
-        text: "Open proposed source",
-        attributes: {
-          href: source.url,
-          target: "_blank",
-          rel: "noopener noreferrer"
-        }
-      })
+      createElement("a", { className: "source-link", text: "Open proposed source", attributes: { href: source.url, target: "_blank", rel: "noopener noreferrer" } })
     );
-    sourceList.append(item);
+    list.append(item);
   }
-  panel.append(sourceList);
-  return panel;
+  wrapper.append(list);
+  return wrapper;
 }
 
-function renderDecisionControls() {
-  const panel = createPanel("Decision actions");
-  panel.append(
-    createElement("p", {
-      className: "decision-note",
-      text: "Decision actions are disabled in the read-only Phase B prototype."
-    })
+function fieldChanged(fieldName) {
+  if (!currentReview?.workingDraft) return false;
+  if (!currentReview.originalDraft) return true;
+  return !valuesEqual(currentReview.workingDraft[fieldName], currentReview.originalDraft[fieldName]);
+}
+
+function renderPreview(container) {
+  container.replaceChildren(createElement("p", { className: "preview-label", text: "EDITORIAL PREVIEW — NOT PUBLISHED" }));
+  const draft = currentReview?.workingDraft;
+  if (!draft) {
+    container.append(createElement("p", { className: "preview-empty", text: "No publication draft proposed at this stage." }));
+    return;
+  }
+  const severity = draft.severity === null ? "Severity not established" : `Severity ${draft.severity}`;
+  container.append(
+    createElement("p", { className: "preview-meta", text: `${displayValue(draft.category, "Category not set")} · ${severity}` }),
+    createElement("h3", { text: displayValue(draft.headline, "Headline not yet written") }),
+    createElement("p", { text: displayValue(draft.summary, "Summary not yet written") }),
+    createElement("p", { className: "proposed-kicker", text: displayValue(draft.kicker, "Kicker not yet written") })
   );
-  const controls = createElement("div", { className: "decision-actions" });
-  for (const label of ["Approve & Publish", "Hold", "Reject"]) {
-    const button = createElement("button", { text: label, attributes: { type: "button" } });
-    button.disabled = true;
+  const tags = createElement("ul", { className: "tag-list" });
+  if (draft.tags.length === 0) tags.append(createElement("li", { text: "No tags yet" }));
+  else for (const tag of draft.tags) tags.append(createElement("li", { text: tag }));
+  container.append(tags);
+}
+
+function approvalFailures() {
+  const draft = currentReview?.workingDraft;
+  const failures = [];
+  if (!draft) return ["Start an editorial draft before approving."];
+  if (!draft.headline.trim()) failures.push("Headline is required.");
+  if (!draft.summary.trim()) failures.push("Summary is required.");
+  if (!draft.kicker.trim()) failures.push("Kicker is required.");
+  if (!CATEGORIES.includes(draft.category)) failures.push("Choose a valid category.");
+  if (!Number.isInteger(draft.severity) || draft.severity < 1 || draft.severity > 5) failures.push("Choose a severity from 1 through 5.");
+  if (draft.tags.length === 0) failures.push("Add at least one topic tag.");
+  if (availableDraftSources(currentReview.fixture.analysis).length === 0) failures.push("At least one proposed source is required.");
+  return failures;
+}
+
+function expectedDecision(recommendation) {
+  return recommendation === "publish" ? "approve" : recommendation;
+}
+
+function syncEditorialUi(panel, clearErrors = false) {
+  const changeState = panel.querySelector("[data-change-state]");
+  const dirty = draftChanged();
+  changeState.textContent = dirty ? "UNSAVED EDITORIAL CHANGES" : "NO EDITORIAL CHANGES";
+  changeState.className = `change-state ${dirty ? "dirty" : "clean"}`;
+  for (const marker of panel.querySelectorAll("[data-field-marker]")) {
+    const edited = fieldChanged(marker.dataset.fieldMarker);
+    marker.textContent = edited ? "Edited" : "Analyzer proposal";
+    marker.className = `field-origin${edited ? " edited" : ""}`;
+  }
+  const decisionState = panel.querySelector("[data-decision-state]");
+  if (currentReview.humanDecision === null) {
+    decisionState.textContent = "HUMAN DECISION: NOT SET";
+    decisionState.className = "decision-state none";
+  } else {
+    decisionState.textContent = `HUMAN DECISION: ${currentReview.humanDecision.toUpperCase()}`;
+    decisionState.className = "decision-state";
+  }
+  for (const button of panel.querySelectorAll("[data-decision]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.decision === currentReview.humanDecision));
+  }
+  const disagreement = panel.querySelector("[data-disagreement]");
+  if (currentReview.humanDecision !== null && currentReview.humanDecision !== expectedDecision(currentReview.fixture.analysis.recommendation)) {
+    disagreement.hidden = false;
+    disagreement.textContent = `ANALYZER: ${recommendationHeading(currentReview.fixture.analysis.recommendation)} · HUMAN: ${currentReview.humanDecision.toUpperCase()}. Human decision differs from analyzer recommendation.`;
+  } else {
+    disagreement.hidden = true;
+    disagreement.textContent = "";
+  }
+  if (clearErrors) panel.querySelector("[data-approval-errors]").replaceChildren();
+  renderPreview(panel.querySelector("[data-editorial-preview]"));
+}
+
+function renderApprovalErrors(container, failures) {
+  container.replaceChildren();
+  if (failures.length === 0) return;
+  const box = createElement("div", { className: "approval-errors" });
+  box.append(createElement("span", { text: "Approval is not ready:" }));
+  appendList(box, failures);
+  container.append(box);
+}
+
+function renderDecisionControls(panel) {
+  panel.append(createElement("h3", { text: "Human editorial decision" }));
+  panel.append(
+    createElement("p", { className: "ephemeral-note", text: "This decision exists only in this browser session. It is not saved and does not publish anything." }),
+    createElement("p", { className: "decision-state none", text: "HUMAN DECISION: NOT SET", attributes: { "data-decision-state": "" } }),
+    createElement("p", { className: "disagreement-state", attributes: { "data-disagreement": "", hidden: "" } }),
+    createElement("div", { attributes: { "data-approval-errors": "", "aria-live": "polite" } })
+  );
+  const controls = createElement("div", { className: "decision-actions", attributes: { role: "group", "aria-label": "Human editorial decision" } });
+  for (const [label, decision] of [["Approve", "approve"], ["Hold", "hold"], ["Reject", "reject"]]) {
+    const button = createElement("button", { text: label, attributes: { type: "button", "data-decision": decision, "aria-pressed": "false" } });
+    button.addEventListener("click", () => {
+      if (decision === "approve") {
+        const failures = approvalFailures();
+        renderApprovalErrors(panel.querySelector("[data-approval-errors]"), failures);
+        if (failures.length > 0) {
+          setStatus("Approval was not recorded. Complete the required draft fields.");
+          return;
+        }
+      } else panel.querySelector("[data-approval-errors]").replaceChildren();
+      currentReview.humanDecision = decision;
+      syncEditorialUi(panel);
+      setStatus(`Temporary human decision recorded: ${decision.toUpperCase()}. Nothing was saved or published.`);
+    });
     controls.append(button);
   }
+  const clear = createElement("button", { className: "clear-decision", text: "Clear decision", attributes: { type: "button" } });
+  clear.addEventListener("click", () => {
+    currentReview.humanDecision = null;
+    panel.querySelector("[data-approval-errors]").replaceChildren();
+    syncEditorialUi(panel);
+    setStatus("Temporary human decision cleared.");
+  });
+  controls.append(clear);
   panel.append(controls);
+}
+
+function bindDraftControl(control, fieldName, panel, transform = (value) => value) {
+  control.addEventListener(control.tagName === "SELECT" ? "change" : "input", () => {
+    currentReview.workingDraft[fieldName] = transform(control.value);
+    syncEditorialUi(panel, true);
+    setStatus("Editorial draft updated locally. Changes are not saved.");
+  });
+}
+
+function renderEditorialWorkspace(analysis) {
+  const panel = createPanel("Human editorial review", "editorial-workspace");
+  panel.append(
+    createElement("p", { className: "ephemeral-note", text: "All edits are temporary browser state and disappear on reload. Evidence and analyzer output remain read-only." }),
+    createElement("p", { className: "change-state clean", text: "NO EDITORIAL CHANGES", attributes: { "data-change-state": "", "aria-live": "polite" } })
+  );
+  if (!currentReview.workingDraft) {
+    const empty = createElement("div", { className: "draft-empty" });
+    empty.append(createElement("p", { text: "No publication draft proposed at this stage." }));
+    const start = createElement("button", { text: "Start editorial draft", attributes: { type: "button" } });
+    start.addEventListener("click", () => {
+      currentReview.workingDraft = neutralDraft(analysis);
+      renderCurrentReview();
+      setStatus("A temporary editorial draft was started. Analyzer output is unchanged.");
+    });
+    empty.append(start);
+    panel.append(empty);
+  } else {
+    const draftForm = createElement("form", { className: "editorial-form", attributes: { "aria-label": "Editable proposed story" } });
+    draftForm.addEventListener("submit", (event) => event.preventDefault());
+    const headline = createTextControl("editor-headline", currentReview.workingDraft.headline);
+    const summary = createTextControl("editor-summary", currentReview.workingDraft.summary, true);
+    const kicker = createTextControl("editor-kicker", currentReview.workingDraft.kicker, true);
+    const category = createSelectControl("editor-category", CATEGORIES, currentReview.workingDraft.category);
+    const severity = createSelectControl("editor-severity", [1, 2, 3, 4, 5], currentReview.workingDraft.severity, "Not selected");
+    const tags = createTextControl("editor-tags", currentReview.workingDraft.tags.join(", "));
+    tags.setAttribute("aria-describedby", "tag-help");
+    draftForm.append(createField("Headline", headline, "headline"), createField("Summary", summary, "summary"), createField("Kicker", kicker, "kicker"));
+    const grid = createElement("div", { className: "editorial-grid" });
+    grid.append(createField("Category", category, "category"), createField("Severity", severity, "severity"));
+    draftForm.append(grid, createField("Tags (comma-separated)", tags, "tags"));
+    draftForm.append(createElement("p", { className: "decision-note", text: "Tags are trimmed, empty entries are discarded, and exact duplicates keep their first occurrence.", attributes: { id: "tag-help" } }));
+    bindDraftControl(headline, "headline", panel);
+    bindDraftControl(summary, "summary", panel);
+    bindDraftControl(kicker, "kicker", panel);
+    bindDraftControl(category, "category", panel);
+    bindDraftControl(severity, "severity", panel, (value) => value === "" ? null : Number(value));
+    bindDraftControl(tags, "tags", panel, normalizeTags);
+    const actions = createElement("div", { className: "editorial-actions" });
+    const reset = createElement("button", { text: "Reset to analyzer proposal", attributes: { type: "button" } });
+    reset.addEventListener("click", () => {
+      currentReview.workingDraft = currentReview.originalDraft ? structuredClone(currentReview.originalDraft) : null;
+      renderCurrentReview();
+      setStatus("Editorial copy reset. Human decision was not changed.");
+    });
+    actions.append(reset);
+    draftForm.append(actions);
+    panel.append(draftForm, renderReadOnlyProposedSources(analysis));
+  }
+  panel.append(createElement("section", { className: "editorial-preview", attributes: { "data-editorial-preview": "", "aria-live": "polite" } }));
+  renderDecisionControls(panel);
+  queueMicrotask(() => syncEditorialUi(panel));
   return panel;
 }
 
-function renderFixture(fixture) {
-  const { analysis } = fixture;
+function renderCurrentReview() {
+  const analysis = currentReview.fixture.analysis;
   result.replaceChildren(
     renderRecommendation(analysis),
     renderReasons(analysis),
     renderDoNotClaim(analysis),
+    renderEditorialWorkspace(analysis),
     renderClaims(analysis),
     renderSources(analysis),
     renderConflicts(analysis),
-    renderCausation(analysis),
-    renderProposedStory(analysis),
-    renderDecisionControls()
+    renderCausation(analysis)
   );
-  setStatus(`Loaded validated ${analysis.recommendation.toUpperCase()} demonstration fixture.`);
+}
+
+function loadFixture(fixture) {
+  if (!confirmDiscard()) return false;
+  const fixtureCopy = structuredClone(fixture);
+  const analyzerDraft = draftFromAnalysis(fixtureCopy.analysis);
+  currentReview = {
+    fixture: fixtureCopy,
+    originalDraft: analyzerDraft ? structuredClone(analyzerDraft) : null,
+    workingDraft: analyzerDraft ? structuredClone(analyzerDraft) : null,
+    humanDecision: null
+  };
+  urlInput.value = fixtureCopy.request.submitted_url;
+  renderCurrentReview();
+  setStatus(`Loaded validated ${fixtureCopy.analysis.recommendation.toUpperCase()} demonstration fixture. Human decision is not set.`);
+  return true;
 }
 
 function renderUnconnectedState() {
   const panel = createElement("section", { className: "panel neutral-state" });
   panel.append(
     createElement("strong", { text: "LIVE ANALYZER NOT CONNECTED" }),
-    createElement("p", {
-      text: "The URL was accepted, but Phase B does not perform live research. No editorial recommendation has been generated for this URL."
-    })
+    createElement("p", { text: "The URL was accepted, but Phase C does not perform live research. No editorial recommendation has been generated for this URL." })
   );
+  currentReview = null;
   result.replaceChildren(panel);
-  setStatus("Valid URL accepted. No analysis was performed.");
+  setStatus("Valid URL accepted. No analysis was performed and no draft was created.");
 }
 
 function handleUrl(value) {
@@ -356,37 +545,30 @@ function handleUrl(value) {
   try {
     normalized = normalizeUrl(value);
   } catch (error) {
-    result.replaceChildren();
     setStatus(error.message);
     return;
   }
-
   const fixture = fixtureByUrl.get(normalized);
-  if (fixture) renderFixture(fixture);
-  else renderUnconnectedState();
+  if (fixture) loadFixture(fixture);
+  else if (confirmDiscard()) renderUnconnectedState();
 }
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   if (!urlInput.checkValidity()) {
-    result.replaceChildren();
     setStatus("Enter a valid HTTP or HTTPS URL.");
     return;
   }
   handleUrl(urlInput.value);
 });
 
-urlInput.addEventListener("invalid", () => {
-  setStatus("Enter a valid HTTP or HTTPS URL.");
-});
+urlInput.addEventListener("invalid", () => setStatus("Enter a valid HTTP or HTTPS URL."));
 
 for (const button of demoButtons) {
   button.disabled = true;
   button.addEventListener("click", () => {
     const fixture = fixtureByRecommendation.get(button.dataset.demo);
-    if (!fixture) return;
-    urlInput.value = fixture.request.submitted_url;
-    renderFixture(fixture);
+    if (fixture) loadFixture(fixture);
   });
 }
 
@@ -395,10 +577,7 @@ async function loadFixtures() {
     const response = await fetch(FIXTURE_BUNDLE_URL, { headers: { Accept: "application/json" } });
     if (!response.ok) throw new Error(`Fixture bundle returned HTTP ${response.status}.`);
     const bundle = await response.json();
-    if (bundle.schema_version !== "1.0" || !Array.isArray(bundle.fixtures)) {
-      throw new Error("Fixture bundle format is invalid.");
-    }
-
+    if (bundle.schema_version !== "1.0" || !Array.isArray(bundle.fixtures)) throw new Error("Fixture bundle format is invalid.");
     for (const fixture of bundle.fixtures) {
       fixtureByRecommendation.set(fixture.analysis.recommendation, fixture);
       fixtureByUrl.set(normalizeUrl(fixture.request.submitted_url), fixture);

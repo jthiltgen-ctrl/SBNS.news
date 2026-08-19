@@ -10,6 +10,7 @@
     "submitted_url": "https://example.com/synthetic-municipal-contracting-allegation",
     "submitted_at": "2026-08-19T12:00:00Z",
     "analysis_status": "held",
+    "intake_origin": "editor",
     "recommendation": "hold",
     "recommendation_confidence": "high",
     "recommendation_reasons": [

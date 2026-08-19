@@ -10,6 +10,7 @@
     "submitted_url",
     "submitted_at",
     "analysis_status",
+    "intake_origin",
     "recommendation",
     "recommendation_confidence",
     "recommendation_reasons",
@@ -221,6 +222,9 @@
         "published",
         "publish_failed"
       ]
+    },
+    "intake_origin": {
+      "enum": ["editor", "visitor", "monitor", "discovery"]
     },
     "recommendation": { "enum": ["publish", "hold", "reject"] },
     "recommendation_confidence": { "$ref": "#/$defs/confidence" },
