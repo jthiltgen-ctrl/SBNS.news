@@ -2,6 +2,7 @@
 
 const FIXTURE_BUNDLE_URL = "/admin/intake-fixtures.json";
 const CATEGORIES = ["International", "National", "Local"];
+const STORY_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const fixtureByRecommendation = new Map();
 const fixtureByUrl = new Map();
 let currentReview = null;
@@ -51,6 +52,18 @@ function normalizeTags(value) {
   return tags;
 }
 
+function slugFromHeadline(value) {
+  const slug = value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 72)
+    .replace(/-$/g, "");
+  return slug || "untitled-reporting-story";
+}
+
 function setStatus(message) {
   status.textContent = message;
 }
@@ -80,6 +93,9 @@ function analysisHasDraft(analysis) {
 function draftFromAnalysis(analysis) {
   if (!analysisHasDraft(analysis)) return null;
   return {
+    id: analysis.intake_id === "historical-story-005-dubuque-budget-audit"
+      ? "phase-d-publication-demo"
+      : slugFromHeadline(analysis.proposed_headline),
     headline: analysis.proposed_headline,
     summary: analysis.proposed_summary,
     kicker: analysis.proposed_fml_kicker,
@@ -90,7 +106,7 @@ function draftFromAnalysis(analysis) {
 }
 
 function neutralDraft(analysis) {
-  return { headline: "", summary: "", kicker: "", category: analysis.category, severity: analysis.severity, tags: [] };
+  return { id: "", headline: "", summary: "", kicker: "", category: analysis.category, severity: analysis.severity, tags: [] };
 }
 
 function availableDraftSources(analysis) {
@@ -107,7 +123,7 @@ function draftChanged() {
 }
 
 function hasEditorialState() {
-  return Boolean(currentReview && (draftChanged() || currentReview.humanDecision !== null));
+  return Boolean(currentReview && (draftChanged() || currentReview.humanDecision !== null || currentReview.guardrailsAcknowledged));
 }
 
 function confirmDiscard() {
@@ -343,14 +359,71 @@ function approvalFailures() {
   const draft = currentReview?.workingDraft;
   const failures = [];
   if (!draft) return ["Start an editorial draft before approving."];
+  if (!STORY_ID_PATTERN.test(draft.id)) failures.push("Story ID must be a lowercase slug using letters, numbers, and single hyphens.");
   if (!draft.headline.trim()) failures.push("Headline is required.");
   if (!draft.summary.trim()) failures.push("Summary is required.");
   if (!draft.kicker.trim()) failures.push("Kicker is required.");
   if (!CATEGORIES.includes(draft.category)) failures.push("Choose a valid category.");
   if (!Number.isInteger(draft.severity) || draft.severity < 1 || draft.severity > 5) failures.push("Choose a severity from 1 through 5.");
   if (draft.tags.length === 0) failures.push("Add at least one topic tag.");
-  if (availableDraftSources(currentReview.fixture.analysis).length === 0) failures.push("At least one proposed source is required.");
+  const sources = availableDraftSources(currentReview.fixture.analysis);
+  if (sources.length === 0) failures.push("At least one proposed source is required.");
+  else if (sources.some((source) => {
+    try {
+      const url = new URL(source.url);
+      return !source.name?.trim() || (url.protocol !== "http:" && url.protocol !== "https:");
+    } catch {
+      return true;
+    }
+  })) failures.push("Every proposed source requires a name and valid HTTP or HTTPS URL.");
   return failures;
+}
+
+function invalidateApproval(message = true) {
+  const invalidated = currentReview.humanDecision === "approve" || currentReview.approvedAt !== null;
+  currentReview.humanDecision = null;
+  currentReview.approvedAt = null;
+  currentReview.guardrailsAcknowledged = false;
+  currentReview.publicationPackage = null;
+  currentReview.approvalInvalidated = invalidated && message;
+}
+
+function buildPublicationPackage() {
+  const analysis = currentReview.fixture.analysis;
+  const draft = currentReview.workingDraft;
+  return {
+    schema_version: "1.0",
+    approved_at: currentReview.approvedAt,
+    human_decision: "approve",
+    source_analysis: {
+      intake_id: analysis.intake_id,
+      intake_origin: analysis.intake_origin,
+      submitted_url: analysis.submitted_url,
+      recommendation: analysis.recommendation
+    },
+    story: {
+      id: draft.id,
+      content_type: "reporting",
+      category: draft.category,
+      headline: draft.headline.trim(),
+      summary: draft.summary.trim(),
+      fml_kicker: draft.kicker.trim(),
+      severity: draft.severity,
+      topic_tags: [...draft.tags],
+      sources: availableDraftSources(analysis).map(({ name, url }) => ({ name, url }))
+    },
+    editorial_guardrails: {
+      do_not_claim: [...analysis.do_not_claim],
+      qualification_required: analysis.qualification_required
+    }
+  };
+}
+
+function canPreparePublication() {
+  return currentReview.humanDecision === "approve"
+    && currentReview.approvedAt !== null
+    && currentReview.guardrailsAcknowledged
+    && approvalFailures().length === 0;
 }
 
 function expectedDecision(recommendation) {
@@ -375,6 +448,15 @@ function syncEditorialUi(panel, clearErrors = false) {
     decisionState.textContent = `HUMAN DECISION: ${currentReview.humanDecision.toUpperCase()}`;
     decisionState.className = "decision-state";
   }
+  const approvalTimestamp = panel.querySelector("[data-approval-timestamp]");
+  approvalTimestamp.textContent = currentReview.approvedAt
+    ? `Approval timestamp: ${currentReview.approvedAt}`
+    : "Approval timestamp: Not recorded";
+  const invalidation = panel.querySelector("[data-approval-invalidation]");
+  invalidation.hidden = !currentReview.approvalInvalidated;
+  invalidation.textContent = currentReview.approvalInvalidated
+    ? "Editorial copy changed after approval. Approval must be recorded again."
+    : "";
   for (const button of panel.querySelectorAll("[data-decision]")) {
     button.setAttribute("aria-pressed", String(button.dataset.decision === currentReview.humanDecision));
   }
@@ -388,6 +470,7 @@ function syncEditorialUi(panel, clearErrors = false) {
   }
   if (clearErrors) panel.querySelector("[data-approval-errors]").replaceChildren();
   renderPreview(panel.querySelector("[data-editorial-preview]"));
+  syncPublicationUi(panel);
 }
 
 function renderApprovalErrors(container, failures) {
@@ -404,6 +487,8 @@ function renderDecisionControls(panel) {
   panel.append(
     createElement("p", { className: "ephemeral-note", text: "This decision exists only in this browser session. It is not saved and does not publish anything." }),
     createElement("p", { className: "decision-state none", text: "HUMAN DECISION: NOT SET", attributes: { "data-decision-state": "" } }),
+    createElement("p", { className: "approval-timestamp", text: "Approval timestamp: Not recorded", attributes: { "data-approval-timestamp": "" } }),
+    createElement("p", { className: "approval-invalidation", attributes: { "data-approval-invalidation": "", hidden: "" } }),
     createElement("p", { className: "disagreement-state", attributes: { "data-disagreement": "", hidden: "" } }),
     createElement("div", { attributes: { "data-approval-errors": "", "aria-live": "polite" } })
   );
@@ -420,6 +505,10 @@ function renderDecisionControls(panel) {
         }
       } else panel.querySelector("[data-approval-errors]").replaceChildren();
       currentReview.humanDecision = decision;
+      currentReview.approvedAt = decision === "approve" ? new Date().toISOString() : null;
+      currentReview.guardrailsAcknowledged = false;
+      currentReview.publicationPackage = null;
+      currentReview.approvalInvalidated = false;
       syncEditorialUi(panel);
       setStatus(`Temporary human decision recorded: ${decision.toUpperCase()}. Nothing was saved or published.`);
     });
@@ -427,7 +516,7 @@ function renderDecisionControls(panel) {
   }
   const clear = createElement("button", { className: "clear-decision", text: "Clear decision", attributes: { type: "button" } });
   clear.addEventListener("click", () => {
-    currentReview.humanDecision = null;
+    invalidateApproval(false);
     panel.querySelector("[data-approval-errors]").replaceChildren();
     syncEditorialUi(panel);
     setStatus("Temporary human decision cleared.");
@@ -436,9 +525,105 @@ function renderDecisionControls(panel) {
   panel.append(controls);
 }
 
+function renderPublicationPackagePreview(container, pkg) {
+  container.replaceChildren(
+    createElement("p", { className: "preview-label", text: "PUBLICATION PACKAGE — NOT YET PUBLISHED" }),
+    createElement("p", { className: "preview-meta", text: `${pkg.story.id} · ${pkg.story.category} · Severity ${pkg.story.severity}` }),
+    createElement("h3", { text: pkg.story.headline }),
+    createElement("p", { text: pkg.story.summary }),
+    createElement("p", { className: "proposed-kicker", text: pkg.story.fml_kicker }),
+    createElement("p", { text: `Approval timestamp: ${pkg.approved_at}` }),
+    createElement("p", { text: `Analyzer recommendation: ${recommendationHeading(pkg.source_analysis.recommendation)}` }),
+    createElement("p", { text: `Intake origin: ${titleCase(pkg.source_analysis.intake_origin)}` }),
+    createElement("p", { text: `Qualification required: ${displayValue(pkg.editorial_guardrails.qualification_required)}` })
+  );
+  const tags = createElement("ul", { className: "tag-list" });
+  for (const tag of pkg.story.topic_tags) tags.append(createElement("li", { text: tag }));
+  container.append(tags, createElement("h3", { text: "Sources" }));
+  const sources = createElement("ul", { className: "panel-list" });
+  for (const source of pkg.story.sources) {
+    const item = createElement("li");
+    item.append(createElement("a", { text: source.name, attributes: { href: source.url, target: "_blank", rel: "noopener noreferrer" } }));
+    sources.append(item);
+  }
+  container.append(sources, createElement("h3", { text: "DO NOT CLAIM" }));
+  appendList(container, pkg.editorial_guardrails.do_not_claim);
+}
+
+function downloadPublicationPackage(pkg) {
+  const body = `${JSON.stringify(pkg, null, 2)}\n`;
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = createElement("a", { attributes: { href: url, download: `sbns-publication-${pkg.story.id}.json` } });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function syncPublicationUi(panel) {
+  const acknowledgement = panel.querySelector("[data-guardrail-acknowledgement]");
+  acknowledgement.checked = currentReview.guardrailsAcknowledged;
+  acknowledgement.disabled = currentReview.humanDecision !== "approve";
+  const prepare = panel.querySelector("[data-prepare-package]");
+  prepare.disabled = !canPreparePublication();
+  const download = panel.querySelector("[data-download-package]");
+  download.hidden = currentReview.publicationPackage === null;
+  panel.querySelector("[data-copy-package]").hidden = currentReview.publicationPackage === null;
+  const preview = panel.querySelector("[data-publication-package-preview]");
+  if (currentReview.publicationPackage) renderPublicationPackagePreview(preview, currentReview.publicationPackage);
+  else preview.replaceChildren();
+}
+
+function renderPublicationControls(panel) {
+  const section = createElement("section", { className: "publication-controls" });
+  section.append(
+    createElement("h3", { text: "Publication package" }),
+    createElement("p", { className: "ephemeral-note", text: "A package is browser-generated only after human approval. It is not publication and is never sent to a server." })
+  );
+  const acknowledgementRow = createElement("label", { className: "guardrail-acknowledgement" });
+  const acknowledgement = createElement("input", { attributes: { type: "checkbox", "data-guardrail-acknowledgement": "" } });
+  acknowledgement.addEventListener("change", () => {
+    currentReview.guardrailsAcknowledged = acknowledgement.checked;
+    currentReview.publicationPackage = null;
+    syncEditorialUi(panel);
+  });
+  acknowledgementRow.append(acknowledgement, document.createTextNode("I reviewed the DO NOT CLAIM warnings and qualifications for this draft."));
+  const actions = createElement("div", { className: "publication-actions" });
+  const prepare = createElement("button", { text: "Prepare publication package", attributes: { type: "button", "data-prepare-package": "" } });
+  prepare.addEventListener("click", () => {
+    if (!canPreparePublication()) return;
+    currentReview.publicationPackage = buildPublicationPackage();
+    syncPublicationUi(panel);
+    setStatus("Publication package prepared locally. Nothing was published or sent to a server.");
+  });
+  const download = createElement("button", { text: "Download publication package", attributes: { type: "button", "data-download-package": "", hidden: "" } });
+  download.addEventListener("click", () => {
+    if (currentReview.publicationPackage) downloadPublicationPackage(currentReview.publicationPackage);
+  });
+  const copy = createElement("button", { text: "Copy publication package", attributes: { type: "button", "data-copy-package": "", hidden: "" } });
+  copy.addEventListener("click", async () => {
+    if (!currentReview.publicationPackage) return;
+    try {
+      await navigator.clipboard.writeText(`${JSON.stringify(currentReview.publicationPackage, null, 2)}\n`);
+      setStatus("Publication package copied locally. Nothing was published or sent to a server.");
+    } catch {
+      setStatus("Clipboard access was unavailable. Use Download publication package instead.");
+    }
+  });
+  actions.append(prepare, download, copy);
+  section.append(acknowledgementRow, actions, createElement("section", { className: "publication-package-preview", attributes: { "data-publication-package-preview": "", "aria-live": "polite" } }));
+  panel.append(section);
+}
+
 function bindDraftControl(control, fieldName, panel, transform = (value) => value) {
   control.addEventListener(control.tagName === "SELECT" ? "change" : "input", () => {
+    const wasApproved = currentReview.humanDecision === "approve";
     currentReview.workingDraft[fieldName] = transform(control.value);
+    if (wasApproved) invalidateApproval();
+    else {
+      currentReview.publicationPackage = null;
+      currentReview.guardrailsAcknowledged = false;
+    }
     syncEditorialUi(panel, true);
     setStatus("Editorial draft updated locally. Changes are not saved.");
   });
@@ -464,6 +649,8 @@ function renderEditorialWorkspace(analysis) {
   } else {
     const draftForm = createElement("form", { className: "editorial-form", attributes: { "aria-label": "Editable proposed story" } });
     draftForm.addEventListener("submit", (event) => event.preventDefault());
+    const storyId = createTextControl("editor-story-id", currentReview.workingDraft.id);
+    storyId.setAttribute("pattern", "[a-z0-9]+(?:-[a-z0-9]+)*");
     const headline = createTextControl("editor-headline", currentReview.workingDraft.headline);
     const summary = createTextControl("editor-summary", currentReview.workingDraft.summary, true);
     const kicker = createTextControl("editor-kicker", currentReview.workingDraft.kicker, true);
@@ -471,11 +658,12 @@ function renderEditorialWorkspace(analysis) {
     const severity = createSelectControl("editor-severity", [1, 2, 3, 4, 5], currentReview.workingDraft.severity, "Not selected");
     const tags = createTextControl("editor-tags", currentReview.workingDraft.tags.join(", "));
     tags.setAttribute("aria-describedby", "tag-help");
-    draftForm.append(createField("Headline", headline, "headline"), createField("Summary", summary, "summary"), createField("Kicker", kicker, "kicker"));
+    draftForm.append(createField("Story ID", storyId, "id"), createField("Headline", headline, "headline"), createField("Summary", summary, "summary"), createField("Kicker", kicker, "kicker"));
     const grid = createElement("div", { className: "editorial-grid" });
     grid.append(createField("Category", category, "category"), createField("Severity", severity, "severity"));
     draftForm.append(grid, createField("Tags (comma-separated)", tags, "tags"));
     draftForm.append(createElement("p", { className: "decision-note", text: "Tags are trimmed, empty entries are discarded, and exact duplicates keep their first occurrence.", attributes: { id: "tag-help" } }));
+    bindDraftControl(storyId, "id", panel, (value) => value.trim());
     bindDraftControl(headline, "headline", panel);
     bindDraftControl(summary, "summary", panel);
     bindDraftControl(kicker, "kicker", panel);
@@ -485,9 +673,10 @@ function renderEditorialWorkspace(analysis) {
     const actions = createElement("div", { className: "editorial-actions" });
     const reset = createElement("button", { text: "Reset to analyzer proposal", attributes: { type: "button" } });
     reset.addEventListener("click", () => {
+      invalidateApproval();
       currentReview.workingDraft = currentReview.originalDraft ? structuredClone(currentReview.originalDraft) : null;
       renderCurrentReview();
-      setStatus("Editorial copy reset. Human decision was not changed.");
+      setStatus("Editorial copy reset. Any prior approval and guardrail acknowledgement were cleared.");
     });
     actions.append(reset);
     draftForm.append(actions);
@@ -495,6 +684,7 @@ function renderEditorialWorkspace(analysis) {
   }
   panel.append(createElement("section", { className: "editorial-preview", attributes: { "data-editorial-preview": "", "aria-live": "polite" } }));
   renderDecisionControls(panel);
+  renderPublicationControls(panel);
   queueMicrotask(() => syncEditorialUi(panel));
   return panel;
 }
@@ -521,7 +711,11 @@ function loadFixture(fixture) {
     fixture: fixtureCopy,
     originalDraft: analyzerDraft ? structuredClone(analyzerDraft) : null,
     workingDraft: analyzerDraft ? structuredClone(analyzerDraft) : null,
-    humanDecision: null
+    humanDecision: null,
+    approvedAt: null,
+    guardrailsAcknowledged: false,
+    publicationPackage: null,
+    approvalInvalidated: false
   };
   urlInput.value = fixtureCopy.request.submitted_url;
   renderCurrentReview();

@@ -10,8 +10,12 @@
     "intake:build": "node scripts/intake.mjs build",
     "intake:check": "node scripts/intake.mjs check",
     "intake:test": "node scripts/intake.mjs test",
+    "publication:check": "node scripts/publish.mjs check",
+    "publication:test": "node scripts/publish.mjs test",
+    "publish:check": "node scripts/publish.mjs check",
+    "publish:prepare": "node scripts/publish.mjs prepare",
     "dev": "npm run content:build && npm run intake:build && wrangler dev",
-    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check public/app.js && node --check public/admin/admin.js && node --check src/index.js && wrangler deploy --dry-run"
+    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && npm run publication:check && npm run publication:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check scripts/publish.mjs && node --check public/app.js && node --check public/admin/admin.js && node --check src/index.js && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.124.0"
