@@ -1,0 +1,86 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "submitted_url": "https://example.com/synthetic-municipal-contracting-allegation",
+    "submitted_at": "2026-08-19T12:00:00Z"
+  },
+  "analysis": {
+    "schema_version": "1.0",
+    "intake_id": "synthetic-hold-insufficient-evidence",
+    "submitted_url": "https://example.com/synthetic-municipal-contracting-allegation",
+    "submitted_at": "2026-08-19T12:00:00Z",
+    "analysis_status": "held",
+    "recommendation": "hold",
+    "recommendation_confidence": "high",
+    "recommendation_reasons": [
+      "The allegation could have systemic accountability relevance if primary records substantiate it."
+    ],
+    "hold_reasons": [
+      "No underlying audit, contract record, inspector report, or other primary documentation is available.",
+      "The institution has not responded.",
+      "The core claim that required review was repeatedly bypassed remains unverified."
+    ],
+    "reject_reasons": [],
+    "category": "Local",
+    "category_confidence": "medium",
+    "systemic_failure": false,
+    "failure_type": null,
+    "consequence_significance": null,
+    "primary_source_available": false,
+    "independent_source_available": true,
+    "authoritative_source_available": false,
+    "institution_response_present": false,
+    "sources": [
+      {
+        "source_id": "synthetic-news-report",
+        "name": "Synthetic Fixture News Report — not a real allegation",
+        "url": "https://example.com/synthetic-municipal-contracting-allegation",
+        "source_type": "independent_reporting",
+        "authority": "Synthetic test fixture with no evidentiary authority",
+        "recency": "Synthetic current-date fixture",
+        "claims_supported": ["claim-repeated-review-bypass"]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "claim-repeated-review-bypass",
+        "claim_text": "A synthetic news report alleges that a municipal contracting system repeatedly bypassed required review.",
+        "material": true,
+        "verification_status": "unverified",
+        "source_refs": ["synthetic-news-report"],
+        "qualification": "No primary record or institutional response is available; this fixture is not a real allegation.",
+        "conflict": false
+      }
+    ],
+    "source_conflicts": [],
+    "observed_condition": "A synthetic report alleges repeated bypassing of required municipal contract review.",
+    "attributable_failure": null,
+    "causation_supported": false,
+    "specific_harm_causation": null,
+    "qualification_required": true,
+    "sensitive_subject": false,
+    "victim_targeting_risk": "low",
+    "factual_risk": "high",
+    "legal_risk": "medium",
+    "duplication_risk": "low",
+    "related_story_ids": [],
+    "severity": null,
+    "severity_rationale": null,
+    "kicker_target": null,
+    "kicker_safety": "not_applicable",
+    "why_sbns": "The alleged repeated control bypass could fit SBNS, but the systemic failure is not established by available evidence.",
+    "do_not_claim": [
+      "Do not claim that the municipality repeatedly bypassed required review unless primary records verify the allegation.",
+      "Do not imply an institutional response that has not been obtained."
+    ],
+    "proposed_headline": null,
+    "proposed_summary": null,
+    "proposed_fml_kicker": null,
+    "proposed_topic_tags": [],
+    "proposed_sources": [],
+    "human_decision": null,
+    "human_edits": [],
+    "approved_at": null,
+    "published_at": null
+  }
+}

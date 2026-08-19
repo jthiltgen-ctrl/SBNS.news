@@ -1,0 +1,83 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "submitted_url": "https://example.com/synthetic-isolated-rude-employee",
+    "submitted_at": "2026-08-19T13:00:00Z"
+  },
+  "analysis": {
+    "schema_version": "1.0",
+    "intake_id": "synthetic-reject-no-systemic-failure",
+    "submitted_url": "https://example.com/synthetic-isolated-rude-employee",
+    "submitted_at": "2026-08-19T13:00:00Z",
+    "analysis_status": "rejected",
+    "recommendation": "reject",
+    "recommendation_confidence": "high",
+    "recommendation_reasons": [
+      "The available account describes only isolated individual conduct."
+    ],
+    "hold_reasons": [],
+    "reject_reasons": [
+      "Isolated individual conduct without broader accountability relevance."
+    ],
+    "category": "Local",
+    "category_confidence": "medium",
+    "systemic_failure": false,
+    "failure_type": null,
+    "consequence_significance": null,
+    "primary_source_available": false,
+    "independent_source_available": false,
+    "authoritative_source_available": false,
+    "institution_response_present": false,
+    "sources": [
+      {
+        "source_id": "synthetic-incident-account",
+        "name": "Synthetic Fixture Incident Account — not a real allegation",
+        "url": "https://example.com/synthetic-isolated-rude-employee",
+        "source_type": "other",
+        "authority": "Synthetic test fixture with no real-world subject",
+        "recency": "Synthetic current-date fixture",
+        "claims_supported": ["claim-isolated-rudeness"]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "claim-isolated-rudeness",
+        "claim_text": "In a synthetic scenario, one public employee behaved rudely during one isolated interaction.",
+        "material": true,
+        "verification_status": "verified",
+        "source_refs": ["synthetic-incident-account"],
+        "qualification": "No policy, repeated practice, supervisory failure, institutional consequence, or systemic issue is demonstrated.",
+        "conflict": false
+      }
+    ],
+    "source_conflicts": [],
+    "observed_condition": "One synthetic public employee behaved rudely in one isolated incident.",
+    "attributable_failure": null,
+    "causation_supported": false,
+    "specific_harm_causation": null,
+    "qualification_required": false,
+    "sensitive_subject": false,
+    "victim_targeting_risk": "low",
+    "factual_risk": "low",
+    "legal_risk": "low",
+    "duplication_risk": "low",
+    "related_story_ids": [],
+    "severity": null,
+    "severity_rationale": null,
+    "kicker_target": null,
+    "kicker_safety": "not_applicable",
+    "why_sbns": "The isolated conduct does not establish an institutional or systemic failure and therefore does not fit SBNS.",
+    "do_not_claim": [
+      "Do not generalize one employee’s synthetic isolated conduct into a policy, practice, or supervisory failure."
+    ],
+    "proposed_headline": null,
+    "proposed_summary": null,
+    "proposed_fml_kicker": null,
+    "proposed_topic_tags": [],
+    "proposed_sources": [],
+    "human_decision": null,
+    "human_edits": [],
+    "approved_at": null,
+    "published_at": null
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "submitted_url": "https://cityofdubuque.org/2025acfr",
+    "submitted_at": "2026-08-18T18:00:00Z"
+  },
+  "analysis": {
+    "schema_version": "1.0",
+    "intake_id": "historical-story-005-dubuque-budget-audit",
+    "submitted_url": "https://cityofdubuque.org/2025acfr",
+    "submitted_at": "2026-08-18T18:00:00Z",
+    "analysis_status": "review_ready",
+    "recommendation": "publish",
+    "recommendation_confidence": "high",
+    "recommendation_reasons": [
+      "Authoritative audit records establish a municipal budget-control and statutory-compliance failure.",
+      "The finding has clear local-government accountability relevance and manageable editorial risk when the audit terminology is preserved."
+    ],
+    "hold_reasons": [],
+    "reject_reasons": [],
+    "category": "Local",
+    "category_confidence": "high",
+    "systemic_failure": true,
+    "failure_type": "Municipal budget control and statutory compliance",
+    "consequence_significance": "One city function exceeded its final authorized budget by $2,025,824, requiring a future budget-amendment control response.",
+    "primary_source_available": true,
+    "independent_source_available": true,
+    "authoritative_source_available": true,
+    "institution_response_present": true,
+    "sources": [
+      {
+        "source_id": "dubuque-acfr",
+        "name": "City of Dubuque — FY2025 Annual Comprehensive Financial Report",
+        "url": "https://cityofdubuque.org/2025acfr",
+        "source_type": "audit",
+        "authority": "Independent audit report published by the audited municipality",
+        "recency": "Fiscal 2025 report current at the time of the historical editorial decision",
+        "claims_supported": ["claim-clean-opinion", "claim-budget-overrun", "claim-city-response", "claim-no-questionable-expenditures"]
+      },
+      {
+        "source_id": "dubuque-announcement",
+        "name": "City of Dubuque — FY2025 clean audit announcement",
+        "url": "https://www.cityofdubuque.org/m/newsflash/home/detail/6766",
+        "source_type": "official_response",
+        "authority": "Official City of Dubuque characterization of the audit",
+        "recency": "Contemporaneous city announcement",
+        "claims_supported": ["claim-clean-opinion"]
+      },
+      {
+        "source_id": "iowa-chapter-384",
+        "name": "Iowa Legislature — Chapter 384, City Finance",
+        "url": "https://www.legis.iowa.gov/law/iowaCode/sections?codeChapter=384&year=2025",
+        "source_type": "government",
+        "authority": "Official Iowa Code source",
+        "recency": "2025 Iowa Code applicable to the audited fiscal year",
+        "claims_supported": ["claim-budget-overrun"]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "claim-clean-opinion",
+        "claim_text": "Independent auditors issued an unmodified financial-statement opinion and reported no financial-statement or federal-award findings.",
+        "material": true,
+        "verification_status": "verified_with_qualification",
+        "source_refs": ["dubuque-acfr", "dubuque-announcement"],
+        "qualification": "clean_audit != no_findings: an unmodified financial-statement opinion can coexist with statutory-reporting findings.",
+        "conflict": false
+      },
+      {
+        "claim_id": "claim-budget-overrun",
+        "claim_text": "Community and economic development expenditures were $21,502,546 against a final budget of $19,476,722, exceeding the authorized amount by $2,025,824.",
+        "material": true,
+        "verification_status": "verified",
+        "source_refs": ["dubuque-acfr", "iowa-chapter-384"],
+        "qualification": "This is a statutory budget-control finding, not evidence that funds were missing or stolen.",
+        "conflict": false
+      },
+      {
+        "claim_id": "claim-city-response",
+        "claim_text": "The City said it would amend the budget in the future if applicable.",
+        "material": false,
+        "verification_status": "verified",
+        "source_refs": ["dubuque-acfr"],
+        "qualification": null,
+        "conflict": false
+      },
+      {
+        "claim_id": "claim-no-questionable-expenditures",
+        "claim_text": "The audit reported no questionable expenditures.",
+        "material": true,
+        "verification_status": "verified",
+        "source_refs": ["dubuque-acfr"],
+        "qualification": "The budget-control finding must not be reframed as fraud, theft, missing money, or questionable expenditures.",
+        "conflict": false
+      }
+    ],
+    "source_conflicts": [],
+    "observed_condition": "One municipal function spent $2,025,824 beyond its final authorized fiscal 2025 budget.",
+    "attributable_failure": "The budget was not amended before disbursements exceeded the authorized amount.",
+    "causation_supported": true,
+    "specific_harm_causation": null,
+    "qualification_required": true,
+    "sensitive_subject": false,
+    "victim_targeting_risk": "low",
+    "factual_risk": "low",
+    "legal_risk": "low",
+    "duplication_risk": "low",
+    "related_story_ids": ["dubuque-fy2025-budget-audit-overrun"],
+    "severity": 2,
+    "severity_rationale": "A clear municipal control and statutory-compliance failure with a material budget variance but no audit finding of questionable expenditures.",
+    "kicker_target": "The municipal budget-control failure",
+    "kicker_safety": "acceptable",
+    "why_sbns": "The audit documents a concrete local-government control failure while illustrating why a clean financial-statement opinion does not mean an audit contained no findings.",
+    "do_not_claim": [
+      "Do not claim that the budget-control finding establishes fraud, theft, missing money, or questionable expenditures.",
+      "Do not claim that a clean financial-statement opinion means the audit contained no statutory findings."
+    ],
+    "proposed_headline": "Dubuque’s ‘Clean’ FY2025 Audit Still Flagged $2 Million Over Budget in One Function",
+    "proposed_summary": "Independent auditors gave the City of Dubuque an unmodified opinion on its fiscal 2025 financial statements and reported no financial-statement or federal-award findings. But the audit’s statutory-reporting section found that community and economic development expenditures totaled $21,502,546 against a final budget of $19,476,722, exceeding the budget by $2,025,824. The auditors cited Iowa law governing municipal appropriations and recommended that the budget should have been amended before disbursements were allowed to exceed the authorized amount. The City said it would amend the budget in the future if applicable. The audit reported no questionable expenditures.",
+    "proposed_fml_kicker": "The financial statements were clean. One function still treated its $19.5 million ceiling like a suggestion.",
+    "proposed_topic_tags": ["Dubuque", "local government", "budget", "audit", "public finance"],
+    "proposed_sources": [
+      {
+        "name": "City of Dubuque — FY2025 Annual Comprehensive Financial Report",
+        "url": "https://cityofdubuque.org/2025acfr"
+      },
+      {
+        "name": "City of Dubuque — FY2025 clean audit announcement",
+        "url": "https://www.cityofdubuque.org/m/newsflash/home/detail/6766"
+      },
+      {
+        "name": "Iowa Legislature — Chapter 384, City Finance",
+        "url": "https://www.legis.iowa.gov/law/iowaCode/sections?codeChapter=384&year=2025"
+      }
+    ],
+    "human_decision": null,
+    "human_edits": [],
+    "approved_at": null,
+    "published_at": null
+  }
+}
