@@ -1,0 +1,32 @@
+{
+  "id": "doj-savannas-act-mmip-oig-review",
+  "status": "published",
+  "content_type": "reporting",
+  "category": "National",
+  "headline": "DOJ Watchdog Finds Savanna’s Act Compliance Gaps and 40% Vacancy in MMIP Outreach Program",
+  "summary": "The Justice Department Office of the Inspector General found that 10 of 49 guidelines submitted by U.S. Attorney districts with Indian country did not include all required Savanna’s Act sections or were not tailored to district circumstances. The audit also found that the Department’s Missing or Murdered Indigenous Persons Regional Outreach Program had four vacancies among its 10 allocated positions as of February 2026, a 40 percent vacancy rate, and that the Executive Office for U.S. Attorneys lacked a standardized definition of MMIP-related work and performance metrics for the program. EOUSA agreed with all three OIG recommendations and said it would coordinate guideline revisions, work to address staffing vacancies, and establish formal program expectations, definitions and metrics.",
+  "fml_kicker": "A law built around coordination met a program missing 40 percent of its staff and still waiting on a common definition of the work.",
+  "severity": 4,
+  "topic_tags": [
+    "DOJ",
+    "Savanna’s Act",
+    "MMIP",
+    "Indigenous communities",
+    "oversight"
+  ],
+  "sources": [
+    {
+      "name": "U.S. Department of Justice Office of the Inspector General — full audit",
+      "url": "https://oig.justice.gov/reports/audit-united-states-attorneys-offices-compliance-savannas-act-2020-and-their-efforts"
+    },
+    {
+      "name": "U.S. Department of Justice Office of the Inspector General — report release",
+      "url": "https://oig.justice.gov/news/doj-oig-releases-report-united-states-attorneys-offices-compliance-savannas-act-2020-and-their"
+    },
+    {
+      "name": "U.S. Department of Justice — Savanna’s Act",
+      "url": "https://www.justice.gov/tribal/mmip/SavannasAct"
+    }
+  ],
+  "published_at": "2026-08-19T04:02:24Z"
+}
