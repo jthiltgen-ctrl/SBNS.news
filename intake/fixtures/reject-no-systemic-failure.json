@@ -10,6 +10,7 @@
     "submitted_url": "https://example.com/synthetic-isolated-rude-employee",
     "submitted_at": "2026-08-19T13:00:00Z",
     "analysis_status": "rejected",
+    "intake_origin": "editor",
     "recommendation": "reject",
     "recommendation_confidence": "high",
     "recommendation_reasons": [

@@ -401,6 +401,9 @@ async function runTests() {
   mutate("request/analysis URL mismatch", hold, (value) => {
     value.analysis.submitted_url = "https://example.com/different-synthetic-url";
   });
+  mutate("invalid intake origin", publish, (value) => {
+    value.analysis.intake_origin = "unknown";
+  });
 
   return tests;
 }
