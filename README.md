@@ -1,6 +1,6 @@
 # Shocked But Not Surprised
 
-SBNS v1 is a minimal Cloudflare Worker with Static Assets. The Worker owns the
+SBNS v1.2 is a minimal Cloudflare Worker with Static Assets. The Worker owns the
 `/api/` namespace, while all other requests are served from `public/` through
 the `ASSETS` binding. The prototype has no database or persistent storage.
 
@@ -8,6 +8,7 @@ the `ASSETS` binding. The prototype has no database or persistent storage.
 
 ```sh
 npm ci
+npm run content:build
 npm run dev
 ```
 
@@ -17,8 +18,9 @@ npm run dev
 npm run check
 ```
 
-`npm run check` performs a Wrangler dry run. It validates and packages the
-application locally; it does not deploy.
+`npm run check` validates source-controlled editorial content, verifies that the
+generated feed is current, runs content and JavaScript checks, and performs a
+Wrangler dry run. It does not deploy.
 
 ## API
 
@@ -26,18 +28,18 @@ application locally; it does not deploy.
 - Every other `/api/` route returns a JSON 404 response.
 - Non-API requests are served from Static Assets.
 
-## Content
+## Editorial content
 
-Edit `public/stories.json` to add published stories. Each story accepts:
+Each story is maintained as one JSON file in `content/stories/`. Start from
+`content/story-template.json` and follow [EDITORIAL.md](EDITORIAL.md).
 
-- `headline`
-- `summary`
-- `fml_kicker`
-- `category`
-- `source`
-- `topic_tags`
-- `severity` (1–5)
-- `published_at` (ISO 8601)
+```sh
+npm run content:build
+npm run content:check
+```
+
+`public/stories.json` is generated deterministically from published source
+files. Do not edit it manually. Drafts are validated but never included.
 
 The two legacy GreenGeeks `deploy.yml` files are intentionally retained for
 historical compatibility. This Cloudflare baseline does not invoke them.

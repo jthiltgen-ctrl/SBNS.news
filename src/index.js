@@ -18,7 +18,7 @@ export default {
         ok: true,
         name: "Shocked But Not Surprised",
         acronym: "SBNS",
-        version: "prototype v1",
+        version: "prototype v1.2",
       });
     }
 

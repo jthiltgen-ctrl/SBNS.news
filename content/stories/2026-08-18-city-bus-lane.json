@@ -1,0 +1,18 @@
+{
+  "id": "city-bus-lane-parked-cars",
+  "status": "published",
+  "content_type": "sample",
+  "category": "Local",
+  "headline": "FICTIONAL SAMPLE — City Paints Bus Lane Around Parked Cars",
+  "summary": "This event, city, and source are fictional and provided only as prototype content. An imaginary transportation department completes an imaginary bus lane without moving the imaginary vehicles blocking it.",
+  "fml_kicker": "FICTIONAL KICKER: Public transit now includes a scenic tour of municipal surrender.",
+  "severity": 2,
+  "topic_tags": ["prototype", "infrastructure"],
+  "sources": [
+    {
+      "name": "Fictional Neighborhood Gazette — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T08:00:00Z"
+}
