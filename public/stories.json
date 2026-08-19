@@ -1,5 +1,37 @@
 [
   {
+    "id": "dubuque-fy2025-budget-audit-overrun",
+    "status": "published",
+    "content_type": "reporting",
+    "category": "Local",
+    "headline": "Dubuque’s ‘Clean’ FY2025 Audit Still Flagged $2 Million Over Budget in One Function",
+    "summary": "Independent auditors gave the City of Dubuque an unmodified opinion on its fiscal 2025 financial statements and reported no financial-statement or federal-award findings. But the audit’s statutory-reporting section found that community and economic development expenditures totaled $21,502,546 against a final budget of $19,476,722, exceeding the budget by $2,025,824. The auditors cited Iowa law governing municipal appropriations and recommended that the budget should have been amended before disbursements were allowed to exceed the authorized amount. The City said it would amend the budget in the future if applicable. The audit reported no questionable expenditures.",
+    "fml_kicker": "The financial statements were clean. One function still treated its $19.5 million ceiling like a suggestion.",
+    "severity": 2,
+    "topic_tags": [
+      "Dubuque",
+      "local government",
+      "budget",
+      "audit",
+      "public finance"
+    ],
+    "sources": [
+      {
+        "name": "City of Dubuque — FY2025 Annual Comprehensive Financial Report",
+        "url": "https://cityofdubuque.org/2025acfr"
+      },
+      {
+        "name": "City of Dubuque — FY2025 clean audit announcement",
+        "url": "https://www.cityofdubuque.org/m/newsflash/home/detail/6766"
+      },
+      {
+        "name": "Iowa Legislature — Chapter 384, City Finance",
+        "url": "https://www.legis.iowa.gov/law/iowaCode/sections?codeChapter=384&year=2025"
+      }
+    ],
+    "published_at": "2026-08-19T04:27:47Z"
+  },
+  {
     "id": "uk-electronic-monitoring-expansion-watchdog",
     "status": "published",
     "content_type": "reporting",
