@@ -24,7 +24,13 @@ export async function listIntakes(env, { status = null, origin = null, limit = 5
   if (origin) { clauses.push("origin = ?"); values.push(origin); }
   values.push(limit);
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
-  const result = await database(env).prepare(`SELECT * FROM intakes${where} ORDER BY updated_at DESC, id ASC LIMIT ?`).bind(...values).all();
+  const result = await database(env).prepare(`SELECT intakes.*,
+    (SELECT recommendation FROM analyses WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_recommendation,
+    (SELECT category FROM analyses WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_category,
+    (SELECT severity FROM analyses WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_severity,
+    (SELECT revision FROM editorial_drafts WHERE intake_id = intakes.id ORDER BY revision DESC LIMIT 1) AS latest_draft_revision,
+    (SELECT decision FROM editorial_decisions WHERE intake_id = intakes.id ORDER BY decided_at DESC, id DESC LIMIT 1) AS latest_decision
+    FROM intakes${where} ORDER BY updated_at DESC, id ASC LIMIT ?`).bind(...values).all();
   return result.results;
 }
 
@@ -101,4 +107,70 @@ export async function listAuditEvents(env, entityType, entityId) {
 
 export async function getSchemaVersion(env) {
   return database(env).prepare("SELECT value FROM sbns_meta WHERE key = ?").bind("schema_version").first("value");
+}
+
+export async function getIdempotencyRecord(env, actorId, operation, key) {
+  return database(env).prepare("SELECT * FROM idempotency_records WHERE actor_id = ? AND operation = ? AND key = ?").bind(actorId, operation, key).first();
+}
+
+export async function getLatestDraft(env, intakeId) {
+  return database(env).prepare("SELECT * FROM editorial_drafts WHERE intake_id = ? ORDER BY revision DESC LIMIT 1").bind(intakeId).first();
+}
+
+export async function listDrafts(env, intakeId) {
+  const result = await database(env).prepare("SELECT * FROM editorial_drafts WHERE intake_id = ? ORDER BY revision ASC").bind(intakeId).all();
+  return result.results;
+}
+
+export async function getIntakeDetail(env, intakeId) {
+  const intake = await getIntake(env, intakeId);
+  if (!intake) return null;
+  const [analyses, drafts, decisions, audit] = await Promise.all([
+    database(env).prepare("SELECT * FROM analyses WHERE intake_id = ? ORDER BY created_at ASC").bind(intakeId).all(),
+    database(env).prepare("SELECT * FROM editorial_drafts WHERE intake_id = ? ORDER BY revision ASC").bind(intakeId).all(),
+    database(env).prepare("SELECT * FROM editorial_decisions WHERE intake_id = ? ORDER BY decided_at ASC").bind(intakeId).all(),
+    listAuditEvents(env, "intake", intakeId),
+  ]);
+  return { intake, analyses: analyses.results, drafts: drafts.results, decisions: decisions.results, audit };
+}
+
+function idempotencyStatement(env, record) {
+  return database(env).prepare(`INSERT INTO idempotency_records
+    (key, actor_id, operation, request_hash, response_status, response_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(record.key, record.actor_id, record.operation, record.request_hash, record.response_status, record.response_json, record.created_at);
+}
+
+function auditStatement(env, event) {
+  return database(env).prepare(`INSERT INTO audit_events
+    (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(event.id, event.actor_type, event.actor_id, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
+}
+
+export async function createIntakeWithAudit(env, intake, audit, idempotency) {
+  return database(env).batch([
+    database(env).prepare(`INSERT INTO intakes
+      (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(intake.id, intake.origin, intake.submitted_url, intake.submitted_at, intake.submitter_note ?? null, intake.status, intake.analysis_status, intake.created_at, intake.updated_at),
+    auditStatement(env, audit), idempotencyStatement(env, idempotency),
+  ]);
+}
+
+export async function createDraftWithAudit(env, draft, audit, idempotency) {
+  return database(env).batch([
+    database(env).prepare(`INSERT INTO editorial_drafts
+      (id, intake_id, revision, story_id, headline, summary, fml_kicker, category, severity, topic_tags_json, created_at, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(draft.id, draft.intake_id, draft.revision, draft.story_id ?? null, draft.headline, draft.summary, draft.fml_kicker, draft.category, draft.severity, draft.topic_tags_json, draft.created_at, draft.created_by),
+    database(env).prepare("UPDATE intakes SET updated_at = ? WHERE id = ?").bind(draft.created_at, draft.intake_id),
+    auditStatement(env, audit), idempotencyStatement(env, idempotency),
+  ]);
+}
+
+export async function createDecisionWithAudit(env, decision, status, audit, idempotency) {
+  return database(env).batch([
+    database(env).prepare(`INSERT INTO editorial_decisions
+      (id, intake_id, draft_id, decision, decided_by, decided_at, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(decision.id, decision.intake_id, decision.draft_id ?? null, decision.decision, decision.decided_by, decision.decided_at, decision.notes ?? null),
+    database(env).prepare("UPDATE intakes SET status = ?, updated_at = ? WHERE id = ?").bind(status, decision.decided_at, decision.intake_id),
+    auditStatement(env, audit), idempotencyStatement(env, idempotency),
+  ]);
 }

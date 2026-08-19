@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sbns-admin",
+  "main": "src/admin-index.js",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ADMIN_ASSETS",
+    "directory": "./public/admin-persistent",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "SBNS_DB",
+      "database_name": "sbns-editorial-staging",
+      "database_id": "66e016c7-928b-47e2-9bda-af411971910e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": { "enabled": true }
+}
