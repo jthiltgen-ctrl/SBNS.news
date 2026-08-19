@@ -32,6 +32,11 @@
     </header>
 
     <main>
+      <aside class="prototype-notice" aria-label="Prototype content notice">
+        <strong>Prototype Edition</strong>
+        <span>Every story shown below is fictional sample content for interface testing—not real reporting.</span>
+      </aside>
+
       <section class="briefing" aria-labelledby="briefing-title">
         <div>
           <p class="section-label">Today’s briefing</p>
@@ -39,6 +44,16 @@
         </div>
         <button id="refresh" type="button">Refresh stories</button>
       </section>
+
+      <nav class="filters" aria-label="Filter prototype stories by category">
+        <span class="filter-label">Edition desk</span>
+        <div class="filter-buttons" role="group" aria-label="Story categories">
+          <button class="filter-button active" type="button" data-category="All" aria-pressed="true">All</button>
+          <button class="filter-button" type="button" data-category="International" aria-pressed="false">International</button>
+          <button class="filter-button" type="button" data-category="National" aria-pressed="false">National</button>
+          <button class="filter-button" type="button" data-category="Local" aria-pressed="false">Local</button>
+        </div>
+      </nav>
 
       <p id="status" class="status" role="status">Loading the latest failures…</p>
       <section id="stories" class="story-grid" aria-live="polite"></section>

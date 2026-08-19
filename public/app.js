@@ -2,6 +2,10 @@ const storyGrid = document.querySelector("#stories");
 const status = document.querySelector("#status");
 const refreshButton = document.querySelector("#refresh");
 const dateline = document.querySelector("#dateline");
+const filterButtons = [...document.querySelectorAll(".filter-button")];
+
+let loadedStories = [];
+let activeCategory = "All";
 
 dateline.textContent = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
@@ -37,6 +41,10 @@ function renderStory(story) {
   const body = document.createElement("div");
   body.className = "story-body";
 
+  const sampleLabel = document.createElement("p");
+  sampleLabel.className = "fictional-label";
+  sampleLabel.textContent = "Fictional prototype sample — not real news";
+
   const meta = document.createElement("div");
   meta.className = "story-meta";
 
@@ -51,9 +59,21 @@ function renderStory(story) {
   summary.className = "summary";
   summary.textContent = text(story.summary, "Details are still developing.");
 
+  const source = document.createElement("div");
+  source.className = "source-area";
+
+  const sourceLabel = document.createElement("span");
+  sourceLabel.className = "source-label";
+  sourceLabel.textContent = "Fictional sample source";
+
+  const sourceName = document.createElement("span");
+  sourceName.className = "source-name";
+  sourceName.textContent = text(story.source, "Fictional Prototype Desk — not a real publication");
+  source.append(sourceLabel, sourceName);
+
   const tags = document.createElement("div");
   tags.className = "tags";
-  const labels = [story.source, ...(Array.isArray(story.topic_tags) ? story.topic_tags : [])];
+  const labels = Array.isArray(story.topic_tags) ? story.topic_tags : [];
   labels.filter(Boolean).forEach((label) => {
     const tag = document.createElement("span");
     tag.className = "tag";
@@ -65,9 +85,26 @@ function renderStory(story) {
   kicker.className = "kicker";
   kicker.textContent = text(story.fml_kicker, "The system remains confident in the system.");
 
-  body.append(meta, headline, summary, tags);
+  body.append(sampleLabel, meta, headline, summary, source, tags);
   article.append(body, kicker);
   return article;
+}
+
+function renderStories() {
+  storyGrid.replaceChildren();
+
+  const visibleStories = loadedStories.filter(
+    (story) => activeCategory === "All" || story.category === activeCategory,
+  );
+
+  if (visibleStories.length === 0) {
+    status.hidden = false;
+    status.textContent = `No fictional ${activeCategory.toLowerCase()} samples are available.`;
+    return;
+  }
+
+  visibleStories.slice(0, 50).forEach((story) => storyGrid.append(renderStory(story)));
+  status.hidden = true;
 }
 
 async function loadStories() {
@@ -83,17 +120,16 @@ async function loadStories() {
     const stories = await response.json();
     if (!Array.isArray(stories)) throw new Error("Story feed must be an array");
 
-    const sorted = stories.toSorted((a, b) =>
+    loadedStories = stories.toSorted((a, b) =>
       text(b.published_at).localeCompare(text(a.published_at)),
     );
 
-    if (sorted.length === 0) {
+    if (loadedStories.length === 0) {
       status.textContent = "No stories are published yet. A system somewhere is enjoying the silence.";
       return;
     }
 
-    sorted.slice(0, 50).forEach((story) => storyGrid.append(renderStory(story)));
-    status.hidden = true;
+    renderStories();
   } catch (error) {
     console.error("Unable to load stories", error);
     status.textContent = "The news failed to load. Shocked? Neither are we.";
@@ -101,6 +137,18 @@ async function loadStories() {
     refreshButton.disabled = false;
   }
 }
+
+filterButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    activeCategory = button.dataset.category;
+    filterButtons.forEach((candidate) => {
+      const isActive = candidate === button;
+      candidate.classList.toggle("active", isActive);
+      candidate.setAttribute("aria-pressed", String(isActive));
+    });
+    renderStories();
+  });
+});
 
 refreshButton.addEventListener("click", loadStories);
 loadStories();
