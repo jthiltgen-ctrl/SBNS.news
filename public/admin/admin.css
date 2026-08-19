@@ -64,6 +64,16 @@
   font-family: "Special Elite", monospace;
 }
 
+.admin-subnav {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #efb3b3;
+  font-family: "Barlow Condensed", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .admin-main {
   padding: 1.5rem 0 4rem;
 }
@@ -81,6 +91,28 @@
 
 .readonly-notice strong {
   font-size: 1.05rem;
+}
+
+.synthetic-warning {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  color: var(--ink);
+  background: #f3d58b;
+  border: 4px double var(--ink);
+}
+
+.synthetic-warning strong,
+.synthetic-inline {
+  font-family: "Barlow Condensed", sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.synthetic-inline {
+  color: var(--red);
 }
 
 .intake-card,
@@ -228,6 +260,11 @@ input:focus-visible,
 .recommendation-card.reject {
   border-top: 8px solid var(--red);
 }
+
+.recommendation-card.monitoring-no_action { border-top: 8px solid #477b53; }
+.recommendation-card.monitoring-update_review { border-top: 8px solid #4b6f91; }
+.recommendation-card.monitoring-correction_review { border-top: 8px solid var(--red); }
+.recommendation-card.monitoring-follow_up { border-top: 8px solid #d09a22; }
 
 .recommendation-title {
   margin: 0 0 1rem;
@@ -564,6 +601,74 @@ select:focus-visible {
   margin-top: 1rem;
 }
 
+.chronology-original,
+.chronology-new {
+  position: relative;
+}
+
+.chronology-original { border-left: 8px solid var(--ink); }
+.chronology-new { border-left: 8px solid var(--red); }
+
+.materiality-rationale {
+  padding: 1rem;
+  background: var(--paper-dark);
+  border-left: 5px solid var(--red);
+  font-weight: 600;
+}
+
+.impact-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.impact {
+  padding: 1rem;
+  background: #fffdf8;
+  border: 2px solid var(--border);
+}
+
+.impact.inaccurate,
+.impact.potentially_inaccurate { border-color: var(--red); }
+
+.proposal-panel {
+  border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--red);
+}
+
+.before-after {
+  display: grid;
+  gap: 1rem;
+}
+
+.comparison {
+  padding: 1rem;
+  background: #fffdf8;
+  border: 2px solid var(--border);
+}
+
+.comparison.before { border-top: 6px solid var(--red); }
+.comparison.after { border-top: 6px solid #477b53; }
+
+.monitor-decision-actions {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.monitor-decision-actions .clear-decision {
+  color: var(--ink);
+  background: var(--paper-dark);
+}
+
+.no-action-proposal strong {
+  display: block;
+  padding: 1rem;
+  color: var(--paper);
+  background: #355e3b;
+  font-family: "Barlow Condensed", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .publication-controls {
   margin-top: 1.5rem;
   padding-top: 1.25rem;
@@ -643,6 +748,14 @@ select:focus-visible {
 
   .publication-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .before-after {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monitor-decision-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .intake-card,
