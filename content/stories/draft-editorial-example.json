@@ -1,0 +1,13 @@
+{
+  "id": "draft-editorial-example",
+  "status": "draft",
+  "content_type": "reporting",
+  "category": "Local",
+  "headline": "Draft example - never included in the public feed",
+  "summary": "This committed draft demonstrates that editorial work can remain source-controlled without becoming public.",
+  "fml_kicker": "Draft copy stays backstage until a human editor says otherwise.",
+  "severity": 1,
+  "topic_tags": ["editorial-workflow"],
+  "sources": [],
+  "published_at": null
+}

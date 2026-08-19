@@ -1,0 +1,18 @@
+{
+  "id": "invented-grant-program",
+  "status": "published",
+  "content_type": "sample",
+  "category": "National",
+  "headline": "FICTIONAL SAMPLE — Invented Grant Program Funds Application Manual",
+  "summary": "No real program or people are described here; this is an invented UI sample. In the fictional scenario, nearly all of an imaginary public grant is spent explaining how to apply for what remains.",
+  "fml_kicker": "FICTIONAL KICKER: The help is available immediately after the 94-page help guide.",
+  "severity": 3,
+  "topic_tags": ["prototype", "public services"],
+  "sources": [
+    {
+      "name": "Imaginary Civic Wire — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T09:00:00Z"
+}

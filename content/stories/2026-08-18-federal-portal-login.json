@@ -1,0 +1,18 @@
+{
+  "id": "federal-portal-login-reset",
+  "status": "published",
+  "content_type": "sample",
+  "category": "National",
+  "headline": "FICTIONAL SAMPLE — Federal Portal Adds Login to Reset Login",
+  "summary": "This is fictional sample content, not reporting. An invented national agency launches an imaginary account-recovery system that requires users to access the account they cannot access.",
+  "fml_kicker": "FICTIONAL KICKER: Security is strongest when nobody can get in, including you.",
+  "severity": 2,
+  "topic_tags": ["prototype", "technology"],
+  "sources": [
+    {
+      "name": "Fictional National Record — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T10:00:00Z"
+}

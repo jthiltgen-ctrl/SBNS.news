@@ -1,11 +1,14 @@
 {
   "name": "sbns-news",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev",
-    "check": "wrangler deploy --dry-run"
+    "content:build": "node scripts/content.mjs build",
+    "content:check": "node scripts/content.mjs check",
+    "content:test": "node scripts/content.mjs test",
+    "dev": "npm run content:build && wrangler dev",
+    "check": "npm run content:check && npm run content:test && node --check scripts/content.mjs && node --check public/app.js && node --check src/index.js && wrangler deploy --dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.124.0"

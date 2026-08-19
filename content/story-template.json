@@ -1,0 +1,18 @@
+{
+  "id": "replace-with-stable-story-slug",
+  "status": "draft",
+  "content_type": "reporting",
+  "category": "National",
+  "headline": "Replace with a direct factual headline",
+  "summary": "Replace with a factual summary of what happened and who was affected.",
+  "fml_kicker": "Replace with one weary line that punches up at power.",
+  "severity": 3,
+  "topic_tags": ["replace-me"],
+  "sources": [
+    {
+      "name": "Replace with publication name",
+      "url": "https://example.com/replace-with-source-url"
+    }
+  ],
+  "published_at": null
+}

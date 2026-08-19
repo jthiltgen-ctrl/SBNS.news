@@ -279,6 +279,16 @@ button:focus-visible {
   line-height: 1.35;
 }
 
+a.source-name {
+  text-decoration-color: var(--red);
+  text-underline-offset: 0.18em;
+}
+
+a.source-name:hover,
+a.source-name:focus-visible {
+  color: var(--red);
+}
+
 .tags {
   display: flex;
   flex-wrap: wrap;

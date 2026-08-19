@@ -1,68 +1,128 @@
 [
   {
+    "id": "ministry-committee-study",
+    "status": "published",
+    "content_type": "sample",
+    "category": "International",
     "headline": "FICTIONAL SAMPLE — Ministry Forms Committee to Study Committees",
     "summary": "This is invented prototype copy, not a real event. In this fictional scenario, an imaginary ministry responds to an imaginary paperwork backlog by commissioning another imaginary review panel.",
     "fml_kicker": "FICTIONAL KICKER: At last, a task force with the courage to recommend a task force.",
-    "category": "International",
-    "source": "Fictional Global Ledger — not a real publication",
-    "topic_tags": ["prototype", "bureaucracy"],
     "severity": 2,
-    "published_at": "2026-08-18T12:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "bureaucracy"
+    ],
+    "sources": [
+      {
+        "name": "Fictional Global Ledger — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T12:00:00Z"
   },
   {
+    "id": "imaginary-rail-upgrade",
+    "status": "published",
+    "content_type": "sample",
+    "category": "International",
     "headline": "FICTIONAL SAMPLE — Imaginary Rail Upgrade Forgets the Trains",
     "summary": "This story is entirely fictional and exists only to demonstrate the interface. The invented transit authority renovates an invented station before discovering its imaginary platforms do not fit the imaginary trains.",
     "fml_kicker": "FICTIONAL KICKER: The ribbon-cutting remains perfectly compatible with the platform.",
-    "category": "International",
-    "source": "Made-Up Continental Dispatch — not a real publication",
-    "topic_tags": ["prototype", "transit"],
     "severity": 3,
-    "published_at": "2026-08-18T11:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "transit"
+    ],
+    "sources": [
+      {
+        "name": "Made-Up Continental Dispatch — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T11:00:00Z"
   },
   {
+    "id": "federal-portal-login-reset",
+    "status": "published",
+    "content_type": "sample",
+    "category": "National",
     "headline": "FICTIONAL SAMPLE — Federal Portal Adds Login to Reset Login",
     "summary": "This is fictional sample content, not reporting. An invented national agency launches an imaginary account-recovery system that requires users to access the account they cannot access.",
     "fml_kicker": "FICTIONAL KICKER: Security is strongest when nobody can get in, including you.",
-    "category": "National",
-    "source": "Fictional National Record — not a real publication",
-    "topic_tags": ["prototype", "technology"],
     "severity": 2,
-    "published_at": "2026-08-18T10:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "technology"
+    ],
+    "sources": [
+      {
+        "name": "Fictional National Record — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T10:00:00Z"
   },
   {
+    "id": "invented-grant-program",
+    "status": "published",
+    "content_type": "sample",
+    "category": "National",
     "headline": "FICTIONAL SAMPLE — Invented Grant Program Funds Application Manual",
     "summary": "No real program or people are described here; this is an invented UI sample. In the fictional scenario, nearly all of an imaginary public grant is spent explaining how to apply for what remains.",
     "fml_kicker": "FICTIONAL KICKER: The help is available immediately after the 94-page help guide.",
-    "category": "National",
-    "source": "Imaginary Civic Wire — not a real publication",
-    "topic_tags": ["prototype", "public services"],
     "severity": 3,
-    "published_at": "2026-08-18T09:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "public services"
+    ],
+    "sources": [
+      {
+        "name": "Imaginary Civic Wire — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T09:00:00Z"
   },
   {
+    "id": "city-bus-lane-parked-cars",
+    "status": "published",
+    "content_type": "sample",
+    "category": "Local",
     "headline": "FICTIONAL SAMPLE — City Paints Bus Lane Around Parked Cars",
     "summary": "This event, city, and source are fictional and provided only as prototype content. An imaginary transportation department completes an imaginary bus lane without moving the imaginary vehicles blocking it.",
     "fml_kicker": "FICTIONAL KICKER: Public transit now includes a scenic tour of municipal surrender.",
-    "category": "Local",
-    "source": "Fictional Neighborhood Gazette — not a real publication",
-    "topic_tags": ["prototype", "infrastructure"],
     "severity": 2,
-    "published_at": "2026-08-18T08:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "infrastructure"
+    ],
+    "sources": [
+      {
+        "name": "Fictional Neighborhood Gazette — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T08:00:00Z"
   },
   {
+    "id": "library-renovation-quiet-rooms",
+    "status": "published",
+    "content_type": "sample",
+    "category": "Local",
     "headline": "FICTIONAL SAMPLE — Library Renovation Removes the Quiet Rooms",
     "summary": "This is a made-up story for visual testing and does not describe a real library. The fictional renovation replaces imaginary reading rooms with an imaginary open-concept collaboration zone beside the children’s drum circle.",
     "fml_kicker": "FICTIONAL KICKER: Silence has been streamlined out of the customer journey.",
-    "category": "Local",
-    "source": "Made-Up City Chronicle — not a real publication",
-    "topic_tags": ["prototype", "public spaces"],
     "severity": 1,
-    "published_at": "2026-08-18T07:00:00Z",
-    "fictional": true
+    "topic_tags": [
+      "prototype",
+      "public spaces"
+    ],
+    "sources": [
+      {
+        "name": "Made-Up City Chronicle — not a real publication",
+        "url": null
+      }
+    ],
+    "published_at": "2026-08-18T07:00:00Z"
   }
 ]

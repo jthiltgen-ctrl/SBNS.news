@@ -1,0 +1,18 @@
+{
+  "id": "ministry-committee-study",
+  "status": "published",
+  "content_type": "sample",
+  "category": "International",
+  "headline": "FICTIONAL SAMPLE — Ministry Forms Committee to Study Committees",
+  "summary": "This is invented prototype copy, not a real event. In this fictional scenario, an imaginary ministry responds to an imaginary paperwork backlog by commissioning another imaginary review panel.",
+  "fml_kicker": "FICTIONAL KICKER: At last, a task force with the courage to recommend a task force.",
+  "severity": 2,
+  "topic_tags": ["prototype", "bureaucracy"],
+  "sources": [
+    {
+      "name": "Fictional Global Ledger — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T12:00:00Z"
+}

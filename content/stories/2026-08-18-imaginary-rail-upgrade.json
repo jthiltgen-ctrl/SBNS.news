@@ -1,0 +1,18 @@
+{
+  "id": "imaginary-rail-upgrade",
+  "status": "published",
+  "content_type": "sample",
+  "category": "International",
+  "headline": "FICTIONAL SAMPLE — Imaginary Rail Upgrade Forgets the Trains",
+  "summary": "This story is entirely fictional and exists only to demonstrate the interface. The invented transit authority renovates an invented station before discovering its imaginary platforms do not fit the imaginary trains.",
+  "fml_kicker": "FICTIONAL KICKER: The ribbon-cutting remains perfectly compatible with the platform.",
+  "severity": 3,
+  "topic_tags": ["prototype", "transit"],
+  "sources": [
+    {
+      "name": "Made-Up Continental Dispatch — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T11:00:00Z"
+}

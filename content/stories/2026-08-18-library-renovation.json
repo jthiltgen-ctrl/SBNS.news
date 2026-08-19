@@ -1,0 +1,18 @@
+{
+  "id": "library-renovation-quiet-rooms",
+  "status": "published",
+  "content_type": "sample",
+  "category": "Local",
+  "headline": "FICTIONAL SAMPLE — Library Renovation Removes the Quiet Rooms",
+  "summary": "This is a made-up story for visual testing and does not describe a real library. The fictional renovation replaces imaginary reading rooms with an imaginary open-concept collaboration zone beside the children’s drum circle.",
+  "fml_kicker": "FICTIONAL KICKER: Silence has been streamlined out of the customer journey.",
+  "severity": 1,
+  "topic_tags": ["prototype", "public spaces"],
+  "sources": [
+    {
+      "name": "Made-Up City Chronicle — not a real publication",
+      "url": null
+    }
+  ],
+  "published_at": "2026-08-18T07:00:00Z"
+}

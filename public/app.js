@@ -18,6 +18,15 @@ function text(value, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function severityDots(value) {
   const severity = Math.max(1, Math.min(5, Number(value) || 1));
   const container = document.createElement("span");
@@ -41,9 +50,13 @@ function renderStory(story) {
   const body = document.createElement("div");
   body.className = "story-body";
 
-  const sampleLabel = document.createElement("p");
-  sampleLabel.className = "fictional-label";
-  sampleLabel.textContent = "Fictional prototype sample — not real news";
+  const isSample = story.content_type === "sample";
+  if (isSample) {
+    const sampleLabel = document.createElement("p");
+    sampleLabel.className = "fictional-label";
+    sampleLabel.textContent = "Fictional prototype sample — not real news";
+    body.append(sampleLabel);
+  }
 
   const meta = document.createElement("div");
   meta.className = "story-meta";
@@ -64,12 +77,21 @@ function renderStory(story) {
 
   const sourceLabel = document.createElement("span");
   sourceLabel.className = "source-label";
-  sourceLabel.textContent = "Fictional sample source";
+  sourceLabel.textContent = isSample ? "Fictional sample source" : "Sources";
+  source.append(sourceLabel);
 
-  const sourceName = document.createElement("span");
-  sourceName.className = "source-name";
-  sourceName.textContent = text(story.source, "Fictional Prototype Desk — not a real publication");
-  source.append(sourceLabel, sourceName);
+  const sources = Array.isArray(story.sources) ? story.sources : [];
+  sources.forEach((item) => {
+    const sourceName = document.createElement(isHttpUrl(item.url) ? "a" : "span");
+    sourceName.className = "source-name";
+    sourceName.textContent = text(item.name, "Unnamed source");
+    if (sourceName instanceof HTMLAnchorElement) {
+      sourceName.href = item.url;
+      sourceName.target = "_blank";
+      sourceName.rel = "noopener noreferrer";
+    }
+    source.append(sourceName);
+  });
 
   const tags = document.createElement("div");
   tags.className = "tags";
@@ -85,7 +107,9 @@ function renderStory(story) {
   kicker.className = "kicker";
   kicker.textContent = text(story.fml_kicker, "The system remains confident in the system.");
 
-  body.append(sampleLabel, meta, headline, summary, source, tags);
+  body.append(meta, headline, summary);
+  if (sources.length > 0) body.append(source);
+  body.append(tags);
   article.append(body, kicker);
   return article;
 }
@@ -99,7 +123,7 @@ function renderStories() {
 
   if (visibleStories.length === 0) {
     status.hidden = false;
-    status.textContent = `No fictional ${activeCategory.toLowerCase()} samples are available.`;
+    status.textContent = `No ${activeCategory.toLowerCase()} stories are available.`;
     return;
   }
 
