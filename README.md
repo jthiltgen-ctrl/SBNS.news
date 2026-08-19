@@ -1,16 +1,37 @@
-# React + Vite
+# Shocked But Not Surprised
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+SBNS v1 is a minimal Cloudflare Workers Static Assets application. It has no
+Worker script, database, or runtime bindings. The site is served directly from
+`public/` and uses a small static JSON file as its initial story feed.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```sh
+npm ci
+npm run dev
+```
 
-## React Compiler
+## Validation
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```sh
+npm run check
+```
 
-## Expanding the ESLint configuration
+`npm run check` performs a Wrangler dry run. It validates and packages the
+application locally; it does not deploy.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Content
+
+Edit `public/stories.json` to add published stories. Each story accepts:
+
+- `headline`
+- `summary`
+- `fml_kicker`
+- `category`
+- `source`
+- `topic_tags`
+- `severity` (1–5)
+- `published_at` (ISO 8601)
+
+The two legacy GreenGeeks `deploy.yml` files are intentionally retained for
+historical compatibility. This Cloudflare baseline does not invoke them.

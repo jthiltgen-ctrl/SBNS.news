@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Shocked But Not Surprised covers institutions and systems failing the people they serve."
+    />
+    <meta name="theme-color" content="#1a1714" />
+    <title>Shocked But Not Surprised</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Bebas+Neue&family=Lora:ital,wght@0,400;0,600;1,400&family=Special+Elite&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="dateline">
+        <span id="dateline">Daily systems report</span>
+        <span>Est. 2026</span>
+      </div>
+      <div class="nameplate">
+        <p class="eyebrow">The institutional failure desk</p>
+        <h1>Shocked But Not Surprised</h1>
+        <p class="tagline">Another day. Another system that had one job.</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="briefing" aria-labelledby="briefing-title">
+        <div>
+          <p class="section-label">Today’s briefing</p>
+          <h2 id="briefing-title">Accountability, without the amnesia.</h2>
+        </div>
+        <button id="refresh" type="button">Refresh stories</button>
+      </section>
+
+      <p id="status" class="status" role="status">Loading the latest failures…</p>
+      <section id="stories" class="story-grid" aria-live="polite"></section>
+    </main>
+
+    <footer>
+      <p>We punch up at power, never down at the people living with the consequences.</p>
+    </footer>
+  </body>
+</html>
