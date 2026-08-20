@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sbns-analysis",
+  "main": "src/analysis-index.js",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "SBNS_DB",
+      "database_name": "sbns-editorial-staging",
+      "database_id": "66e016c7-928b-47e2-9bda-af411971910e",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "ai": { "binding": "AI" },
+  "vars": { "AI_GATEWAY_ID": "sbns-staging" },
+  "queues": {
+    "consumers": [
+      {
+        "queue": "sbns-analysis-staging",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "max_concurrency": 2,
+        "dead_letter_queue": "sbns-analysis-dlq-staging"
+      },
+      {
+        "queue": "sbns-analysis-dlq-staging",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_concurrency": 1
+      }
+    ]
+  },
+  "observability": { "enabled": true }
+}

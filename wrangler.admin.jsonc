@@ -18,5 +18,13 @@
       "migrations_dir": "migrations"
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "ANALYSIS_QUEUE",
+        "queue": "sbns-analysis-staging"
+      }
+    ]
+  },
   "observability": { "enabled": true }
 }
