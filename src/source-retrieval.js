@@ -2,11 +2,12 @@ const RAW_LIMIT = 4 * 1024 * 1024;
 const EVIDENCE_LIMIT = 250_000;
 const REDIRECT_LIMIT = 5;
 const FETCH_TIMEOUT_MS = 15_000;
+const DIRECT_TEXT = new Set(["text/plain", "text/xml"]);
 const ACCEPTED = new Set([
   "text/html", "text/plain", "application/pdf", "application/xml", "text/xml", "text/csv",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel", "application/msword",
+  "application/vnd.ms-excel",
   "application/vnd.oasis.opendocument.text", "application/vnd.oasis.opendocument.spreadsheet",
 ]);
 
@@ -78,7 +79,15 @@ export async function retrieveSource(submittedUrl, env, { fetchImpl = fetch, tim
   const mime = (response.headers.get("content-type") || "").split(";", 1)[0].trim().toLowerCase();
   if (!ACCEPTED.has(mime)) throw new AnalysisFailure("unsupported_content_type", `Unsupported content type: ${mime || "missing"}.`, { safeMessage: "Source type is not supported." });
   const bytes = await boundedBody(response);
-  let conversion; try { conversion = await env.AI.toMarkdown({ name: current.pathname.split("/").pop() || "source", blob: new Blob([bytes], { type: mime }) }, { conversionOptions: { output: { format: "text" }, html: { images: { convert: false } }, docx: { images: { convert: false } }, pdf: { images: { convert: false }, metadata: false } } }); }
+  if (DIRECT_TEXT.has(mime)) {
+    const evidence = boundedEvidence(new TextDecoder("utf-8").decode(bytes).trim());
+    if (!evidence.text) throw new AnalysisFailure("malformed_document", "Document contained no readable text.", { safeMessage: "The source document contained no readable text." });
+    return { originalUrl: submittedUrl, finalUrl: current.href, normalizedUrl: current.href, mimeType: mime, title: current.hostname, extractionFormat: "text", ...evidence };
+  }
+  const conversionOptions = { output: { format: "text" } };
+  if (mime === "text/html") conversionOptions.html = { hostname: current.origin };
+  if (mime === "application/pdf") conversionOptions.pdf = { metadata: false };
+  let conversion; try { conversion = await env.AI.toMarkdown({ name: current.pathname.split("/").pop() || "source", blob: new Blob([bytes], { type: mime }) }, { conversionOptions }); }
   catch { throw new AnalysisFailure("extraction_failed", "Markdown conversion failed.", { retryable: true, safeMessage: "The source could not be normalized." }); }
   if (!conversion || conversion.format === "error" || typeof conversion.data !== "string") throw new AnalysisFailure("malformed_document", "Document conversion returned no text.", { safeMessage: "The source document could not be read." });
   const evidence = boundedEvidence(conversion.data.trim());
