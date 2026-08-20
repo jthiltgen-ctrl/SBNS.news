@@ -12,7 +12,7 @@
   <header><p class="eyebrow">SBNS EDITORIAL DESK</p><h1>Persistent Queue</h1><p id="actor">Authenticating…</p></header>
   <main>
     <section id="queue-view">
-      <div class="toolbar"><select id="status-filter" aria-label="Filter by workflow status"><option value="">All statuses</option><option>submitted</option><option>held</option><option>rejected</option><option>approved</option></select><select id="origin-filter" aria-label="Filter by intake origin"><option value="">All origins</option><option>editor</option><option>visitor</option><option>monitor</option><option>discovery</option></select><button id="new-intake">New Intake</button></div>
+      <div class="toolbar"><select id="status-filter" aria-label="Filter by workflow status"><option value="">All statuses</option><option>submitted</option><option>queued</option><option>analyzing</option><option>review_ready</option><option>failed</option><option>held</option><option>rejected</option><option>approved</option></select><select id="origin-filter" aria-label="Filter by intake origin"><option value="">All origins</option><option>editor</option><option>visitor</option><option>monitor</option><option>discovery</option></select><button id="new-intake">New Intake</button></div>
       <div id="queue-status" role="status"></div><div id="queue"></div>
     </section>
     <section id="new-view" hidden><button class="back">← Queue</button><h2>New Intake</h2><form id="new-form"><label>Source URL<input name="submitted_url" type="url" required></label><label>Editorial note<textarea name="submitter_note" maxlength="2000"></textarea></label><button>Add to editorial queue</button></form><p id="new-status" role="status"></p></section>

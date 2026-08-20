@@ -15,6 +15,8 @@
     "monitoring:test": "node scripts/monitoring.mjs test",
     "admin:check": "node scripts/admin-api.mjs check",
     "admin:test": "node scripts/admin-api.mjs test",
+    "analysis:check": "node scripts/analysis.mjs check",
+    "analysis:test": "node scripts/analysis.mjs test",
     "persistence:check": "node scripts/persistence.mjs check",
     "persistence:test": "node scripts/persistence.mjs test",
     "publication:check": "node scripts/publish.mjs check",
@@ -22,7 +24,7 @@
     "publish:check": "node scripts/publish.mjs check",
     "publish:prepare": "node scripts/publish.mjs prepare",
     "dev": "npm run content:build && npm run intake:build && npm run monitoring:build && wrangler dev",
-    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && npm run monitoring:check && npm run monitoring:test && npm run publication:check && npm run publication:test && npm run persistence:check && npm run persistence:test && npm run admin:check && npm run admin:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check scripts/monitoring.mjs && node --check scripts/persistence.mjs && node --check scripts/publish.mjs && node --check scripts/admin-api.mjs && node --check src/persistence.js && node --check src/access-auth.js && node --check src/admin-index.js && node --check public/app.js && node --check public/admin/admin.js && node --check public/admin/monitoring/monitoring.js && node --check public/admin-persistent/admin.js && node --check src/index.js && wrangler deploy --dry-run && wrangler deploy --config wrangler.admin.jsonc --dry-run"
+    "check": "npm run content:check && npm run content:test && npm run intake:check && npm run intake:test && npm run monitoring:check && npm run monitoring:test && npm run publication:check && npm run publication:test && npm run persistence:check && npm run persistence:test && npm run admin:check && npm run admin:test && npm run analysis:check && npm run analysis:test && node --check scripts/content.mjs && node --check scripts/intake.mjs && node --check scripts/monitoring.mjs && node --check scripts/persistence.mjs && node --check scripts/publish.mjs && node --check scripts/admin-api.mjs && node --check scripts/analysis.mjs && node --check src/persistence.js && node --check src/access-auth.js && node --check src/admin-index.js && node --check src/analysis-index.js && node --check src/analyzer.js && node --check src/analysis-prompt.js && node --check src/source-retrieval.js && node --check src/intake-validation.js && node --check public/app.js && node --check public/admin/admin.js && node --check public/admin/monitoring/monitoring.js && node --check public/admin-persistent/admin.js && node --check src/index.js && wrangler deploy --dry-run && wrangler deploy --config wrangler.admin.jsonc --dry-run && wrangler deploy --config wrangler.analysis.jsonc --dry-run"
   },
   "devDependencies": {
     "wrangler": "^4.124.0"

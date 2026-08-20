@@ -2,13 +2,19 @@ import { verifyAccessRequest } from "./access-auth.js";
 import {
   createDecisionWithAudit,
   createDraftWithAudit,
-  createIntakeWithAudit,
+  createIntakeJobWithAudit,
+  createRetryJobWithAudit,
+  getActiveAnalysisJob,
   getDraft,
   getIdempotencyRecord,
   getIntake,
   getIntakeDetail,
   getLatestDraft,
+  getLatestAnalysisJob,
   listIntakes,
+  markAnalysisJobQueued,
+  recordAnalysisRetryWithAudit,
+  updateIdempotencyResponse,
 } from "./persistence.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
@@ -95,9 +101,42 @@ async function createIntake(request, env, actor) {
   if (context.replay) return context.replay;
   const createdAt = now();
   const intake = { id: opaqueId("intake"), origin: "editor", submitted_url: submittedUrl, submitted_at: createdAt, submitter_note: submitterNote, status: "submitted", analysis_status: "not_started", created_at: createdAt, updated_at: createdAt };
-  const responseBody = { ok: true, intake };
-  await createIntakeWithAudit(env, intake, audit(actor, "intake.created", intake.id, createdAt), records(actor, "intake.create", context, 201, responseBody, createdAt));
+  const job = { id: opaqueId("job"), intake_id: intake.id, job_type: "intake_analysis", state: "pending_enqueue", attempt: 0, created_at: createdAt, updated_at: createdAt };
+  const pendingBody = { ok: true, intake, analysis_job: job, queued: false, message: "Intake saved, but analysis has not been queued yet." };
+  await createIntakeJobWithAudit(env, intake, job, audit(actor, "intake.created", intake.id, createdAt, { analysis_job_id: job.id }), records(actor, "intake.create", context, 201, pendingBody, createdAt));
+  const responseBody = await enqueueJob(env, intake, job, actor, "intake.create", context.key, pendingBody);
   return json(responseBody, 201);
+}
+
+async function enqueueJob(env, intake, job, actor, operation, idempotencyKey, fallbackBody) {
+  try {
+    await env.ANALYSIS_QUEUE.send({ schema_version: "1", job_id: job.id, intake_id: intake.id });
+    const queuedAt = now(); await markAnalysisJobQueued(env, job.id, intake.id, queuedAt);
+    const responseBody = { ok: true, intake: { ...intake, status: "queued", analysis_status: "queued", updated_at: queuedAt }, analysis_job: { ...job, state: "queued", enqueued_at: queuedAt, updated_at: queuedAt }, queued: true };
+    await updateIdempotencyResponse(env, actor.actorId, operation, idempotencyKey, 201, responseBody); return responseBody;
+  } catch {
+    await updateIdempotencyResponse(env, actor.actorId, operation, idempotencyKey, 201, fallbackBody);
+    return { ...fallbackBody, message: "Intake saved, but analysis could not be queued. Retry analysis." };
+  }
+}
+
+async function retryAnalysis(request, env, actor, intakeId) {
+  const intake = await getIntake(env, intakeId); if (!intake) throw new ApiError(404, "NOT_FOUND", "Intake not found.");
+  const body = await readJson(request); if (Object.keys(body).length) throw new ApiError(400, "VALIDATION_ERROR", "Retry request body must be empty.");
+  const operation = `analysis.retry:${intakeId}`; const context = await idempotencyContext(request, env, actor, operation, {}); if (context.replay) return context.replay;
+  const active = await getActiveAnalysisJob(env, intakeId);
+  if (active && active.state !== "pending_enqueue") {
+    const responseBody = { ok: true, intake, analysis_job: active, queued: active.state !== "pending_enqueue" };
+    const createdAt = now(); await recordAnalysisRetryWithAudit(env, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: active.id, active: true }), records(actor, operation, context, 200, responseBody, createdAt)); return json(responseBody);
+  }
+  const latest = active?.state === "pending_enqueue" ? active : await getLatestAnalysisJob(env, intakeId);
+  if (latest?.state === "complete") throw new ApiError(409, "ANALYSIS_COMPLETE", "Completed analysis cannot be rerun in Phase 3.");
+  const createdAt = now();
+  const job = latest?.state === "pending_enqueue" ? latest : { id: opaqueId("job"), intake_id: intakeId, job_type: "intake_analysis", state: "pending_enqueue", attempt: 0, created_at: createdAt, updated_at: createdAt };
+  const pendingBody = { ok: true, intake, analysis_job: job, queued: false, message: "Analysis could not be queued. Try again." };
+  if (job === latest) await recordAnalysisRetryWithAudit(env, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
+  else await createRetryJobWithAudit(env, job, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
+  return json(await enqueueJob(env, intake, job, actor, operation, context.key, pendingBody), 201);
 }
 
 function validateDraft(body) {
@@ -157,7 +196,7 @@ async function route(request, env, actor) {
     return json({ ok: true, intakes: await listIntakes(env, { status, origin, limit }) });
   }
   if (url.pathname === "/api/admin/intakes" && request.method === "POST") return createIntake(request, env, actor);
-  const match = url.pathname.match(/^\/api\/admin\/intakes\/([^/]+)(?:\/(drafts|decisions))?$/);
+  const match = url.pathname.match(/^\/api\/admin\/intakes\/([^/]+)(?:\/(drafts|decisions|analyze))?$/);
   if (match && request.method === "GET" && !match[2]) {
     const detail = await getIntakeDetail(env, decodeURIComponent(match[1]));
     if (!detail) throw new ApiError(404, "NOT_FOUND", "Intake not found.");
@@ -165,6 +204,7 @@ async function route(request, env, actor) {
   }
   if (match && request.method === "POST" && match[2] === "drafts") return createDraft(request, env, actor, decodeURIComponent(match[1]));
   if (match && request.method === "POST" && match[2] === "decisions") return createDecision(request, env, actor, decodeURIComponent(match[1]));
+  if (match && request.method === "POST" && match[2] === "analyze") return retryAnalysis(request, env, actor, decodeURIComponent(match[1]));
   throw new ApiError(404, "NOT_FOUND", "Not Found");
 }
 
