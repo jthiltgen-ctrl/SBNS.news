@@ -5,7 +5,7 @@ const dateline = document.querySelector("#dateline");
 const filterButtons = [...document.querySelectorAll(".filter-button")];
 
 let loadedStories = [];
-let activeCategory = "All";
+let activeView = "Reporting";
 
 dateline.textContent = new Intl.DateTimeFormat("en-US", {
   weekday: "long",
@@ -43,6 +43,17 @@ function severityDots(value) {
   return container;
 }
 
+function publishedDate(value) {
+  if (typeof value !== "string" || !value) return "Date pending";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Date pending";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
+}
+
 function renderStory(story) {
   const article = document.createElement("article");
   article.className = "story-card";
@@ -61,9 +72,9 @@ function renderStory(story) {
   const meta = document.createElement("div");
   meta.className = "story-meta";
 
-  const category = document.createElement("span");
-  category.textContent = text(story.category, "Accountability");
-  meta.append(category, severityDots(story.severity));
+  const storyLine = document.createElement("span");
+  storyLine.textContent = `${text(story.category, "Accountability")} · ${publishedDate(story.published_at)}`;
+  meta.append(storyLine, severityDots(story.severity));
 
   const headline = document.createElement("h3");
   headline.textContent = text(story.headline, "Untitled report");
@@ -77,7 +88,7 @@ function renderStory(story) {
 
   const sourceLabel = document.createElement("span");
   sourceLabel.className = "source-label";
-  sourceLabel.textContent = isSample ? "Fictional sample source" : "Sources";
+  sourceLabel.textContent = isSample ? "Fictional sample source" : "Primary sources";
   source.append(sourceLabel);
 
   const sources = Array.isArray(story.sources) ? story.sources : [];
@@ -117,13 +128,16 @@ function renderStory(story) {
 function renderStories() {
   storyGrid.replaceChildren();
 
-  const visibleStories = loadedStories.filter(
-    (story) => activeCategory === "All" || story.category === activeCategory,
-  );
+  const visibleStories = loadedStories.filter((story) => {
+    if (activeView === "Samples") return story.content_type === "sample";
+    if (activeView === "Reporting") return story.content_type === "reporting";
+    return story.content_type === "reporting" && story.category === activeView;
+  });
 
   if (visibleStories.length === 0) {
     status.hidden = false;
-    status.textContent = `No ${activeCategory.toLowerCase()} stories are available.`;
+    const label = activeView === "Samples" ? "prototype samples" : activeView.toLowerCase();
+    status.textContent = `No ${label} stories are available.`;
     return;
   }
 
@@ -164,7 +178,7 @@ async function loadStories() {
 
 filterButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    activeCategory = button.dataset.category;
+    activeView = button.dataset.view;
     filterButtons.forEach((candidate) => {
       const isActive = candidate === button;
       candidate.classList.toggle("active", isActive);

@@ -29,38 +29,87 @@
         <h1>Shocked But Not Surprised</h1>
         <p class="tagline">Another day. Another system that had one job.</p>
       </div>
+      <nav class="publication-nav" aria-label="Publication navigation">
+        <a href="#reports">Latest reports</a>
+        <a href="#method">How it works</a>
+        <a href="#standards">Editorial standards</a>
+      </nav>
     </header>
 
     <main>
-      <aside class="prototype-notice" aria-label="Prototype content notice">
-        <strong>Prototype Edition</strong>
-        <span>Fictional samples are explicitly labeled. Reporting items identify and link their sources.</span>
+      <aside class="edition-notice" aria-label="Staging edition notice">
+        <strong>Staging Edition</strong>
+        <span>Reporting is shown first and linked to its sources. Fictional development samples are preserved separately in the Prototype archive.</span>
       </aside>
 
-      <section class="briefing" aria-labelledby="briefing-title">
+      <section id="reports" class="briefing" aria-labelledby="briefing-title">
         <div>
-          <p class="section-label">Today’s briefing</p>
+          <p class="section-label">Latest reporting</p>
           <h2 id="briefing-title">Accountability, without the amnesia.</h2>
         </div>
         <button id="refresh" type="button">Refresh stories</button>
       </section>
 
       <nav class="filters" aria-label="Filter stories by category">
-        <span class="filter-label">Edition desk</span>
+        <span class="filter-label">Reporting desk</span>
         <div class="filter-buttons" role="group" aria-label="Story categories">
-          <button class="filter-button active" type="button" data-category="All" aria-pressed="true">All</button>
-          <button class="filter-button" type="button" data-category="International" aria-pressed="false">International</button>
-          <button class="filter-button" type="button" data-category="National" aria-pressed="false">National</button>
-          <button class="filter-button" type="button" data-category="Local" aria-pressed="false">Local</button>
+          <button class="filter-button active" type="button" data-view="Reporting" aria-pressed="true">All reporting</button>
+          <button class="filter-button" type="button" data-view="International" aria-pressed="false">International</button>
+          <button class="filter-button" type="button" data-view="National" aria-pressed="false">National</button>
+          <button class="filter-button" type="button" data-view="Local" aria-pressed="false">Local</button>
+          <button class="filter-button archive-filter" type="button" data-view="Samples" aria-pressed="false">Prototype archive</button>
         </div>
       </nav>
 
       <p id="status" class="status" role="status">Loading the latest failures…</p>
       <section id="stories" class="story-grid" aria-live="polite"></section>
+
+      <section id="method" class="principles" aria-labelledby="method-title">
+        <div class="section-heading">
+          <p class="section-label">How SBNS works</p>
+          <h2 id="method-title">Receipts first. Judgment stays human.</h2>
+        </div>
+        <div class="principle-grid">
+          <article>
+            <span>01</span>
+            <h3>Start with evidence</h3>
+            <p>Reporting begins with inspectable public records, audits, watchdog findings, and other attributable sources.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Test the failure</h3>
+            <p>A bad outcome is not automatically a systemic failure. Claims, causation, uncertainty, and contrary evidence stay visible.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Keep the human gate</h3>
+            <p>Automation can organize evidence and propose language. A human editor decides what is held, rejected, corrected, or published.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="standards" class="standards" aria-labelledby="standards-title">
+        <div>
+          <p class="section-label">Editorial standards</p>
+          <h2 id="standards-title">What readers should be able to expect.</h2>
+        </div>
+        <ul>
+          <li>Reporting links directly to the sources supporting it.</li>
+          <li>Observed conditions are kept separate from proven causation.</li>
+          <li>Later developments do not silently rewrite an accurate original report.</li>
+          <li>Corrections, once required, must preserve what changed and why.</li>
+        </ul>
+        <p class="development-note">SBNS is an independent project in active development. Prototype materials remain labeled and separated from reporting.</p>
+      </section>
     </main>
 
     <footer>
       <p>We punch up at power, never down at the people living with the consequences.</p>
+      <nav aria-label="Footer navigation">
+        <a href="#reports">Reports</a>
+        <a href="#method">Method</a>
+        <a href="#standards">Standards</a>
+      </nav>
     </footer>
   </body>
 </html>
