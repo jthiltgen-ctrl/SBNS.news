@@ -1,8 +1,22 @@
 # Shocked But Not Surprised
 
-SBNS v1.2 is a minimal Cloudflare Worker with Static Assets. The Worker owns the
-`/api/` namespace, while all other requests are served from `public/` through
-the `ASSETS` binding. The prototype has no database or persistent storage.
+SBNS v1.5 is a static-first accountability publication with a separate,
+authenticated editorial system. Published stories remain repository-managed;
+durable editorial workflow state lives in Cloudflare D1.
+
+The governing rule is simple: AI may help analyze evidence, but human editorial
+judgment remains authoritative and publication remains intentional.
+
+## Runtime surfaces
+
+- `sbns-news`: public website and `GET /api/health`
+- `sbns-admin`: Cloudflare Access-protected editorial queue and admin API
+- `sbns-analysis`: private Queue consumer for bounded source retrieval and
+  structured analysis
+- `sbns-editorial-staging`: staging D1 editorial database
+
+See [V1.5-ARCHITECTURE-SPEC.md](V1.5-ARCHITECTURE-SPEC.md) for the complete
+trust boundaries and rollout sequence.
 
 ## Local development
 
@@ -12,34 +26,46 @@ npm run content:build
 npm run dev
 ```
 
+The default development command serves the public Worker. The admin and
+analysis Workers use `wrangler.admin.jsonc` and `wrangler.analysis.jsonc`.
+
 ## Validation
 
 ```sh
 npm run check
 ```
 
-`npm run check` validates source-controlled editorial content, verifies that the
-generated feed is current, runs content and JavaScript checks, and performs a
-Wrangler dry run. It does not deploy.
-
-## API
-
-- `GET /api/health` returns the prototype identity and status.
-- Every other `/api/` route returns a JSON 404 response.
-- Non-API requests are served from Static Assets.
+The check suite validates source-controlled stories, intake and monitoring
+contracts, human-gated publication preparation, D1 persistence, authenticated
+admin APIs, live-analysis safety boundaries, and all three Worker builds. It
+uses isolated local D1 state and does not deploy or apply remote migrations.
 
 ## Editorial content
 
-Each story is maintained as one JSON file in `content/stories/`. Start from
-`content/story-template.json` and follow [EDITORIAL.md](EDITORIAL.md).
+Each published or draft story is maintained as one JSON file under
+`content/stories/`. Start from `content/story-template.json` and follow
+[EDITORIAL.md](EDITORIAL.md).
 
 ```sh
 npm run content:build
 npm run content:check
 ```
 
-`public/stories.json` is generated deterministically from published source
-files. Do not edit it manually. Drafts are validated but never included.
+`public/stories.json` is generated deterministically. Do not edit it manually.
+Drafts never enter the public feed.
 
-The two legacy GreenGeeks `deploy.yml` files are intentionally retained for
-historical compatibility. This Cloudflare baseline does not invoke them.
+## Staging operations
+
+- [STAGING-CHECKLIST.md](STAGING-CHECKLIST.md) contains the short acceptance
+  routine for the public site and protected editorial desk.
+- [STAGING-BASELINE.md](STAGING-BASELINE.md) records the known deployed
+  configuration and explicitly marks account-only facts that still require
+  Cloudflare dashboard verification.
+- [PERSISTENCE.md](PERSISTENCE.md) defines local/remote migration boundaries.
+
+## Deployment boundary
+
+Deployment, remote migrations, production DNS, nameservers, public visitor
+submissions, and automated repository publication require separate
+authorization. The two legacy GreenGeeks `deploy.yml` files remain preserved
+for historical compatibility and are not invoked by the Cloudflare build.

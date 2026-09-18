@@ -1,54 +1,79 @@
-# SBNS v1.2 Architecture
+# SBNS v1.5 Project Map
 
 ## Product
 
-**Shocked But Not Surprised (SBNS)** is an iPhone-first news product covering
-institutional and systemic failures with factual reporting and weary, dark
-humor. Its editorial voice punches up at powerful institutions and never down
-at the people affected by their failures.
+**Shocked But Not Surprised (SBNS)** is an iPhone-first accountability news
+project covering institutional and systemic failures with factual reporting and
+weary, dark humor. Its editorial voice punches up at powerful institutions and
+never down at people living with the consequences.
 
 Tagline: **Another day. Another system that had one job.**
 
-## Runtime architecture
-
-SBNS v1 runs as one Cloudflare Worker with Workers Static Assets:
+## Current architecture
 
 ```text
-Browser
-  |-- /api/* --------> src/index.js
-  |                       |-- GET /api/health -> JSON 200
-  |                       `-- other /api/*    -> JSON 404
-  |
-  `-- everything else -> ASSETS binding -> public/
+Public reader
+  `-- sbns-news ----------------------> repository-generated story feed
+
+Authenticated editor
+  `-- Cloudflare Access -> sbns-admin -> D1 editorial state
+                                  |
+                                  `-> analysis Queue
+                                          |
+                                          `-> sbns-analysis -> Workers AI
 ```
 
-- `src/index.js` is the Worker entry point.
-- `public/` contains the complete static frontend.
-- `ASSETS` is the only Worker binding.
-- `run_worker_first` limits Worker-first routing to `/api/*`.
-- Observability is enabled in `wrangler.jsonc`.
-- There is no D1 database, CMS, or other persistent storage in prototype v1.2.
+Source-of-truth boundaries:
 
-## Frontend
+```text
+D1                  = editorial workflow state
+content/stories/    = published-story source of truth
+public/stories.json = deterministic public feed
+```
 
-The frontend is dependency-free HTML, CSS, and JavaScript. It preserves the
-SBNS design system:
+The public, admin, and analysis Workers remain deliberately separate. Browser
+clients never receive model or repository credentials. Fetched pages and model
+outputs remain untrusted until deterministic validation succeeds.
 
-- Bebas Neue for headlines and the nameplate
-- Lora for editorial body copy
-- Special Elite for kickers and taglines
-- Barlow Condensed for labels and metadata
-- Paper `#f2ede3`, ink `#1a1714`, and red `#b91c1c`
+## Implemented through Phase 3
 
-Editorial source files live in `content/stories/`. A Node built-ins-only script
-validates them and generates `public/stories.json` from published stories,
-newest-first. Drafts never enter the public feed. The frontend caps the rendered
-feed at 50 stories and presents a readable empty or error state when content is
-unavailable.
+- versioned D1 migrations and persistent intake, analysis, draft, decision,
+  job, idempotency, and audit records;
+- Cloudflare Access JWT verification for the protected admin API;
+- persistent mobile-first editorial queue;
+- editor-originated URL intake;
+- Queue-backed analysis and dead-letter handling;
+- bounded server-side source retrieval with SSRF and redirect protections;
+- Workers AI analysis through AI Gateway with cache bypass;
+- JSON Schema plus deterministic semantic validation;
+- human-authored draft revisions and approve, hold, or reject decisions;
+- repository-local, human-gated publication-package preparation;
+- deterministic monitoring and corrections fixtures retained for regression.
 
-Sample content receives an unmistakable fictional badge. Reporting content does
-not. Structured reporting sources render as safe external links in a distinct
-source area; topic tags remain separate.
+## Reader-facing frontend
+
+The public frontend is dependency-free HTML, CSS, and JavaScript. Its design
+system uses:
+
+- Bebas Neue for headlines and nameplate;
+- Lora for editorial copy;
+- Special Elite for kickers and taglines;
+- Barlow Condensed for labels and metadata;
+- paper `#f2ede3`, ink `#1a1714`, and red `#b91c1c`.
+
+Reporting is the default public view. Fictional fixtures remain available only
+as a clearly separated prototype archive. Reporting sources render as safe
+external links; topic tags remain visually and semantically separate.
+
+## Remaining v1.5 sequence
+
+1. Complete and record Phase 3 authenticated staging acceptance.
+2. Add abuse-resistant visitor submissions with Turnstile.
+3. Add controlled GitHub App draft-PR publication orchestration.
+4. Back monitoring with durable, queue-driven live records.
+5. Add immutable correction and update publication history.
+
+No later phase is implicitly authorized by the existence of this project map.
 
 ## Development and validation
 
@@ -59,12 +84,10 @@ npm run dev
 npm run check
 ```
 
-`npm run check` verifies editorial content and generated output, runs content
-fixtures and JavaScript syntax checks, then runs `wrangler deploy --dry-run`.
-It does not deploy.
+`npm run check` uses local isolated state and performs dry runs only. It does not
+deploy, mutate the remote database, or create Cloudflare resources.
 
 ## Legacy deployment files
 
-The root `deploy.yml` and `.github/workflows/deploy.yml` files are legacy
-GreenGeeks deployment artifacts. They must remain byte-for-byte unchanged.
-The Cloudflare prototype does not invoke or modify them.
+The root `deploy.yml` and `.github/workflows/deploy.yml` are legacy GreenGeeks
+artifacts and remain byte-for-byte unchanged.
