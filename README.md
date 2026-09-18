@@ -67,5 +67,8 @@ Drafts never enter the public feed.
 
 Deployment, remote migrations, production DNS, nameservers, public visitor
 submissions, and automated repository publication require separate
-authorization. The two legacy GreenGeeks `deploy.yml` files remain preserved
-for historical compatibility and are not invoked by the Cloudflare build.
+authorization. `.github/workflows/deploy.yml` validates and deploys only the
+public `sbns-news` staging Worker after changes reach `main`; it requires the
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets in the `staging`
+GitHub environment. The root-level legacy GreenGeeks `deploy.yml` remains as a
+historical reference and is not invoked by GitHub Actions.
