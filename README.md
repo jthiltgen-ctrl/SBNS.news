@@ -18,6 +18,15 @@ judgment remains authoritative and publication remains intentional.
 See [V1.5-ARCHITECTURE-SPEC.md](V1.5-ARCHITECTURE-SPEC.md) for the complete
 trust boundaries and rollout sequence.
 
+
+## Editorial and technical frameworks
+
+The preserved operating framework for ShockedButNotSurprised.news lives in
+[docs/frameworks/](docs/frameworks/README.md). It separates the durable
+editorial constitution, technical safety controls, historical provenance, and
+day-to-day operator procedure so implementation changes do not silently change
+the publication's standards.
+
 ## Local development
 
 ```sh
