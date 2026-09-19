@@ -62,6 +62,9 @@ Drafts never enter the public feed.
   configuration and explicitly marks account-only facts that still require
   Cloudflare dashboard verification.
 - [PERSISTENCE.md](PERSISTENCE.md) defines local/remote migration boundaries.
+- [DNS-CUTOVER-RUNBOOK.md](DNS-CUTOVER-RUNBOOK.md) separates the
+  authoritative-DNS move from the production Worker cutover and preserves the
+  GreenGeeks mail path.
 
 ## Deployment boundary
 
