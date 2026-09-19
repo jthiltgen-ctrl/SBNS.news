@@ -63,13 +63,16 @@ npm run content:check
 `public/stories.json` is generated deterministically. Do not edit it manually.
 Drafts never enter the public feed.
 
-## Staging operations
+## Operations and deployment records
 
 - [STAGING-CHECKLIST.md](STAGING-CHECKLIST.md) contains the short acceptance
   routine for the public site and protected editorial desk.
 - [STAGING-BASELINE.md](STAGING-BASELINE.md) records the known deployed
   configuration and explicitly marks account-only facts that still require
   Cloudflare dashboard verification.
+- [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) records the
+  verified September 19, 2026 production-apex cutover, preserved GreenGeeks
+  mail boundary, pending `www` work, and exact web rollback.
 - [PERSISTENCE.md](PERSISTENCE.md) defines local/remote migration boundaries.
 - [DNS-CUTOVER-RUNBOOK.md](DNS-CUTOVER-RUNBOOK.md) separates the
   authoritative-DNS move from the production Worker cutover and preserves the

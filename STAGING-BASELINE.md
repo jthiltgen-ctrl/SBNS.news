@@ -11,7 +11,7 @@ deployment facts. Do not guess missing Cloudflare values.
 | --- | --- |
 | Deployment branch | `main` |
 | Deployed source SHA | `0a15c0dcdd39959b2ae41e72a20b0a71563efe44` |
-| Latest merged change | PR #22 — propagation-aware staging health verification |
+| Latest deployed change | PR #22 — propagation-aware staging health verification |
 | Application version | `1.5.0` |
 | Deployed health identifier | `v1.5 phase 3 staging` |
 | Published feed | 11 records: 5 reporting, 6 fictional prototype samples |
@@ -52,9 +52,12 @@ Verified on 2026-09-19:
 - the deployed source matched the SHA above;
 - no DNS, D1 migration, admin Worker, or analysis Worker changes were made.
 
-The production domain `shockedbutnotsurprised.news` remains on its existing
-GreenGeeks DNS and hosting configuration. Email-related DNS records remain
-unchanged.
+The public staging Worker now also serves the production apex through a
+Cloudflare Custom Domain. That production operation is recorded separately in
+[PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md). The deployed
+application still self-identifies as `v1.5 phase 3 staging` and retains its
+Staging Edition notice. `www` remains pending. GreenGeeks continues to host the
+mail and related service infrastructure.
 
 ## Account-only facts still requiring dashboard verification
 
@@ -77,3 +80,4 @@ Wrangler deployment log and the live staging health endpoint.
 | --- | --- | --- | --- | --- |
 | 2026-09-18 | None | Public endpoints verified; account inventory pending | No | Phase 3.5 documentation pass |
 | 2026-09-19 | None | Public Worker deployed and smoke-tested successfully | Yes | GitHub Actions run #5; no migrations or DNS changes |
+| 2026-09-19 | None | Production apex attached to the verified public Worker | No application change | Custom Domain only; see production cutover baseline |

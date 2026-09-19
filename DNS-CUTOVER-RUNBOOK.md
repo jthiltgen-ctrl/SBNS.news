@@ -8,7 +8,28 @@ No step in this document authorizes a DNS, nameserver, Worker-route, database,
 admin Worker, or analysis Worker change. Obtain action-time approval before
 each mutable phase.
 
-## Verified starting point
+## Current execution status
+
+Recorded on 2026-09-19:
+
+- Phase 1 is complete: GreenGeeks mail and service dependencies were decoupled
+  from the web apex and mail-safety tests passed.
+- Phase 2 is complete: Cloudflare is authoritative, the zone is active, and
+  the verified 26-record set remains in place.
+- Phase 3 is complete for the apex: `shockedbutnotsurprised.news` is a
+  Production Custom Domain on `sbns-news` with valid HTTPS.
+- `www` remains an unchanged DNS-only CNAME and is still pending deliberate
+  Worker attachment or canonical redirect configuration.
+- The deployed application still reports `v1.5 phase 3 staging`; final
+  public-launch identity cleanup remains separate work.
+
+See [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) for the
+verified production state and exact web rollback.
+
+## Historical verified starting point
+
+The following snapshot is preserved as the pre-cutover baseline. It is no
+longer the current production state.
 
 Recorded on 2026-09-19:
 
@@ -21,11 +42,12 @@ Recorded on 2026-09-19:
 - expected health: `v1.5 phase 3 staging`;
 - public Worker version:
   `5a8d207e-f76d-44e9-9306-59467c07211a`;
-- GreenGeeks email and all production DNS remain unchanged.
+- GreenGeeks email and all production DNS were unchanged at this starting
+  point.
 
-## Why email must be decoupled first
+## Why email had to be decoupled first
 
-The current mail path depends on the web apex:
+At the historical starting point, the mail path depended on the web apex:
 
 - the apex A record points to `69.175.102.130`;
 - the MX record targets the apex;
@@ -36,7 +58,7 @@ Pointing the apex directly at the Worker before removing those dependencies can
 send mail and groupware traffic to the web service. The safe replacement is a
 dedicated, unproxied mail hostname with its own A record.
 
-## Current mail-critical records to preserve
+## Historical mail-critical dependencies and cutover rules
 
 Re-export the complete GreenGeeks zone immediately before the change. The
 following list is a guardrail, not a substitute for that complete export.
@@ -57,6 +79,8 @@ FTP, autodiscover, CalDAV, and CardDAV host.
 
 ## Phase 0 — evidence and rollback package
 
+Status: Completed on 2026-09-19.
+
 Complete before any mutation:
 
 - export or capture all GreenGeeks records, including names, types, TTLs,
@@ -74,6 +98,9 @@ Stop if the complete zone cannot be reproduced or if either provider cannot be
 accessed.
 
 ## Phase 1 — decouple email while GreenGeeks remains authoritative
+
+Status: Completed on 2026-09-19. The dedicated mail path and related service
+targets were verified before the nameserver move.
 
 After action-time approval:
 
@@ -93,6 +120,9 @@ snapshot. Do not continue unless the dedicated mail path is proven.
 
 ## Phase 2 — move authoritative DNS without moving the website
 
+Status: Completed on 2026-09-19. Cloudflare became authoritative while the
+apex and `www` still served the pre-cutover GreenGeeks web configuration.
+
 After a second action-time approval:
 
 1. Populate Cloudflare with the complete, verified zone.
@@ -104,14 +134,17 @@ After a second action-time approval:
    CNAME, MX, TXT, and SRV answers from multiple resolvers.
 7. Repeat inbound and outbound email tests and verify the existing website.
 
-This phase changes only the authoritative DNS provider. The public site should
-still be served by GreenGeeks.
+This phase changed only the authoritative DNS provider. At its completion, the
+public site was still served by GreenGeeks. The later apex change is recorded
+under Phase 3 and in the production cutover baseline.
 
 Rollback: restore `ns1.greengeeks.net` and `ns2.greengeeks.net` at the
 registrar, then verify the restored zone. Preserve the Cloudflare copy for
 diagnosis.
 
 ## Phase 3 — attach the production web domain to the Worker
+
+Status: Apex completed on 2026-09-19; `www` remains pending.
 
 After authoritative DNS and mail have been stable, and after a third
 action-time approval:
@@ -128,24 +161,29 @@ action-time approval:
 6. Repeat inbound and outbound email tests.
 7. Monitor HTTP errors and mail delivery during the rollback window.
 
-Rollback: remove the Worker custom-domain/route mapping and restore the
-GreenGeeks web A/CNAME records in Cloudflare. Nameservers do not need to be
-reverted if Phase 2 remains healthy.
+Current apex rollback: remove the `shockedbutnotsurprised.news` Custom Domain
+from `sbns-news`, then restore `A @ -> 69.175.102.130` as DNS only with TTL
+Auto. The unchanged `www` CNAME does not require rollback. Nameservers do not
+need to be reverted while Phase 2 remains healthy.
 
 ## Acceptance criteria
 
-- apex and `www` serve the intended Worker over valid HTTPS;
-- health returns `ok: true` and `v1.5 phase 3 staging`;
-- MX resolves to an unproxied hostname that resolves to the GreenGeeks server;
-- DKIM and MailChannels TXT values exactly match the pre-cutover snapshot;
-- inbound, outbound, and reply email tests succeed;
-- cPanel/webmail and any used calendar/contact discovery services still work;
-- no D1 migration or admin/analysis Worker change occurs;
-- the final records, Worker route, test results, and rollback deadline are
-  recorded in the staging baseline.
+- [x] The apex serves the intended Worker over valid HTTPS.
+- [ ] `www` serves the Worker or redirects deliberately to the canonical apex.
+- [x] Health returns `ok: true` and `v1.5 phase 3 staging`.
+- [x] MX resolves to an unproxied hostname on the GreenGeeks server.
+- [x] DKIM and MailChannels TXT values match the pre-cutover snapshot.
+- [x] Mail-safety tests passed before the apex attachment; mail and service
+  records remained unchanged by the apex operation.
+- [x] No D1 migration or admin/analysis Worker change occurred.
+- [x] The final apex record, reader acceptance, unchanged systems, pending
+  work, and rollback are recorded in the production cutover baseline.
 
 ## Post-cutover
 
 After the observation window, restore ordinary TTLs, retain the pre-cutover
 snapshot, and document any intentionally absent SPF/DMARC policy separately.
 Security-policy additions are follow-up work, not emergency cutover edits.
+
+Complete `www` handling and remove the staging identity only through separately
+reviewed and approved changes.
