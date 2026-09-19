@@ -1,6 +1,6 @@
 # SBNS Staging Baseline
 
-Recorded: 2026-09-18
+Recorded: 2026-09-19
 
 This file separates repository-verifiable configuration from account-only
 deployment facts. Do not guess missing Cloudflare values.
@@ -9,10 +9,11 @@ deployment facts. Do not guess missing Cloudflare values.
 
 | Item | Recorded value |
 | --- | --- |
-| Canonical branch | `main` |
-| Canonical SHA | `cc6ab7a657a15d35b6e7dc7589071624aff828e5` |
-| Latest merged change | PR #18 — Phase 3 structured-output repair |
-| Application version | `1.5.0` in the Phase 3.5 review branch |
+| Deployment branch | `main` |
+| Deployed source SHA | `0a15c0dcdd39959b2ae41e72a20b0a71563efe44` |
+| Latest merged change | PR #22 — propagation-aware staging health verification |
+| Application version | `1.5.0` |
+| Deployed health identifier | `v1.5 phase 3 staging` |
 | Published feed | 11 records: 5 reporting, 6 fictional prototype samples |
 | D1 migrations | `0001`, `0002`, `0003` |
 | Expected schema | version 3; 13 tables; 17 indexes |
@@ -23,6 +24,7 @@ deployment facts. Do not guess missing Cloudflare values.
 | Resource | Configuration |
 | --- | --- |
 | Public Worker | `sbns-news` |
+| Public staging URL | `https://sbns-news.sbns-news.workers.dev` |
 | Admin Worker | `sbns-admin` |
 | Analysis Worker | `sbns-analysis` |
 | D1 | `sbns-editorial-staging` / binding `SBNS_DB` |
@@ -33,41 +35,45 @@ deployment facts. Do not guess missing Cloudflare values.
 | Model token ceiling | `4096` |
 | Analysis caching | disabled through Gateway request option |
 
-## Live facts verified without account access
+## Verified deployment facts
 
-Verified on 2026-09-18:
+Verified on 2026-09-19:
 
-- the public site returned HTTP 200;
-- the public health endpoint returned HTTP 200 and still identified the live
-  deployment as `prototype v1.2`;
-- the admin hostname redirected to Cloudflare Access;
-- repository `main` still matched the canonical SHA above.
+- GitHub Actions run #5 completed successfully at
+  `https://github.com/jthiltgen-ctrl/SBNS.news/actions/runs/35412647720`;
+- validation, public Worker deployment, and staging health verification all
+  passed;
+- public Worker deployment version ID is
+  `5a8d207e-f76d-44e9-9306-59467c07211a`;
+- the public staging homepage returned HTTP 200 with the title
+  `Shocked But Not Surprised`;
+- the public health endpoint returned HTTP 200 and
+  `v1.5 phase 3 staging`;
+- the deployed source matched the SHA above;
+- no DNS, D1 migration, admin Worker, or analysis Worker changes were made.
 
-The Phase 3.5 review branch updates the health identifier to
-`v1.5 phase 3 staging`. That value is not live unless and until the branch is
-approved, merged, and separately deployed.
+The production domain `shockedbutnotsurprised.news` remains on its existing
+GreenGeeks DNS and hosting configuration. Email-related DNS records remain
+unchanged.
 
 ## Account-only facts still requiring dashboard verification
 
-The following values are intentionally marked **unverified** until an
-authenticated Cloudflare session records them:
-
 | Item | Status |
 | --- | --- |
-| Public Worker deployed version ID | Unverified |
-| Admin Worker deployed version ID | Unverified |
-| Analysis Worker deployed version ID | Unverified |
+| Admin Worker deployed version ID | Unverified; unchanged by this deployment |
+| Analysis Worker deployed version ID | Unverified; unchanged by this deployment |
 | Deployed `AI_MODEL` value | Unverified; secret/runtime configuration, not committed |
 | Remote migration listing | Previously reported current through `0003`; recheck required |
 | Queue and DLQ operational status | Names are verified; live status recheck required |
 | Known remote synthetic intake IDs/count | Unverified; inspect authenticated queue/D1 |
 
-Cloudflare's human-verification screen blocked the automated dashboard session
-used during this baseline pass. That limitation does not change the verified
-source configuration; it prevents falsely recording account-only details.
+Cloudflare's human-verification screen blocked the managed dashboard session.
+The public Worker version is nevertheless verified from the authenticated
+Wrangler deployment log and the live staging health endpoint.
 
 ## Staging-session log
 
 | Date | Intake IDs | Outcome | Baseline changed? | Notes |
 | --- | --- | --- | --- | --- |
 | 2026-09-18 | None | Public endpoints verified; account inventory pending | No | Phase 3.5 documentation pass |
+| 2026-09-19 | None | Public Worker deployed and smoke-tested successfully | Yes | GitHub Actions run #5; no migrations or DNS changes |
