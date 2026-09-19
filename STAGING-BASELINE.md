@@ -9,8 +9,8 @@ deployment facts. Do not guess missing Cloudflare values.
 
 | Item | Recorded value |
 | --- | --- |
-| Canonical branch | `main` |
-| Canonical SHA | `0a15c0dcdd39959b2ae41e72a20b0a71563efe44` |
+| Deployment branch | `main` |
+| Deployed source SHA | `0a15c0dcdd39959b2ae41e72a20b0a71563efe44` |
 | Latest merged change | PR #22 — propagation-aware staging health verification |
 | Application version | `1.5.0` |
 | Deployed health identifier | `v1.5 phase 3 staging` |
@@ -49,7 +49,7 @@ Verified on 2026-09-19:
   `Shocked But Not Surprised`;
 - the public health endpoint returned HTTP 200 and
   `v1.5 phase 3 staging`;
-- repository `main` matched the canonical SHA above;
+- the deployed source matched the SHA above;
 - no DNS, D1 migration, admin Worker, or analysis Worker changes were made.
 
 The production domain `shockedbutnotsurprised.news` remains on its existing
