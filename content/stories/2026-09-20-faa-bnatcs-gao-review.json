@@ -1,6 +1,6 @@
 {
   "id": "faa-bnatcs-gao-cost-schedule-review",
-  "status": "draft",
+  "status": "published",
   "content_type": "reporting",
   "category": "National",
   "headline": "GAO Says FAA’s Air-Traffic Overhaul Lacks the Cost and Schedule Controls It Needs",
@@ -29,5 +29,5 @@
       "url": "https://www.reuters.com/business/us-faa-says-billions-more-needed-modernize-air-traffic-control-2026-09-15/"
     }
   ],
-  "published_at": null
+  "published_at": "2026-09-20T12:43:42Z"
 }
