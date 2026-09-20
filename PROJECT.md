@@ -65,13 +65,24 @@ Reporting is the default public view. Fictional fixtures remain available only
 as a clearly separated prototype archive. Reporting sources render as safe
 external links; topic tags remain visually and semantically separate.
 
-## Remaining v1.5 sequence
+## Public-launch state and remaining v1.5 sequence
 
-1. Complete and record Phase 3 authenticated staging acceptance.
-2. Add abuse-resistant visitor submissions with Turnstile.
+The canonical apex and v1.5 production reader completed formal public-launch
+acceptance on September 19, 2026. See
+[PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md). Remaining numbered
+phases are product options, not launch blockers:
+
+The post-launch `www` canonical redirect is complete. The only known
+infrastructure discrepancy is temporary local resolver/cache convergence.
+
+1. Recheck local resolver convergence without changing authoritative DNS.
+2. Add abuse-resistant visitor submissions with Turnstile if product need
+   justifies opening public intake.
 3. Add controlled GitHub App draft-PR publication orchestration.
-4. Back monitoring with durable, queue-driven live records.
-5. Add immutable correction and update publication history.
+4. Back monitoring with durable, queue-driven live records when monitoring
+   demand and policy are defined.
+5. Add immutable correction and update publication history before automating
+   public historical mutation.
 
 No later phase is implicitly authorized by the existence of this project map.
 
@@ -87,7 +98,8 @@ npm run check
 `npm run check` uses local isolated state and performs dry runs only. It does not
 deploy, mutate the remote database, or create Cloudflare resources.
 
-## Legacy deployment files
+## Deployment files
 
-The root `deploy.yml` and `.github/workflows/deploy.yml` are legacy GreenGeeks
-artifacts and remain byte-for-byte unchanged.
+The root `deploy.yml` is a legacy GreenGeeks artifact retained for historical
+reference. `.github/workflows/deploy.yml` is the active, scoped public Worker
+deployment workflow.

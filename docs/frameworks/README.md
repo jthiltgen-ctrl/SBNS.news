@@ -6,7 +6,7 @@ Scope: Editorial governance, technical governance, historical provenance, and op
 
 ## Purpose
 
-This directory preserves the operating ideas that built ShockedButNotSurprised.news from its first repository deployment work through the current Cloudflare staging architecture. It is also meant to keep those ideas usable as the publication evolves.
+This directory preserves the operating ideas that built ShockedButNotSurprised.news from its first repository deployment work through the current Cloudflare production reader and staged editorial architecture. It is also meant to keep those ideas usable as the publication evolves.
 
 The public and canonical name is ShockedButNotSurprised.news. SBNS remains a legacy and internal abbreviation in repository history, runtime resource names, schemas, and older documents. Renaming those technical identifiers is a separate change and is not implied by this framework package.
 
@@ -92,7 +92,7 @@ When documents appear to conflict, use this order unless a later explicitly appr
 2. TECHNICAL-FRAMEWORK.md for technical safety and architecture invariants.
 3. Current schemas, migrations, tests, and runtime configuration for implemented behavior.
 4. OPERATOR-RUNBOOK.md for ordinary procedure.
-5. Current staging baseline and checklists for environment-specific facts.
+5. Current launch and staging baselines and checklists for environment-specific facts.
 6. Historical specifications for provenance and design intent.
 
 Implementation does not overrule the editorial constitution merely because code can do something.
@@ -108,8 +108,10 @@ A future roadmap item does not authorize deployment.
 - EDITORIAL.md — original repository-managed editorial workflow. Its core rules are incorporated into the editorial framework.
 - PERSISTENCE.md — active D1 migration and recovery rules.
 - STAGING-CHECKLIST.md — active ordinary staging acceptance routine.
-- STAGING-BASELINE.md — active environment baseline; account-only facts remain explicitly marked when unverified.
-- DNS-CUTOVER-RUNBOOK.md — active pre-production cutover plan. It is a plan, not proof that cutover occurred.
+- STAGING-BASELINE.md — preserved staging checkpoint; account-only facts remain explicitly marked when unverified.
+- PRODUCTION-CUTOVER-BASELINE.md — verified apex-cutover snapshot and rollback record.
+- PUBLIC-LAUNCH-BASELINE.md — formal production launch acceptance and current non-blocking follow-up.
+- DNS-CUTOVER-RUNBOOK.md — completed cutover procedure retained for chronology, safeguards, and rollback; the baselines provide proof of the executed results.
 - README.md and PROJECT.md — current product and repository map.
 
 ### Historical design contracts with continuing principles

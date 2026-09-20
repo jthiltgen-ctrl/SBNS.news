@@ -72,7 +72,10 @@ Drafts never enter the public feed.
   Cloudflare dashboard verification.
 - [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) records the
   verified September 19, 2026 production-apex cutover, preserved GreenGeeks
-  mail boundary, pending `www` work, and exact web rollback.
+  mail boundary, `www` state at that checkpoint, and exact web rollback.
+- [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md) records the formal
+  September 19, 2026 public-launch acceptance, production identity, reader
+  checks, deployed Worker version, and completed post-launch `www` redirect.
 - [PERSISTENCE.md](PERSISTENCE.md) defines local/remote migration boundaries.
 - [DNS-CUTOVER-RUNBOOK.md](DNS-CUTOVER-RUNBOOK.md) separates the
   authoritative-DNS move from the production Worker cutover and preserves the
@@ -83,7 +86,9 @@ Drafts never enter the public feed.
 Deployment, remote migrations, production DNS, nameservers, public visitor
 submissions, and automated repository publication require separate
 authorization. `.github/workflows/deploy.yml` validates and deploys only the
-public `sbns-news` staging Worker after changes reach `main`; it requires the
+public `sbns-news` Worker after changes reach `main`; it requires the
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets in the `staging`
-GitHub environment. The root-level legacy GreenGeeks `deploy.yml` remains as a
-historical reference and is not invoked by GitHub Actions.
+GitHub environment. The environment name is retained for credential management
+and does not describe the public Worker's production identity. The root-level
+legacy GreenGeeks `deploy.yml` remains as a historical reference and is not
+invoked by GitHub Actions.

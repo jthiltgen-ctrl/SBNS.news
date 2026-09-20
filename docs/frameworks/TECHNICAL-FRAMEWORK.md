@@ -638,7 +638,7 @@ Do not guess account-only values.
 
 ## 26. Deployment workflow
 
-The current GitHub Actions public staging workflow:
+The current GitHub Actions public Worker workflow:
 
 - triggers on main for public-surface paths or manual dispatch;
 - uses Node 22;
@@ -652,7 +652,9 @@ The current GitHub Actions public staging workflow:
 - does not deploy admin or analysis Workers;
 - does not change DNS.
 
-Secrets are held in the GitHub staging environment.
+Secrets are held in the GitHub environment named `staging`. That retained
+credential-management name does not change the public Worker's production
+identity or canonical-domain role.
 
 ## 27. DNS and email boundary
 
@@ -668,10 +670,14 @@ Each phase requires separate action-time approval and a rollback path.
 
 As verified on September 19, 2026, the mail decoupling and authoritative-DNS
 move are complete, and the production apex is a Cloudflare-managed Custom
-Domain on `sbns-news`. `www` remains pending. The application still identifies
-itself as Phase 3 staging, so production routing must not be confused with final
-public-launch identity cleanup. `PRODUCTION-CUTOVER-BASELINE.md` is the current
-operational record.
+Domain on `sbns-news`. The application then still identified itself as Phase 3
+staging, so production routing was not confused with final launch acceptance.
+PR #27 subsequently deployed the `v1.5 production` identity and final
+acceptance passed. A separately bounded post-launch change then added an HTTP
+301 `www` canonical redirect with path and query preservation. The apex remains
+the sole Production Custom Domain, and no Worker Route or mail/service record
+changed. `PRODUCTION-CUTOVER-BASELINE.md` preserves the cutover snapshot and
+`PUBLIC-LAUNCH-BASELINE.md` records the launch and post-launch checkpoints.
 
 Never repoint a web apex in a way that accidentally sends MX, mail, cPanel, autodiscover, CalDAV, or CardDAV traffic to the Worker.
 

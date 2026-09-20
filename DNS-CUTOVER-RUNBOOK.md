@@ -18,10 +18,12 @@ Recorded on 2026-09-19:
   the verified 26-record set remains in place.
 - Phase 3 is complete for the apex: `shockedbutnotsurprised.news` is a
   Production Custom Domain on `sbns-news` with valid HTTPS.
-- `www` remains an unchanged DNS-only CNAME and is still pending deliberate
-  Worker attachment or canonical redirect configuration.
-- The deployed application still reports `v1.5 phase 3 staging`; final
-  public-launch identity cleanup remains separate work.
+- At the apex-cutover checkpoint, `www` remained an unchanged DNS-only CNAME.
+  It was canonicalized after formal launch through the separately bounded
+  redirect recorded below.
+- The later PR #27 deployment removed the staging identity, and formal public
+  launch acceptance passed. That post-cutover state is recorded in
+  [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md).
 
 See [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) for the
 verified production state and exact web rollback.
@@ -144,7 +146,8 @@ diagnosis.
 
 ## Phase 3 — attach the production web domain to the Worker
 
-Status: Apex completed on 2026-09-19; `www` remains pending.
+Status at the apex-cutover checkpoint: Apex completed on 2026-09-19; `www`
+remained pending until the later post-launch redirect change.
 
 After authoritative DNS and mail have been stable, and after a third
 action-time approval:
@@ -163,13 +166,15 @@ action-time approval:
 
 Current apex rollback: remove the `shockedbutnotsurprised.news` Custom Domain
 from `sbns-news`, then restore `A @ -> 69.175.102.130` as DNS only with TTL
-Auto. The unchanged `www` CNAME does not require rollback. Nameservers do not
-need to be reverted while Phase 2 remains healthy.
+Auto. At the apex-cutover checkpoint, the unchanged `www` CNAME did not require
+rollback. The later redirect has its own rollback below. Nameservers do not need
+to be reverted while Phase 2 remains healthy.
 
 ## Acceptance criteria
 
 - [x] The apex serves the intended Worker over valid HTTPS.
-- [ ] `www` serves the Worker or redirects deliberately to the canonical apex.
+- [x] `www` redirects deliberately to the canonical apex; completed as a
+  separately bounded post-launch change.
 - [x] Health returns `ok: true` and `v1.5 phase 3 staging`.
 - [x] MX resolves to an unproxied hostname on the GreenGeeks server.
 - [x] DKIM and MailChannels TXT values match the pre-cutover snapshot.
@@ -185,5 +190,30 @@ After the observation window, restore ordinary TTLs, retain the pre-cutover
 snapshot, and document any intentionally absent SPF/DMARC policy separately.
 Security-policy additions are follow-up work, not emergency cutover edits.
 
-Complete `www` handling and remove the staging identity only through separately
-reviewed and approved changes.
+The staging identity was removed through separately reviewed PR #27.
+
+### Post-launch `www` completion
+
+The separately approved `www` change completed successfully:
+
+- proxied A `www` to `192.0.2.0`, TTL Auto;
+- Single Redirect `Redirect www to apex`;
+- match: `http.host eq "www.shockedbutnotsurprised.news"`;
+- target:
+  `concat("https://shockedbutnotsurprised.news", http.request.uri.path)`;
+- query-string preservation enabled;
+- HTTP 301.
+
+Root, path, query-string, and TLS acceptance passed. The apex remained HTTP 200
+with `v1.5 production` health, remained the sole Production Custom Domain, and
+no Worker Route or mail/service record changed.
+
+`www` rollback:
+
+1. remove `Redirect www to apex`;
+2. remove proxied A `www` to `192.0.2.0`;
+3. restore CNAME `www` to `shockedbutnotsurprised.news`, DNS only, TTL Auto;
+4. verify apex health.
+
+Authoritative/public DNS is correct. A remaining former answer in one local
+resolver is a cache-convergence condition unless later evidence contradicts it.

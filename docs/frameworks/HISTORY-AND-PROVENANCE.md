@@ -535,7 +535,43 @@ overstated: `www` is unchanged and pending, and the deployed application still
 self-identifies as Phase 3 staging. The exact current state and rollback are
 recorded in `PRODUCTION-CUTOVER-BASELINE.md`.
 
-## 16. Architectural pattern across the history
+## 16. Stage 14 — public-launch identity and final acceptance
+
+### September 19, 2026
+
+PR #27, squash merge:
+
+`73880369f2ddb042756d6d2ea4efdf7cc8c6d437`
+
+The public-launch identity release followed the apex cutover rather than being
+retroactively folded into it. It changed `Staging Edition` to `Public Edition`,
+changed the health identity from `v1.5 phase 3 staging` to `v1.5 production`,
+and updated the scoped deployment assertion accordingly.
+
+GitHub Actions `Deploy public Worker` run #6 (`35485324877`) succeeded. Active
+Worker version `fb71aeed-7fe0-482a-a9eb-6cb5a7e6461f` received 100% of
+production traffic. Final reader, health, DNS/routing, HTTPS, and mail/service
+preservation checks passed with non-blocking follow-up for `www` and one local
+resolver cache.
+
+The formal checkpoint is recorded in `PUBLIC-LAUNCH-BASELINE.md`. No visitor
+submission, publication-orchestration, monitoring, correction-publication,
+SPF, DMARC, mail, or `www` implementation was included.
+
+## 17. Stage 15 — post-launch `www` canonicalization
+
+After formal launch acceptance, the separately bounded `www` follow-up
+replaced the DNS-only CNAME with a proxied A record to `192.0.2.0` and added a
+Cloudflare Single Redirect to the canonical apex. The HTTP 301 preserves paths
+and query strings.
+
+Root, path, query-string, TLS, apex, and production-health checks passed. The
+apex remained the sole Production Custom Domain; `www` was not added as a
+Worker Custom Domain; no Worker Route, mail record, or service record changed.
+One local resolver temporarily retained the former answer while public
+resolvers were correct.
+
+## 18. Architectural pattern across the history
 
 A recurring development pattern appears throughout the repository:
 
@@ -575,7 +611,7 @@ Reconstruction:
 
 The project evolved through deliberately bounded increments rather than a single “AI news site” leap. The operating philosophy has been to automate the repeatable work while preserving human authority at the points where meaning, accountability, publication, and historical correction are decided.
 
-## 17. Current status classification
+## 19. Current status classification
 
 ### Implemented and active in repository
 
@@ -593,27 +629,27 @@ The project evolved through deliberately bounded increments rather than a single
 - public staging deploy workflow;
 - staging checklist and baseline.
 
-### Recorded as successfully public-staged and apex-attached
+### Recorded as formally public-launched
 
 - sbns-news public Worker;
 - public homepage;
 - /api/health;
-- v1.5 Phase 3 staging identity.
+- v1.5 production identity;
 - production apex Custom Domain with valid HTTPS;
+- post-launch `www` HTTP 301 canonical redirect with path and query
+  preservation;
 - Cloudflare-managed proxied Worker record at the apex;
 - preserved GreenGeeks mail and service infrastructure.
 
 ### Active design or operational plan, not proof of completion
 
-- `www` Worker attachment or canonical redirect;
-- final public-launch identity cleanup;
 - visitor submissions;
 - GitHub App draft-PR publication orchestration;
 - durable live monitoring;
 - immutable public correction history;
 - later role expansion.
 
-## 18. Provenance maintenance
+## 20. Provenance maintenance
 
 When future phases are added, update this document with:
 
