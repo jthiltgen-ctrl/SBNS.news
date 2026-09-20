@@ -250,7 +250,7 @@ If any stage fails, record the failure stage.
 
 Do not report “published” merely because preparation started.
 
-## 11. Staging check after public change
+## 11. Public acceptance after a public change
 
 Use STAGING-CHECKLIST.md.
 
@@ -324,7 +324,7 @@ Never run a remote migration from ordinary PR validation.
 
 Never automatically recreate the database as routine recovery.
 
-## 15. Public staging deployment procedure
+## 15. Public Worker deployment procedure
 
 The current GitHub Actions workflow is scoped to the public Worker.
 
@@ -342,7 +342,9 @@ After deployment:
 - public story feed renders;
 - no unrelated DNS, D1, admin Worker, or analysis Worker change occurred.
 
-Record the deployment version and source SHA in STAGING-BASELINE.md when the baseline changes.
+Record the deployment version and source SHA in the applicable operational
+record. Do not rewrite the fixed formal-launch checkpoint as routine deployment
+history.
 
 ## 16. Admin or analysis Worker changes
 

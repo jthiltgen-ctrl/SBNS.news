@@ -20,8 +20,9 @@ Recorded on 2026-09-19:
   Production Custom Domain on `sbns-news` with valid HTTPS.
 - `www` remains an unchanged DNS-only CNAME and is still pending deliberate
   Worker attachment or canonical redirect configuration.
-- The deployed application still reports `v1.5 phase 3 staging`; final
-  public-launch identity cleanup remains separate work.
+- The later PR #27 deployment removed the staging identity, and formal public
+  launch acceptance passed. That post-cutover state is recorded in
+  [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md).
 
 See [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) for the
 verified production state and exact web rollback.
@@ -185,5 +186,5 @@ After the observation window, restore ordinary TTLs, retain the pre-cutover
 snapshot, and document any intentionally absent SPF/DMARC policy separately.
 Security-policy additions are follow-up work, not emergency cutover edits.
 
-Complete `www` handling and remove the staging identity only through separately
-reviewed and approved changes.
+The staging identity was removed through separately reviewed PR #27. Complete
+`www` handling only through a separate reviewed and approved change.

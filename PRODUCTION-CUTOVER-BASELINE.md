@@ -6,7 +6,12 @@ This baseline records the verified production web-apex cutover separately from
 the staging deployment baseline. It is an operational record, not authorization
 for additional DNS, Worker, database, or deployment changes.
 
-## Production web state
+This is the cutover-time snapshot: production routing was accepted while the
+application still carried its staging identity. The subsequent identity release
+and formal launch acceptance are recorded in
+[PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md).
+
+## Production web state at apex cutover
 
 | Item | Verified value |
 | --- | --- |
@@ -68,7 +73,7 @@ The production apex operation did not:
 - change the admin or analysis Workers;
 - alter application code, story content, or deployment workflows.
 
-## Remaining launch work
+## Remaining launch work at apex cutover
 
 - `www` has not been attached to the Worker or redirected to the canonical
   apex.
@@ -78,6 +83,10 @@ The production apex operation did not:
   deployment change.
 - SPF and DMARC policy remain separate follow-up work; they were not invented
   or changed during the cutover.
+
+The identity cleanup above was later completed by PR #27 and verified through
+GitHub Actions run #6. It must remain visible here as chronology: apex routing
+preceded the launch-identity release. `www`, SPF, and DMARC remain follow-up.
 
 ## Rollback
 

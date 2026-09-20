@@ -5,6 +5,9 @@ Recorded: 2026-09-19
 This file separates repository-verifiable configuration from account-only
 deployment facts. Do not guess missing Cloudflare values.
 
+This is the preserved staging checkpoint. It is not the current public-launch
+baseline; see [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md).
+
 ## Repository baseline
 
 | Item | Recorded value |
@@ -55,9 +58,11 @@ Verified on 2026-09-19:
 The public staging Worker now also serves the production apex through a
 Cloudflare Custom Domain. That production operation is recorded separately in
 [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md). The deployed
-application still self-identifies as `v1.5 phase 3 staging` and retains its
-Staging Edition notice. `www` remains pending. GreenGeeks continues to host the
-mail and related service infrastructure.
+application still self-identified as `v1.5 phase 3 staging` and retained its
+Staging Edition notice at that cutover checkpoint. PR #27 subsequently changed
+the public identity to `v1.5 production` and `Public Edition`; `www` remains
+pending. GreenGeeks continues to host the mail and related service
+infrastructure.
 
 ## Account-only facts still requiring dashboard verification
 
