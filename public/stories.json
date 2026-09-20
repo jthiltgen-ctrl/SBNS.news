@@ -1,5 +1,38 @@
 [
   {
+    "id": "faa-bnatcs-gao-cost-schedule-review",
+    "status": "published",
+    "content_type": "reporting",
+    "category": "National",
+    "headline": "GAO Says FAA’s Air-Traffic Overhaul Lacks the Cost and Schedule Controls It Needs",
+    "summary": "The Government Accountability Office says the FAA has made progress on its accelerated Brand New Air Traffic Control System, but the agency still lacks a reliable lifecycle cost estimate and a detailed integrated master schedule while implementation is already underway across nine of 13 phase-one programs. GAO found FAA’s $10.6 billion phase-one systems-modernization estimate omits government costs, most post-implementation operations and maintenance, and all phase-two costs, while 11,389 individual project schedules had not been integrated as of May 2026. The Transportation Department partially concurred with GAO’s recommendations, while FAA Administrator Bryan Bedford says the agency is meeting or exceeding its accelerated transformation schedule and cites substantial deployment progress.",
+    "fml_kicker": "Nothing says integrated modernization like 11,389 schedules waiting to meet each other.",
+    "severity": 4,
+    "topic_tags": [
+      "FAA",
+      "air traffic control",
+      "modernization",
+      "GAO",
+      "infrastructure",
+      "oversight"
+    ],
+    "sources": [
+      {
+        "name": "U.S. Government Accountability Office — Air Traffic Control Systems: Ambitious New Modernization Effort Needs to Improve Cost and Schedule Planning",
+        "url": "https://www.gao.gov/products/gao-26-107992"
+      },
+      {
+        "name": "Federal Aviation Administration — Bryan Bedford FY2027 budget testimony",
+        "url": "https://www.faa.gov/testimony/testimony-bryan-bedford-faa-administrator-hearing-committee-appropriations-subcommittee"
+      },
+      {
+        "name": "Reuters — FAA says billions more needed to modernize air traffic control",
+        "url": "https://www.reuters.com/business/us-faa-says-billions-more-needed-modernize-air-traffic-control-2026-09-15/"
+      }
+    ],
+    "published_at": "2026-09-20T12:43:42Z"
+  },
+  {
     "id": "dubuque-fy2025-budget-audit-overrun",
     "status": "published",
     "content_type": "reporting",
