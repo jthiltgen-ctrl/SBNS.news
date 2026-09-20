@@ -673,9 +673,11 @@ move are complete, and the production apex is a Cloudflare-managed Custom
 Domain on `sbns-news`. The application then still identified itself as Phase 3
 staging, so production routing was not confused with final launch acceptance.
 PR #27 subsequently deployed the `v1.5 production` identity and final
-acceptance passed. `www` remains pending. `PRODUCTION-CUTOVER-BASELINE.md`
-preserves the cutover snapshot and `PUBLIC-LAUNCH-BASELINE.md` records the
-formal launch checkpoint.
+acceptance passed. A separately bounded post-launch change then added an HTTP
+301 `www` canonical redirect with path and query preservation. The apex remains
+the sole Production Custom Domain, and no Worker Route or mail/service record
+changed. `PRODUCTION-CUTOVER-BASELINE.md` preserves the cutover snapshot and
+`PUBLIC-LAUNCH-BASELINE.md` records the launch and post-launch checkpoints.
 
 Never repoint a web apex in a way that accidentally sends MX, mail, cPanel, autodiscover, CalDAV, or CardDAV traffic to the Worker.
 

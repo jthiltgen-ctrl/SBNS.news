@@ -87,17 +87,55 @@ The intentionally DNS-only mail and service hosts continue to expose the
 GreenGeeks origin IP. That is an architectural consequence of preserving those
 services, not evidence that the public web apex failed to move to Cloudflare.
 
-## Known non-blocking follow-up
+## Known non-blocking follow-up at launch acceptance
 
 1. One computer's system resolver temporarily continued returning the legacy
    `69.175.102.130` apex answer while authoritative and public resolvers were
    already correct. Treat this as local cache convergence unless a later
    comparison against authoritative and public resolvers shows otherwise.
-2. `www.shockedbutnotsurprised.news` remains unfinished. Public DNS retains the
-   existing DNS-only CNAME, but `www` is not a Worker Custom Domain and returned
-   HTTP 522 through the public edge. The canonical apex is unaffected.
+2. At formal launch acceptance, `www.shockedbutnotsurprised.news` remained
+   unfinished. Public DNS retained the existing DNS-only CNAME, but `www` was
+   not a Worker Custom Domain and returned HTTP 522 through the public edge.
+   The canonical apex was unaffected.
 
-Neither condition blocked formal launch acceptance.
+Neither condition blocked formal launch acceptance. The `www` condition was
+completed afterward as the separately bounded post-launch change below.
+
+## Post-launch `www` canonicalization
+
+The `www` follow-up completed successfully after formal launch acceptance.
+
+Current DNS and redirect state:
+
+- DNS is a proxied A record, `www` to `192.0.2.0`, with TTL Auto;
+- Cloudflare Single Redirect `Redirect www to apex` matches
+  `http.host eq "www.shockedbutnotsurprised.news"`;
+- the redirect target is
+  `concat("https://shockedbutnotsurprised.news", http.request.uri.path)`;
+- query-string preservation is enabled;
+- the redirect returns HTTP 301.
+
+Acceptance verified the root redirect, path preservation, query-string
+preservation, and TLS on `www`. The apex remained HTTP 200 and production
+health remained:
+
+`{"ok":true,"name":"Shocked But Not Surprised","acronym":"SBNS","version":"v1.5 production"}`
+
+The apex remains the sole Production Custom Domain. `www` was not added as a
+Worker Custom Domain, no Worker Route exists, and mail and service records were
+unchanged. Public resolvers `1.1.1.1` and `8.8.8.8` return Cloudflare addresses
+for `www`.
+
+One local/system resolver temporarily retained the former CNAME or legacy
+answer. Authoritative and public resolution plus the accepted redirect show
+this is local cache convergence, not an active infrastructure defect.
+
+Rollback for the `www` change is:
+
+1. remove `Redirect www to apex`;
+2. remove proxied A `www` to `192.0.2.0`;
+3. restore CNAME `www` to `shockedbutnotsurprised.news`, DNS only, TTL Auto;
+4. verify apex health.
 
 ## Formal launch versus later product phases
 
@@ -112,7 +150,6 @@ The following remain later, separately scoped work:
 - controlled GitHub App draft-PR publication orchestration;
 - durable queue-backed monitoring;
 - immutable correction and update publication history;
-- deliberate `www` canonical handling;
 - separately researched SPF and DMARC policy.
 
 Human editorial authority remains unchanged: recommendation is not decision,

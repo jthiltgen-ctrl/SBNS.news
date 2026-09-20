@@ -72,10 +72,10 @@ Drafts never enter the public feed.
   Cloudflare dashboard verification.
 - [PRODUCTION-CUTOVER-BASELINE.md](PRODUCTION-CUTOVER-BASELINE.md) records the
   verified September 19, 2026 production-apex cutover, preserved GreenGeeks
-  mail boundary, pending `www` work, and exact web rollback.
+  mail boundary, `www` state at that checkpoint, and exact web rollback.
 - [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md) records the formal
   September 19, 2026 public-launch acceptance, production identity, reader
-  checks, deployed Worker version, and non-blocking follow-up.
+  checks, deployed Worker version, and completed post-launch `www` redirect.
 - [PERSISTENCE.md](PERSISTENCE.md) defines local/remote migration boundaries.
 - [DNS-CUTOVER-RUNBOOK.md](DNS-CUTOVER-RUNBOOK.md) separates the
   authoritative-DNS move from the production Worker cutover and preserves the

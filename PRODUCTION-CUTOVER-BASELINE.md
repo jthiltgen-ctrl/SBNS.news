@@ -86,7 +86,10 @@ The production apex operation did not:
 
 The identity cleanup above was later completed by PR #27 and verified through
 GitHub Actions run #6. It must remain visible here as chronology: apex routing
-preceded the launch-identity release. `www`, SPF, and DMARC remain follow-up.
+preceded the launch-identity release. `www` was still pending at formal launch
+acceptance and was completed afterward with a proxied placeholder A record and
+Cloudflare Single Redirect to the canonical apex. SPF and DMARC remain
+follow-up. See [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md).
 
 ## Rollback
 

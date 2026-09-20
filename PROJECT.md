@@ -72,8 +72,10 @@ acceptance on September 19, 2026. See
 [PUBLIC-LAUNCH-BASELINE.md](PUBLIC-LAUNCH-BASELINE.md). Remaining numbered
 phases are product options, not launch blockers:
 
-1. Close bounded operational follow-up: recheck local resolver convergence and
-   deliberately configure `www` as a canonical redirect.
+The post-launch `www` canonical redirect is complete. The only known
+infrastructure discrepancy is temporary local resolver/cache convergence.
+
+1. Recheck local resolver convergence without changing authoritative DNS.
 2. Add abuse-resistant visitor submissions with Turnstile if product need
    justifies opening public intake.
 3. Add controlled GitHub App draft-PR publication orchestration.

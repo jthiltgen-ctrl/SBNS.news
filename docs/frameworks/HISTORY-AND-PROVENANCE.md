@@ -558,7 +558,20 @@ The formal checkpoint is recorded in `PUBLIC-LAUNCH-BASELINE.md`. No visitor
 submission, publication-orchestration, monitoring, correction-publication,
 SPF, DMARC, mail, or `www` implementation was included.
 
-## 17. Architectural pattern across the history
+## 17. Stage 15 — post-launch `www` canonicalization
+
+After formal launch acceptance, the separately bounded `www` follow-up
+replaced the DNS-only CNAME with a proxied A record to `192.0.2.0` and added a
+Cloudflare Single Redirect to the canonical apex. The HTTP 301 preserves paths
+and query strings.
+
+Root, path, query-string, TLS, apex, and production-health checks passed. The
+apex remained the sole Production Custom Domain; `www` was not added as a
+Worker Custom Domain; no Worker Route, mail record, or service record changed.
+One local resolver temporarily retained the former answer while public
+resolvers were correct.
+
+## 18. Architectural pattern across the history
 
 A recurring development pattern appears throughout the repository:
 
@@ -598,7 +611,7 @@ Reconstruction:
 
 The project evolved through deliberately bounded increments rather than a single “AI news site” leap. The operating philosophy has been to automate the repeatable work while preserving human authority at the points where meaning, accountability, publication, and historical correction are decided.
 
-## 18. Current status classification
+## 19. Current status classification
 
 ### Implemented and active in repository
 
@@ -623,19 +636,20 @@ The project evolved through deliberately bounded increments rather than a single
 - /api/health;
 - v1.5 production identity;
 - production apex Custom Domain with valid HTTPS;
+- post-launch `www` HTTP 301 canonical redirect with path and query
+  preservation;
 - Cloudflare-managed proxied Worker record at the apex;
 - preserved GreenGeeks mail and service infrastructure.
 
 ### Active design or operational plan, not proof of completion
 
-- `www` Worker attachment or canonical redirect;
 - visitor submissions;
 - GitHub App draft-PR publication orchestration;
 - durable live monitoring;
 - immutable public correction history;
 - later role expansion.
 
-## 19. Provenance maintenance
+## 20. Provenance maintenance
 
 When future phases are added, update this document with:
 

@@ -61,8 +61,9 @@ Cloudflare Custom Domain. That production operation is recorded separately in
 application still self-identified as `v1.5 phase 3 staging` and retained its
 Staging Edition notice at that cutover checkpoint. PR #27 subsequently changed
 the public identity to `v1.5 production` and `Public Edition`; `www` remains
-pending. GreenGeeks continues to host the mail and related service
-infrastructure.
+pending at that launch checkpoint. The separate post-launch canonical redirect
+was completed afterward. GreenGeeks continues to host the mail and related
+service infrastructure.
 
 ## Account-only facts still requiring dashboard verification
 
