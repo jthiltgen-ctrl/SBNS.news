@@ -18,7 +18,7 @@ export default {
         ok: true,
         name: "Shocked But Not Surprised",
         acronym: "SBNS",
-        version: "v1.5 phase 3 staging",
+        version: "v1.5 production",
       });
     }
 
