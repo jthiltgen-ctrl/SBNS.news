@@ -1,4 +1,4 @@
-name: Deploy public staging Worker
+name: Deploy public Worker
 
 on:
   workflow_dispatch:
@@ -52,10 +52,10 @@ jobs:
           node --check src/index.js
           npx wrangler deploy --config wrangler.jsonc --dry-run
 
-      - name: Deploy public staging Worker
+      - name: Deploy public Worker
         run: npx wrangler deploy --config wrangler.jsonc
 
-      - name: Verify staging health
+      - name: Verify public health
         shell: bash
         run: |
           for attempt in {1..10}; do
@@ -64,15 +64,15 @@ jobs:
               "https://sbns-news.sbns-news.workers.dev/api/health?run=${GITHUB_RUN_ID}&attempt=${attempt}")" &&
               node -e '
                 const health = JSON.parse(process.argv[1]);
-                if (health.ok !== true || health.version !== "v1.5 phase 3 staging") {
+                if (health.ok !== true || health.version !== "v1.5 production") {
                   process.exit(1);
                 }
                 console.log(`Verified ${health.name} ${health.version}`);
               ' "$health"; then
                 exit 0
             fi
-            echo "Waiting for staging propagation (${attempt}/10)."
+            echo "Waiting for public Worker propagation (${attempt}/10)."
             sleep 3
           done
-          echo "Staging health did not reach the expected version."
+          echo "Public health did not reach the expected version."
           exit 1
