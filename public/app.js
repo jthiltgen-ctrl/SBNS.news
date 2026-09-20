@@ -77,7 +77,14 @@ function renderStory(story) {
   meta.append(storyLine, severityDots(story.severity));
 
   const headline = document.createElement("h3");
-  headline.textContent = text(story.headline, "Untitled report");
+  if (!isSample && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(story.id)) {
+    const headlineLink = document.createElement("a");
+    headlineLink.href = `/story/${story.id}`;
+    headlineLink.textContent = text(story.headline, "Untitled report");
+    headline.append(headlineLink);
+  } else {
+    headline.textContent = text(story.headline, "Untitled report");
+  }
 
   const summary = document.createElement("p");
   summary.className = "summary";

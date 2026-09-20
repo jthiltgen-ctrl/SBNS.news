@@ -220,7 +220,7 @@ async function preparePackage(packageFile, repoRoot = ROOT, options = {}) {
     return { story, previousCount, nextCount: feed.length };
   } catch (error) {
     if (wroteStory) await rm(target, { force: true });
-    await writeFile(feedFile, previousFeed, "utf8");
+    await run(process.execPath, [path.join(repoRoot, "scripts", "content.mjs"), "build"], repoRoot);
     throw error;
   }
 }
@@ -263,8 +263,8 @@ async function initializeTempRepo(basePackage) {
     published_at: "2026-08-18T00:00:00Z"
   };
   await writeFile(path.join(root, "content", "stories", "existing.json"), `${JSON.stringify(existing, null, 2)}\n`);
-  await writeFile(path.join(root, "public", "stories.json"), `${JSON.stringify([existing], null, 2)}\n`);
   await writeFile(path.join(root, "package.json"), '{"type":"module"}\n');
+  await run(process.execPath, [path.join(root, "scripts", "content.mjs"), "build"], root);
   const packageFile = path.join(root, "package.json.fixture");
   await writeFile(packageFile, `${JSON.stringify(basePackage, null, 2)}\n`);
   await run("git", ["init", "-b", "main"], root);
