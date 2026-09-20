@@ -489,7 +489,7 @@ Recorded public staging facts include:
 
 The baseline file deliberately separates repository-verifiable facts from account-only facts that still require live verification.
 
-## 15. Stage 13 — production DNS cutover is planned, not completed by documentation
+## 15. Stage 13 — bounded production DNS and apex cutover
 
 PR #24: Add mail-safe production DNS cutover runbook
 
@@ -505,7 +505,35 @@ Each mutable phase requires separate action-time approval and rollback.
 
 Important historical distinction:
 
-The presence of DNS-CUTOVER-RUNBOOK.md means the cutover has been designed. It does not itself prove that production DNS, nameservers, mail routing, or Worker custom-domain routing changed.
+The presence of DNS-CUTOVER-RUNBOOK.md originally proved only that the cutover
+had been designed. It did not itself prove that production DNS, nameservers,
+mail routing, or Worker custom-domain routing changed.
+
+### September 19, 2026 operational completion record
+
+The separately approved operational phases were subsequently executed and
+verified:
+
+- GreenGeeks mail and service records were decoupled from the web apex;
+- Cloudflare became authoritative for the active 26-record DNS zone;
+- inbound and outbound mail-safety tests passed;
+- the legacy apex A record to `69.175.102.130` was removed;
+- `shockedbutnotsurprised.news` was attached to `sbns-news` as a Production
+  Custom Domain;
+- the active deployment remained
+  `5a8d207e-f76d-44e9-9306-59467c07211a`;
+- no new Worker deployment, route, binding, D1 migration, Queue, AI Gateway,
+  DNSSEC, SSL/TLS policy, or nameserver change accompanied the apex operation.
+
+Production reader acceptance verified five reporting stories by default, six
+fictional samples isolated in the Prototype archive, working filters, visible
+publication dates and sources, methodology and standards content, valid HTTPS,
+and a healthy `/api/health` response.
+
+The operational boundary remains intentionally incomplete rather than silently
+overstated: `www` is unchanged and pending, and the deployed application still
+self-identifies as Phase 3 staging. The exact current state and rollback are
+recorded in `PRODUCTION-CUTOVER-BASELINE.md`.
 
 ## 16. Architectural pattern across the history
 
@@ -565,16 +593,20 @@ The project evolved through deliberately bounded increments rather than a single
 - public staging deploy workflow;
 - staging checklist and baseline.
 
-### Recorded as successfully public-staged
+### Recorded as successfully public-staged and apex-attached
 
 - sbns-news public Worker;
 - public homepage;
 - /api/health;
 - v1.5 Phase 3 staging identity.
+- production apex Custom Domain with valid HTTPS;
+- Cloudflare-managed proxied Worker record at the apex;
+- preserved GreenGeeks mail and service infrastructure.
 
 ### Active design or operational plan, not proof of completion
 
-- production DNS cutover runbook;
+- `www` Worker attachment or canonical redirect;
+- final public-launch identity cleanup;
 - visitor submissions;
 - GitHub App draft-PR publication orchestration;
 - durable live monitoring;

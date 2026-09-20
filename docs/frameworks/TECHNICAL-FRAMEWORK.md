@@ -656,9 +656,9 @@ Secrets are held in the GitHub staging environment.
 
 ## 27. DNS and email boundary
 
-Production email remains a first-class dependency.
+Production email remains a first-class dependency hosted through GreenGeeks.
 
-The current cutover runbook intentionally separates:
+The cutover runbook intentionally separated:
 
 1. decoupling GreenGeeks mail from the web apex;
 2. moving authoritative DNS while leaving the existing website in place;
@@ -666,9 +666,17 @@ The current cutover runbook intentionally separates:
 
 Each phase requires separate action-time approval and a rollback path.
 
+As verified on September 19, 2026, the mail decoupling and authoritative-DNS
+move are complete, and the production apex is a Cloudflare-managed Custom
+Domain on `sbns-news`. `www` remains pending. The application still identifies
+itself as Phase 3 staging, so production routing must not be confused with final
+public-launch identity cleanup. `PRODUCTION-CUTOVER-BASELINE.md` is the current
+operational record.
+
 Never repoint a web apex in a way that accidentally sends MX, mail, cPanel, autodiscover, CalDAV, or CardDAV traffic to the Worker.
 
-A DNS runbook is not proof a cutover occurred.
+A DNS runbook alone is not proof a cutover occurred; the production baseline
+records the separately verified operational result.
 
 ## 28. Secrets and least privilege
 
