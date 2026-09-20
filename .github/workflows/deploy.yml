@@ -48,7 +48,10 @@ jobs:
       - name: Validate public application
         run: |
           npm run content:check
+          npm run public:test
           node --check public/app.js
+          node --check public/story.js
+          node --check scripts/public.mjs
           node --check src/index.js
           npx wrangler deploy --config wrangler.jsonc --dry-run
 

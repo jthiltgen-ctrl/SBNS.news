@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,14 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT_DIR = resolve(process.env.SBNS_CONTENT_DIR || join(ROOT, "content", "stories"));
 const OUTPUT_FILE = resolve(process.env.SBNS_OUTPUT_FILE || join(ROOT, "public", "stories.json"));
+const PUBLIC_DIR = resolve(process.env.SBNS_PUBLIC_DIR || dirname(OUTPUT_FILE));
+const STORY_OUTPUT_DIR = resolve(process.env.SBNS_STORY_OUTPUT_DIR || join(PUBLIC_DIR, "story"));
+const SITEMAP_FILE = resolve(process.env.SBNS_SITEMAP_FILE || join(PUBLIC_DIR, "sitemap.xml"));
+const STORY_IDS_FILE = resolve(
+  process.env.SBNS_STORY_IDS_FILE || join(ROOT, "src", "generated-story-ids.js"),
+);
+const SITE_ORIGIN = "https://shockedbutnotsurprised.news";
+const PUBLICATION_NAME = "Shocked But Not Surprised";
 const COMMANDS = new Set(["build", "check", "test"]);
 const REQUIRED_FIELDS = [
   "id",
@@ -138,16 +146,303 @@ function normalizedStory(story) {
   };
 }
 
-function generateFeed(stories) {
-  const published = stories
+function publishedStories(stories) {
+  return stories
     .filter(({ story }) => story.status === "published")
     .map(({ story }) => normalizedStory(story))
     .sort((a, b) => {
       const newestFirst = b.published_at.localeCompare(a.published_at);
       return newestFirst || a.id.localeCompare(b.id);
     });
+}
 
-  return `${JSON.stringify(published, null, 2)}\n`;
+function generateFeed(stories) {
+  return `${JSON.stringify(publishedStories(stories), null, 2)}\n`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function jsonForHtml(value) {
+  return JSON.stringify(value, null, 2)
+    .replaceAll("<", "\\u003c")
+    .replaceAll(">", "\\u003e")
+    .replaceAll("&", "\\u0026")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
+}
+
+function canonicalStoryUrl(storyId) {
+  return `${SITE_ORIGIN}/story/${storyId}`;
+}
+
+function publishedDate(timestamp) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
+}
+
+function relatedStories(story, reportingStories, limit = 3) {
+  const storyTags = new Set(story.topic_tags.map((tag) => tag.toLocaleLowerCase("en-US")));
+  return reportingStories
+    .filter((candidate) => candidate.id !== story.id)
+    .map((candidate) => ({
+      story: candidate,
+      tagOverlap: candidate.topic_tags.filter((tag) =>
+        storyTags.has(tag.toLocaleLowerCase("en-US")),
+      ).length,
+      categoryMatch: candidate.category === story.category ? 1 : 0,
+    }))
+    .sort((a, b) =>
+      b.tagOverlap - a.tagOverlap ||
+      b.categoryMatch - a.categoryMatch ||
+      Date.parse(b.story.published_at) - Date.parse(a.story.published_at) ||
+      a.story.id.localeCompare(b.story.id),
+    )
+    .slice(0, limit)
+    .map(({ story: candidate }) => candidate);
+}
+
+function renderSources(story) {
+  return story.sources
+    .map((source) => {
+      const name = escapeHtml(source.name);
+      const sourceContent = isValidHttpUrl(source.url)
+        ? `<a href="${escapeHtml(source.url)}" rel="noopener noreferrer">${name}</a>`
+        : `<span>${name}</span>`;
+      return `          <li>${sourceContent}</li>`;
+    })
+    .join("\n");
+}
+
+function renderTags(story) {
+  return story.topic_tags
+    .map((tag) => `          <li>${escapeHtml(tag)}</li>`)
+    .join("\n");
+}
+
+function renderRelated(story, reporting) {
+  const related = relatedStories(story, reporting);
+  if (related.length === 0) {
+    return '        <p class="related-empty">No other reporting is published yet.</p>';
+  }
+  return related
+    .map(
+      (candidate) => `        <article class="related-story">
+          <p>${escapeHtml(candidate.category)} · <time datetime="${escapeHtml(candidate.published_at)}">${escapeHtml(publishedDate(candidate.published_at))}</time></p>
+          <h3><a href="/story/${candidate.id}">${escapeHtml(candidate.headline)}</a></h3>
+        </article>`,
+    )
+    .join("\n");
+}
+
+function generateStoryPage(story, reporting) {
+  const canonicalUrl = canonicalStoryUrl(story.id);
+  const escapedHeadline = escapeHtml(story.headline);
+  const escapedSummary = escapeHtml(story.summary);
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": canonicalUrl,
+    },
+    url: canonicalUrl,
+    headline: story.headline,
+    description: story.summary,
+    datePublished: story.published_at,
+    articleSection: story.category,
+    keywords: story.topic_tags,
+    publisher: {
+      "@type": "Organization",
+      name: PUBLICATION_NAME,
+      url: `${SITE_ORIGIN}/`,
+    },
+  };
+  const articleTags = story.topic_tags
+    .map((tag) => `    <meta property="article:tag" content="${escapeHtml(tag)}" />`)
+    .join("\n");
+  const severityDots = Array.from(
+    { length: 5 },
+    (_, index) => `              <span class="severity-dot${index < story.severity ? " active" : ""}" aria-hidden="true"></span>`,
+  ).join("\n");
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="${escapedSummary}" />
+    <meta name="theme-color" content="#1a1714" />
+    <title>${escapedHeadline} | ${PUBLICATION_NAME}</title>
+    <link rel="canonical" href="${canonicalUrl}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:site_name" content="${PUBLICATION_NAME}" />
+    <meta property="og:title" content="${escapedHeadline}" />
+    <meta property="og:description" content="${escapedSummary}" />
+    <meta property="og:url" content="${canonicalUrl}" />
+    <meta property="article:published_time" content="${escapeHtml(story.published_at)}" />
+    <meta property="article:section" content="${escapeHtml(story.category)}" />
+${articleTags}
+    <script type="application/ld+json">
+${jsonForHtml(jsonLd)}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Bebas+Neue&family=Lora:ital,wght@0,400;0,600;1,400&family=Special+Elite&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/story.js" type="module"></script>
+  </head>
+  <body class="story-page">
+    <header class="masthead story-masthead">
+      <div class="dateline">
+        <span>Public Edition</span>
+        <span>Est. 2026</span>
+      </div>
+      <div class="nameplate">
+        <p class="eyebrow">The institutional failure desk</p>
+        <a class="story-nameplate" href="/">${PUBLICATION_NAME}</a>
+        <p class="tagline">Another day. Another system that had one job.</p>
+      </div>
+    </header>
+
+    <main class="story-page-main">
+      <nav class="story-return" aria-label="Story navigation">
+        <a href="/#reports">← Return to latest reports</a>
+      </nav>
+
+      <article class="story-article">
+        <header>
+          <div class="story-article-meta">
+            <span>${escapeHtml(story.category)}</span>
+            <time datetime="${escapeHtml(story.published_at)}">${escapeHtml(publishedDate(story.published_at))}</time>
+            <span class="severity" aria-label="Severity ${story.severity} out of 5">
+${severityDots}
+            </span>
+          </div>
+          <h1>${escapedHeadline}</h1>
+          <p class="story-deck">${escapedSummary}</p>
+        </header>
+
+        <section class="story-sources" aria-labelledby="sources-title">
+          <h2 id="sources-title">Sources</h2>
+          <ol>
+${renderSources(story)}
+          </ol>
+        </section>
+
+        <section class="story-topics" aria-labelledby="topics-title">
+          <h2 id="topics-title">Topics</h2>
+          <ul>
+${renderTags(story)}
+          </ul>
+        </section>
+
+        <aside class="story-kicker" aria-label="FML kicker">
+          <span>FML</span>
+          <p>${escapeHtml(story.fml_kicker)}</p>
+        </aside>
+
+        <section
+          class="share-controls"
+          aria-labelledby="share-title"
+          data-share-controls
+          data-share-title="${escapedHeadline}"
+          data-share-url="${canonicalUrl}"
+        >
+          <h2 id="share-title">Share this report</h2>
+          <div class="share-buttons">
+            <button type="button" data-native-share hidden>Share</button>
+            <button type="button" data-copy-link>Copy Link</button>
+          </div>
+          <label class="share-url-label">
+            Permanent link
+            <input type="text" readonly value="${canonicalUrl}" data-share-url-field />
+          </label>
+          <p class="share-status" role="status" aria-live="polite" data-share-status></p>
+        </section>
+      </article>
+
+      <section class="related-stories" aria-labelledby="related-title">
+        <p class="section-label">Keep reading</p>
+        <h2 id="related-title">You may also be unsurprised by…</h2>
+        <div class="related-grid">
+${renderRelated(story, reporting)}
+        </div>
+      </section>
+
+      <nav class="story-return story-return-bottom" aria-label="Return navigation">
+        <a href="/#reports">← Return to latest reports</a>
+      </nav>
+    </main>
+
+    <footer>
+      <p>We punch up at power, never down at the people living with the consequences.</p>
+      <nav aria-label="Footer navigation">
+        <a href="/#reports">Reports</a>
+        <a href="/#method">Method</a>
+        <a href="/#standards">Standards</a>
+      </nav>
+    </footer>
+  </body>
+</html>
+`;
+}
+
+function generateSitemap(reporting) {
+  const storyEntries = reporting
+    .map(
+      (story) => `  <url>
+    <loc>${canonicalStoryUrl(story.id)}</loc>
+    <lastmod>${story.published_at.slice(0, 10)}</lastmod>
+  </url>`,
+    )
+    .join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${SITE_ORIGIN}/</loc>
+  </url>
+${storyEntries}
+</urlset>
+`;
+}
+
+function generateStoryIds(reporting) {
+  const ids = reporting.map((story) => `  ${JSON.stringify(story.id)},`).join("\n");
+  return `// Generated by scripts/content.mjs. Do not edit by hand.
+export const REPORTING_STORY_IDS = Object.freeze([
+${ids}
+]);
+`;
+}
+
+function generateArtifacts(stories) {
+  const published = publishedStories(stories);
+  const reporting = published.filter((story) => story.content_type === "reporting");
+  const pages = new Map(
+    reporting.map((story) => [`${story.id}.html`, generateStoryPage(story, reporting)]),
+  );
+  return {
+    feed: `${JSON.stringify(published, null, 2)}\n`,
+    pages,
+    sitemap: generateSitemap(reporting),
+    storyIds: generateStoryIds(reporting),
+    publishedCount: published.length,
+    reportingCount: reporting.length,
+  };
 }
 
 async function loadStories(contentDir = CONTENT_DIR) {
@@ -196,25 +491,73 @@ async function loadStories(contentDir = CONTENT_DIR) {
 
 async function build() {
   const stories = await loadStories();
-  const output = generateFeed(stories);
-  await writeFile(OUTPUT_FILE, output, "utf8");
-  const publishedCount = stories.filter(({ story }) => story.status === "published").length;
-  console.log(`Built ${publishedCount} published stories -> ${OUTPUT_FILE}`);
+  const artifacts = generateArtifacts(stories);
+  await Promise.all([
+    mkdir(dirname(OUTPUT_FILE), { recursive: true }),
+    mkdir(dirname(SITEMAP_FILE), { recursive: true }),
+    mkdir(dirname(STORY_IDS_FILE), { recursive: true }),
+  ]);
+  await rm(STORY_OUTPUT_DIR, { recursive: true, force: true });
+  await mkdir(STORY_OUTPUT_DIR, { recursive: true });
+  await Promise.all([
+    writeFile(OUTPUT_FILE, artifacts.feed, "utf8"),
+    writeFile(SITEMAP_FILE, artifacts.sitemap, "utf8"),
+    writeFile(STORY_IDS_FILE, artifacts.storyIds, "utf8"),
+    ...[...artifacts.pages].map(([filename, html]) =>
+      writeFile(join(STORY_OUTPUT_DIR, filename), html, "utf8"),
+    ),
+  ]);
+  console.log(
+    `Built ${artifacts.publishedCount} published stories, ${artifacts.reportingCount} canonical pages, and sitemap -> ${PUBLIC_DIR}`,
+  );
+}
+
+async function assertFileMatches(path, expected, label) {
+  let actual;
+  try {
+    actual = await readFile(path, "utf8");
+  } catch (error) {
+    throw new Error(`Unable to read generated ${label} ${path}: ${error.message}`);
+  }
+  if (actual !== expected) {
+    throw new Error(`Generated ${label} is out of date. Run: npm run content:build`);
+  }
 }
 
 async function check() {
   const stories = await loadStories();
-  const expected = generateFeed(stories);
-  let actual;
+  const artifacts = generateArtifacts(stories);
+  await Promise.all([
+    assertFileMatches(OUTPUT_FILE, artifacts.feed, "feed"),
+    assertFileMatches(SITEMAP_FILE, artifacts.sitemap, "sitemap"),
+    assertFileMatches(STORY_IDS_FILE, artifacts.storyIds, "story ID manifest"),
+  ]);
+
+  let actualPageFiles;
   try {
-    actual = await readFile(OUTPUT_FILE, "utf8");
+    actualPageFiles = (await readdir(STORY_OUTPUT_DIR, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
   } catch (error) {
-    throw new Error(`Unable to read generated feed ${OUTPUT_FILE}: ${error.message}`);
+    throw new Error(`Unable to read generated story pages ${STORY_OUTPUT_DIR}: ${error.message}`);
   }
-  if (actual !== expected) {
-    throw new Error(`Generated feed is out of date. Run: npm run content:build`);
+  const expectedPageFiles = [...artifacts.pages.keys()].sort();
+  if (JSON.stringify(actualPageFiles) !== JSON.stringify(expectedPageFiles)) {
+    throw new Error("Generated story page set is out of date. Run: npm run content:build");
   }
-  console.log(`Content valid; ${OUTPUT_FILE} matches deterministic generated output.`);
+  await Promise.all(
+    expectedPageFiles.map((filename) =>
+      assertFileMatches(
+        join(STORY_OUTPUT_DIR, filename),
+        artifacts.pages.get(filename),
+        `story page ${filename}`,
+      ),
+    ),
+  );
+  console.log(
+    `Content valid; feed, ${artifacts.reportingCount} reporting pages, sitemap, and routing manifest match deterministic output.`,
+  );
 }
 
 function validFixture(overrides = {}) {
@@ -234,11 +577,24 @@ function validFixture(overrides = {}) {
   };
 }
 
+function reportingFixture(overrides = {}) {
+  return validFixture({
+    id: "reporting-fixture",
+    content_type: "reporting",
+    sources: [{ name: "Public record", url: "https://example.com/source" }],
+    ...overrides,
+  });
+}
+
 function expectInvalid(story, expectedMessage) {
   const errors = validateStory(story, "fixture.json");
   if (!errors.some((error) => error.includes(expectedMessage))) {
     throw new Error(`Expected validation failure containing "${expectedMessage}", got: ${errors.join("; ")}`);
   }
+}
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
 }
 
 async function test() {
@@ -295,23 +651,137 @@ async function test() {
     await rm(temporaryDirectory, { recursive: true, force: true });
   }
 
-  const draft = validFixture({ id: "draft-fixture", status: "draft", published_at: null });
-  const published = validFixture({ id: "published-fixture" });
-  const first = generateFeed([
+  const draft = reportingFixture({ id: "draft-fixture", status: "draft", published_at: null, sources: [] });
+  const sample = validFixture({ id: "sample-fixture" });
+  const unsafe = reportingFixture({
+    id: "unsafe-fixture",
+    headline: 'Unsafe </title><script>alert("headline")</script>',
+    summary: 'Summary " onmouseover="alert(1)" & <img src=x onerror=alert(1)>',
+    fml_kicker: "Kicker </p><script>alert(2)</script>",
+    topic_tags: ["oversight", "<unsafe>"],
+    sources: [{
+      name: "Source </a><script>alert(3)</script>",
+      url: "https://example.com/source?a=1&b=2",
+    }],
+    published_at: "2026-09-20T12:00:00Z",
+  });
+  const related = reportingFixture({
+    id: "related-fixture",
+    headline: "Related report",
+    category: "National",
+    topic_tags: ["oversight"],
+    published_at: "2026-09-19T12:00:00Z",
+  });
+  const fixtureStories = [
     { filename: "draft.json", story: draft },
-    { filename: "published.json", story: published },
-  ]);
-  const second = generateFeed([
-    { filename: "published.json", story: published },
-    { filename: "draft.json", story: draft },
-  ]);
-  if (first !== second) throw new Error("Generated feed is not deterministic");
-  const parsed = JSON.parse(first);
-  if (parsed.length !== 1 || parsed[0].id !== "published-fixture") {
-    throw new Error("Draft fixture was not excluded from generated feed");
-  }
+    { filename: "sample.json", story: sample },
+    { filename: "unsafe.json", story: unsafe },
+    { filename: "related.json", story: related },
+  ];
+  const artifacts = generateArtifacts(fixtureStories);
+  const reverseArtifacts = generateArtifacts(fixtureStories.toReversed());
 
-  console.log("Content tests passed: schema failures, invalid JSON, duplicate IDs, reporting sources, drafts, determinism.");
+  assert(artifacts.feed === generateFeed(fixtureStories), "Existing public feed generation changed");
+  const parsedFeed = JSON.parse(artifacts.feed);
+  assert(parsedFeed.length === 3, "Published stories were not preserved in the public feed");
+  assert(!parsedFeed.some((story) => story.id === draft.id), "Draft fixture entered the public feed");
+  assert(artifacts.pages.size === 2, "Did not generate exactly one page per published reporting story");
+  assert(!artifacts.pages.has(`${draft.id}.html`), "Draft fixture received a generated story page");
+  assert(!artifacts.pages.has(`${sample.id}.html`), "Prototype sample received a generated story page");
+  assert(artifacts.sitemap.includes(`${SITE_ORIGIN}/`), "Sitemap is missing the homepage");
+  assert(artifacts.sitemap.includes(canonicalStoryUrl(unsafe.id)), "Sitemap is missing a reporting page");
+  assert(!artifacts.sitemap.includes(draft.id), "Draft fixture entered the sitemap");
+  assert(!artifacts.sitemap.includes(sample.id), "Prototype sample entered the sitemap");
+  assert((artifacts.sitemap.match(/<url>/g) || []).length === 3, "Sitemap entry count is incorrect");
+  assert(artifacts.storyIds.includes(JSON.stringify(unsafe.id)), "Routing manifest is missing a reporting ID");
+  assert(!artifacts.storyIds.includes(sample.id), "Prototype sample entered the routing manifest");
+
+  const page = artifacts.pages.get(`${unsafe.id}.html`);
+  const canonicalUrl = canonicalStoryUrl(unsafe.id);
+  assert(page.includes(`<link rel="canonical" href="${canonicalUrl}" />`), "Canonical link is incorrect");
+  assert(page.includes(`<meta property="og:url" content="${canonicalUrl}" />`), "Open Graph URL is incorrect");
+  assert(page.includes('<meta property="og:type" content="article" />'), "Open Graph article type is missing");
+  assert(page.includes('property="article:published_time"'), "Article publication metadata is missing");
+  assert(page.includes(PUBLICATION_NAME), "Publication name is missing from direct HTML");
+  assert(page.includes(`<span>${unsafe.category}</span>`), "Category is missing from direct HTML");
+  assert(page.includes("September 20, 2026"), "Publication date is missing from direct HTML");
+  assert(page.includes(`Severity ${unsafe.severity} out of 5`), "Severity is missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.headline)), "Headline is missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.summary)), "Summary is missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.sources[0].name)), "Complete source list is missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.topic_tags[1])), "Topic tags are missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.fml_kicker)), "FML kicker is missing from direct HTML");
+  assert(page.includes('href="/#reports"'), "Return navigation is missing from direct HTML");
+  assert(page.includes("&lt;script&gt;alert"), "Untrusted story text was not HTML-escaped");
+  assert(!page.includes('<script>alert("headline")'), "Headline injected executable HTML");
+  assert(!page.includes("<img src=x"), "Summary injected executable HTML");
+  assert(!page.includes("twitter:card"), "A large-image Twitter card was invented without an image");
+  assert(!page.includes("og:image"), "An Open Graph image was invented without story image data");
+  assert(page.includes("You may also be unsurprised by…"), "Related-story section is missing");
+  assert(page.includes(`/story/${related.id}`), "Related-story link is missing");
+  assert(page.includes("data-copy-link"), "Copy Link control is missing");
+  assert(page.includes("data-native-share"), "Native Share control is missing");
+
+  const jsonLdMatch = page.match(/<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/);
+  assert(jsonLdMatch, "NewsArticle JSON-LD is missing");
+  const jsonLd = JSON.parse(jsonLdMatch[1]);
+  assert(jsonLd["@type"] === "NewsArticle", "JSON-LD type is not NewsArticle");
+  assert(jsonLd.mainEntityOfPage["@id"] === canonicalUrl, "JSON-LD canonical identity is incorrect");
+  assert(jsonLd.headline === unsafe.headline, "JSON-LD headline does not preserve source data");
+  assert(!Object.hasOwn(jsonLd, "author"), "JSON-LD invented an author");
+
+  const pageTitles = [...artifacts.pages.values()].map(
+    (html) => html.match(/<title>(.*?)<\/title>/)?.[1],
+  );
+  assert(pageTitles.every(Boolean), "A generated story page is missing its HTML title");
+  assert(new Set(pageTitles).size === pageTitles.length, "Generated story page titles are not unique");
+
+  const serializedArtifacts = (value) => JSON.stringify({
+    feed: value.feed,
+    pages: [...value.pages],
+    sitemap: value.sitemap,
+    storyIds: value.storyIds,
+  });
+  assert(
+    serializedArtifacts(artifacts) === serializedArtifacts(reverseArtifacts),
+    "Generated story artifacts are not deterministic",
+  );
+
+  const rankingCurrent = reportingFixture({
+    id: "ranking-current",
+    category: "National",
+    topic_tags: ["oversight"],
+  });
+  const overlapSameCategory = reportingFixture({
+    id: "overlap-same-category",
+    category: "National",
+    topic_tags: ["oversight"],
+    published_at: "2026-08-01T12:00:00Z",
+  });
+  const overlapOtherCategory = reportingFixture({
+    id: "overlap-other-category",
+    category: "Local",
+    topic_tags: ["oversight"],
+    published_at: "2026-09-01T12:00:00Z",
+  });
+  const categoryOnly = reportingFixture({
+    id: "category-only",
+    category: "National",
+    topic_tags: ["budget"],
+    published_at: "2026-09-10T12:00:00Z",
+  });
+  const ranked = relatedStories(
+    rankingCurrent,
+    [rankingCurrent, categoryOnly, overlapOtherCategory, overlapSameCategory],
+  ).map((story) => story.id);
+  assert(
+    JSON.stringify(ranked) === JSON.stringify(["overlap-same-category", "overlap-other-category", "category-only"]),
+    "Related stories do not rank by tag overlap, category, then recency",
+  );
+
+  console.log(
+    "Content tests passed: validation, feed compatibility, reporting-only pages and sitemap, escaping, metadata, JSON-LD, recommendations, and determinism.",
+  );
 }
 
 const command = process.argv[2];
