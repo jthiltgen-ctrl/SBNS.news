@@ -33,6 +33,12 @@ function severityDots(value) {
   container.className = "severity";
   container.setAttribute("aria-label", `Severity ${severity} out of 5`);
 
+  const valueLabel = document.createElement("span");
+  valueLabel.className = "severity-value";
+  valueLabel.textContent = `Severity ${severity}/5`;
+  valueLabel.setAttribute("aria-hidden", "true");
+  container.append(valueLabel);
+
   for (let index = 1; index <= 5; index += 1) {
     const dot = document.createElement("span");
     dot.className = `severity-dot${index <= severity ? " active" : ""}`;
