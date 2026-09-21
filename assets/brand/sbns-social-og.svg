@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+    <rect width="100%" height="100%" fill="none"/><rect width="1200" height="630" fill="#0B0B0D"/>
+<g transform="translate(62,54) scale(0.72)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M28 18 H98 L116 36 V122 H28 Z" stroke="#FFFFFF" stroke-width="8"/>
+      <path d="M98 18 V38 H116" stroke="#C8102E" stroke-width="8"/>
+      <path d="M43 50 H83 M43 68 H82 M43 86 H71" stroke="#FFFFFF" stroke-width="7"/>
+      <circle cx="101" cy="94" r="31" stroke="#FFFFFF" stroke-width="8"/>
+      <path d="M123 117 L145 139" stroke="#FFFFFF" stroke-width="10"/>
+      <path d="M101 75 L107 88 L120 94 L107 100 L101 113 L95 100 L82 94 L95 88 Z" fill="#C8102E" stroke="none"/>
+    </g>
+<text x="198" y="106" font-family="EB Garamond" font-size="46" font-weight="700" fill="#FFFFFF">Shocked But Not Surprised<tspan fill="#C8102E">.news</tspan></text>
+<text x="200" y="142" font-family="Inter" font-size="12" font-weight="600" letter-spacing="4" fill="#FFFFFF">INDEPENDENT ACCOUNTABILITY REPORTING</text>
+<line x1="70" y1="190" x2="1130" y2="190" stroke="#343439" stroke-width="2"/>
+<text x="78" y="310" font-family="EB Garamond" font-size="78" font-style="italic" fill="#FFFFFF">Same Questions.</text>
+<text x="78" y="400" font-family="EB Garamond" font-size="78" font-style="italic" fill="#FFFFFF">A More Accountable Tomorrow.</text>
+<line x1="80" y1="438" x2="240" y2="438" stroke="#C8102E" stroke-width="8"/>
+<text x="78" y="520" font-family="Inter" font-size="20" font-weight="600" letter-spacing="5" fill="#FFFFFF">A MORE INFORMED PUBLIC</text>
+<text x="78" y="558" font-family="Inter" font-size="20" font-weight="600" letter-spacing="5" fill="#FFFFFF">A MORE ACCOUNTABLE WORLD</text>
+<text x="78" y="600" font-family="Inter" font-size="14" font-weight="600" letter-spacing="5" fill="#9AA0A6">OBSERVE. VERIFY. EXPLAIN.</text></svg>
