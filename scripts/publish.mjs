@@ -267,6 +267,7 @@ async function initializeTempRepo(basePackage) {
       path.join(ROOT, "assets", "fonts", "inter-variable.ttf"),
       path.join(root, "assets", "fonts", "inter-variable.ttf"),
     ),
+    copyFile(path.join(ROOT, "public", "index.html"), path.join(root, "public", "index.html")),
     copyFile(SCHEMA_FILE, path.join(root, "publication", "schemas", "package.schema.json")),
   ]);
   const existing = {

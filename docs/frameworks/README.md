@@ -111,6 +111,7 @@ A future roadmap item does not authorize deployment.
 - STAGING-BASELINE.md — preserved staging checkpoint; account-only facts remain explicitly marked when unverified.
 - PRODUCTION-CUTOVER-BASELINE.md — verified apex-cutover snapshot and rollback record.
 - PUBLIC-LAUNCH-BASELINE.md — formal production launch acceptance and current non-blocking follow-up.
+- READER-ACCOUNTABILITY.md — current static-first reader, public attribution, transparency, AI-use, voice, and deployment-trigger contract.
 - DNS-CUTOVER-RUNBOOK.md — completed cutover procedure retained for chronology, safeguards, and rollback; the baselines provide proof of the executed results.
 - README.md and PROJECT.md — current product and repository map.
 

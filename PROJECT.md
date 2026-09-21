@@ -52,18 +52,21 @@ outputs remain untrusted until deterministic validation succeeds.
 
 ## Reader-facing frontend
 
-The public frontend is dependency-free HTML, CSS, and JavaScript. Its design
-system uses:
-
-- Bebas Neue for headlines and nameplate;
-- Lora for editorial copy;
-- Special Elite for kickers and taglines;
-- Barlow Condensed for labels and metadata;
-- paper `#f2ede3`, ink `#1a1714`, and red `#b91c1c`.
+The public frontend is dependency-free HTML, CSS, and JavaScript. Its adopted
+Brand Guide treatment uses locally served EB Garamond and Inter with Ink Black,
+Newsprint Gray, Slate, Paper White, Signal Red, and Rule Gray.
 
 Reporting is the default public view. Fictional fixtures remain available only
 as a clearly separated prototype archive. Reporting sources render as safe
 external links; topic tags remain visually and semantically separate.
+
+Published reporting is rendered deterministically into the initial homepage
+HTML from `content/stories/*.json`. JavaScript progressively adds filtering,
+Prototype archive access, refresh, and status messaging; it is not required to
+discover or navigate current reporting. The reader also identifies Justin
+Thiltgen as editor and publisher, adds the same factual attribution to canonical
+story pages, and exposes one homepage transparency surface for editorial and
+AI-use accountability. See [READER-ACCOUNTABILITY.md](READER-ACCOUNTABILITY.md).
 
 ## Public-launch state and remaining v1.5 sequence
 
@@ -85,6 +88,8 @@ infrastructure discrepancy is temporary local resolver/cache convergence.
    public historical mutation.
 
 No later phase is implicitly authorized by the existence of this project map.
+Receipt · Number · Timeline and the Newsroom Workbench remain explicitly
+deferred and are not part of the reader-resilience milestone.
 
 ## Development and validation
 
@@ -102,4 +107,6 @@ deploy, mutate the remote database, or create Cloudflare resources.
 
 The root `deploy.yml` is a legacy GreenGeeks artifact retained for historical
 reference. `.github/workflows/deploy.yml` is the active, scoped public Worker
-deployment workflow.
+deployment workflow. Qualifying pushes or merges to `main` automatically run
+that workflow and deploy the public Worker, so its trigger consequences must be
+inspected and reported before future merge authorization.

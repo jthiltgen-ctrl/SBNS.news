@@ -1,3 +1,5 @@
+import { refreshStoryFeed, storyMatchesView } from "./reader-state.js";
+
 const storyGrid = document.querySelector("#stories");
 const status = document.querySelector("#status");
 const refreshButton = document.querySelector("#refresh");
@@ -63,6 +65,9 @@ function publishedDate(value) {
 function renderStory(story) {
   const article = document.createElement("article");
   article.className = "story-card";
+  article.dataset.storyId = text(story.id);
+  article.dataset.contentType = text(story.content_type);
+  article.dataset.category = text(story.category);
 
   const body = document.createElement("div");
   body.className = "story-body";
@@ -139,54 +144,78 @@ function renderStory(story) {
 }
 
 function renderStories() {
-  storyGrid.replaceChildren();
-
-  const visibleStories = loadedStories.filter((story) => {
-    if (activeView === "Samples") return story.content_type === "sample";
-    if (activeView === "Reporting") return story.content_type === "reporting";
-    return story.content_type === "reporting" && story.category === activeView;
-  });
+  const visibleStories = loadedStories.filter((story) => storyMatchesView(story, activeView));
 
   if (visibleStories.length === 0) {
+    storyGrid.replaceChildren();
     status.hidden = false;
     const label = activeView === "Samples" ? "prototype samples" : activeView.toLowerCase();
     status.textContent = `No ${label} stories are available.`;
     return;
   }
 
-  visibleStories.slice(0, 50).forEach((story) => storyGrid.append(renderStory(story)));
+  storyGrid.replaceChildren(...visibleStories.slice(0, 50).map(renderStory));
   status.hidden = true;
 }
 
-async function loadStories() {
-  refreshButton.disabled = true;
-  status.hidden = false;
-  status.textContent = "Loading the latest failures…";
-  storyGrid.replaceChildren();
-
-  try {
-    const response = await fetch(`/stories.json?ts=${Date.now()}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const stories = await response.json();
-    if (!Array.isArray(stories)) throw new Error("Story feed must be an array");
-
-    loadedStories = stories.toSorted((a, b) =>
-      text(b.published_at).localeCompare(text(a.published_at)),
+function filterInitialStories() {
+  const cards = [...storyGrid.querySelectorAll(".story-card")];
+  let visibleCount = 0;
+  cards.forEach((card) => {
+    const visible = storyMatchesView(
+      {
+        content_type: card.dataset.contentType,
+        category: card.dataset.category,
+      },
+      activeView,
     );
+    card.hidden = !visible;
+    if (visible) visibleCount += 1;
+  });
 
-    if (loadedStories.length === 0) {
-      status.textContent = "No stories are published yet. A system somewhere is enjoying the silence.";
-      return;
-    }
-
-    renderStories();
-  } catch (error) {
-    console.error("Unable to load stories", error);
-    status.textContent = "The news failed to load. Shocked? Neither are we.";
-  } finally {
-    refreshButton.disabled = false;
+  if (visibleCount === 0) {
+    status.hidden = false;
+    status.textContent = activeView === "Samples"
+      ? "The Prototype archive needs a successful feed refresh. Published reporting remains available."
+      : `No ${activeView.toLowerCase()} stories are available.`;
+  } else {
+    status.hidden = true;
   }
+}
+
+async function loadStories({ manual = false } = {}) {
+  refreshButton.disabled = true;
+  if (manual) {
+    status.hidden = false;
+    status.textContent = "Checking the filing cabinets…";
+  }
+
+  const initialReportingCount = storyGrid.querySelectorAll(
+    '.story-card[data-content-type="reporting"]',
+  ).length;
+
+  await refreshStoryFeed({
+    fetchImplementation: fetch,
+    url: `/stories.json?ts=${Date.now()}`,
+    minimumStories: initialReportingCount > 0 ? 1 : 0,
+    validateStories(stories) {
+      return initialReportingCount === 0 || stories.some((story) => story.content_type === "reporting");
+    },
+    onSuccess(stories) {
+      loadedStories = stories;
+      if (manual || activeView !== "Reporting") renderStories();
+      else status.hidden = true;
+    },
+    onFailure(error) {
+      console.error("Unable to refresh stories", error);
+      status.hidden = false;
+      status.textContent = storyGrid.childElementCount > 0
+        ? "Refresh failed. The reporting already on the page stays put."
+        : "The news failed to load. Shocked? Neither are we.";
+    },
+  });
+
+  refreshButton.disabled = false;
 }
 
 filterButtons.forEach((button) => {
@@ -197,9 +226,10 @@ filterButtons.forEach((button) => {
       candidate.classList.toggle("active", isActive);
       candidate.setAttribute("aria-pressed", String(isActive));
     });
-    renderStories();
+    if (loadedStories.length > 0) renderStories();
+    else filterInitialStories();
   });
 });
 
-refreshButton.addEventListener("click", loadStories);
+refreshButton.addEventListener("click", () => loadStories({ manual: true }));
 loadStories();

@@ -26,3 +26,35 @@ format content, but it must never invent, infer, or silently replace a source.
 Never edit `public/stories.json` directly. It is generated from published files
 in `content/stories/`; draft stories remain source-controlled but are excluded
 from the public feed.
+
+## Public accountability and assistance
+
+The public reader identifies Justin Thiltgen as editor and publisher. Published
+reporting pages use the factual attribution `By Justin Thiltgen · Shocked But
+Not Surprised`; the publication remains the primary brand.
+
+AI and automation may organize research, compare sources, structure evidence,
+assist analysis and drafting, or support production. They are not reporters,
+witnesses, factual sources, editors of record, or autonomous publishers. Human
+editorial authority decides what is held, rejected, corrected, approved, and
+published.
+
+Preserve these distinctions in public and internal work:
+
+```text
+conversation != evidence
+model output != source provenance
+recommendation != decision
+approval != publication
+deployment != verified publication
+```
+
+The public transparency surface must not guess at ownership, funding, legal
+structure, contact information, confidentiality, conflicts, or privacy terms.
+Unknown facts remain explicitly unstated until they are formally established.
+
+SBNS voice may sharpen utility copy, but humor never changes a factual claim or
+acts as evidence. It must point upward at institutions, systems, processes,
+leadership decisions, and concentrations of power. Standards, corrections,
+source safety, privacy, and security language stay precise. **We punch up at
+power, never down at the people living with the consequences.**
