@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, copyFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
@@ -240,15 +239,23 @@ async function expectFailure(label, action, expected) {
 }
 
 async function initializeTempRepo(basePackage) {
-  const root = await mkdtemp(path.join(tmpdir(), "sbns-publication-"));
+  const root = await mkdtemp(path.join(ROOT, "node_modules", ".sbns-publication-"));
   await Promise.all([
     mkdir(path.join(root, "scripts"), { recursive: true }),
+    mkdir(path.join(root, "assets", "fonts"), { recursive: true }),
     mkdir(path.join(root, "content", "stories"), { recursive: true }),
     mkdir(path.join(root, "public"), { recursive: true }),
     mkdir(path.join(root, "publication", "schemas"), { recursive: true }),
   ]);
-  await copyFile(path.join(ROOT, "scripts", "content.mjs"), path.join(root, "scripts", "content.mjs"));
-  await copyFile(SCHEMA_FILE, path.join(root, "publication", "schemas", "package.schema.json"));
+  await Promise.all([
+    copyFile(path.join(ROOT, "scripts", "content.mjs"), path.join(root, "scripts", "content.mjs")),
+    copyFile(path.join(ROOT, "scripts", "share-card.mjs"), path.join(root, "scripts", "share-card.mjs")),
+    copyFile(
+      path.join(ROOT, "assets", "fonts", "barlow-condensed-latin-700-normal.ttf"),
+      path.join(root, "assets", "fonts", "barlow-condensed-latin-700-normal.ttf"),
+    ),
+    copyFile(SCHEMA_FILE, path.join(root, "publication", "schemas", "package.schema.json")),
+  ]);
   const existing = {
     id: "existing-sample",
     status: "published",

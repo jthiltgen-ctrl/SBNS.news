@@ -2,12 +2,22 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  canonicalShareCardUrl,
+  generateShareCard,
+  layoutHeadline,
+  shareCardAlt,
+  validatePng,
+} from "./share-card.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT_DIR = resolve(process.env.SBNS_CONTENT_DIR || join(ROOT, "content", "stories"));
 const OUTPUT_FILE = resolve(process.env.SBNS_OUTPUT_FILE || join(ROOT, "public", "stories.json"));
 const PUBLIC_DIR = resolve(process.env.SBNS_PUBLIC_DIR || dirname(OUTPUT_FILE));
 const STORY_OUTPUT_DIR = resolve(process.env.SBNS_STORY_OUTPUT_DIR || join(PUBLIC_DIR, "story"));
+const SHARE_OUTPUT_DIR = resolve(process.env.SBNS_SHARE_OUTPUT_DIR || join(PUBLIC_DIR, "share"));
 const SITEMAP_FILE = resolve(process.env.SBNS_SITEMAP_FILE || join(PUBLIC_DIR, "sitemap.xml"));
 const STORY_IDS_FILE = resolve(
   process.env.SBNS_STORY_IDS_FILE || join(ROOT, "src", "generated-story-ids.js"),
@@ -247,6 +257,8 @@ function renderRelated(story, reporting) {
 
 function generateStoryPage(story, reporting) {
   const canonicalUrl = canonicalStoryUrl(story.id);
+  const imageUrl = canonicalShareCardUrl(story.id);
+  const imageAlt = shareCardAlt(story);
   const escapedHeadline = escapeHtml(story.headline);
   const escapedSummary = escapeHtml(story.summary);
   const jsonLd = {
@@ -257,6 +269,7 @@ function generateStoryPage(story, reporting) {
       "@id": canonicalUrl,
     },
     url: canonicalUrl,
+    image: imageUrl,
     headline: story.headline,
     description: story.summary,
     datePublished: story.published_at,
@@ -290,6 +303,13 @@ function generateStoryPage(story, reporting) {
     <meta property="og:title" content="${escapedHeadline}" />
     <meta property="og:description" content="${escapedSummary}" />
     <meta property="og:url" content="${canonicalUrl}" />
+    <meta property="og:image" content="${imageUrl}" />
+    <meta property="og:image:width" content="${CARD_WIDTH}" />
+    <meta property="og:image:height" content="${CARD_HEIGHT}" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="${escapeHtml(imageAlt)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="${imageUrl}" />
     <meta property="article:published_time" content="${escapeHtml(story.published_at)}" />
     <meta property="article:section" content="${escapeHtml(story.category)}" />
 ${articleTags}
@@ -435,9 +455,13 @@ function generateArtifacts(stories) {
   const pages = new Map(
     reporting.map((story) => [`${story.id}.html`, generateStoryPage(story, reporting)]),
   );
+  const cards = new Map(
+    reporting.map((story) => [`${story.id}.png`, generateShareCard(story).png]),
+  );
   return {
     feed: `${JSON.stringify(published, null, 2)}\n`,
     pages,
+    cards,
     sitemap: generateSitemap(reporting),
     storyIds: generateStoryIds(reporting),
     publishedCount: published.length,
@@ -497,8 +521,14 @@ async function build() {
     mkdir(dirname(SITEMAP_FILE), { recursive: true }),
     mkdir(dirname(STORY_IDS_FILE), { recursive: true }),
   ]);
-  await rm(STORY_OUTPUT_DIR, { recursive: true, force: true });
-  await mkdir(STORY_OUTPUT_DIR, { recursive: true });
+  await Promise.all([
+    rm(STORY_OUTPUT_DIR, { recursive: true, force: true }),
+    rm(SHARE_OUTPUT_DIR, { recursive: true, force: true }),
+  ]);
+  await Promise.all([
+    mkdir(STORY_OUTPUT_DIR, { recursive: true }),
+    mkdir(SHARE_OUTPUT_DIR, { recursive: true }),
+  ]);
   await Promise.all([
     writeFile(OUTPUT_FILE, artifacts.feed, "utf8"),
     writeFile(SITEMAP_FILE, artifacts.sitemap, "utf8"),
@@ -506,9 +536,12 @@ async function build() {
     ...[...artifacts.pages].map(([filename, html]) =>
       writeFile(join(STORY_OUTPUT_DIR, filename), html, "utf8"),
     ),
+    ...[...artifacts.cards].map(([filename, png]) =>
+      writeFile(join(SHARE_OUTPUT_DIR, filename), png),
+    ),
   ]);
   console.log(
-    `Built ${artifacts.publishedCount} published stories, ${artifacts.reportingCount} canonical pages, and sitemap -> ${PUBLIC_DIR}`,
+    `Built ${artifacts.publishedCount} published stories, ${artifacts.reportingCount} canonical pages, ${artifacts.cards.size} share cards, and sitemap -> ${PUBLIC_DIR}`,
   );
 }
 
@@ -524,6 +557,29 @@ async function assertFileMatches(path, expected, label) {
   }
 }
 
+async function assertBinaryFileMatches(path, expected, label) {
+  let actual;
+  try {
+    actual = await readFile(path);
+  } catch (error) {
+    throw new Error(`Unable to read generated ${label} ${path}: ${error.message}`);
+  }
+  if (!actual.equals(expected)) {
+    throw new Error(`Generated ${label} is out of date. Run: npm run content:build`);
+  }
+}
+
+async function generatedFiles(directory, label) {
+  try {
+    return (await readdir(directory, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    throw new Error(`Unable to read generated ${label} ${directory}: ${error.message}`);
+  }
+}
+
 async function check() {
   const stories = await loadStories();
   const artifacts = generateArtifacts(stories);
@@ -533,15 +589,7 @@ async function check() {
     assertFileMatches(STORY_IDS_FILE, artifacts.storyIds, "story ID manifest"),
   ]);
 
-  let actualPageFiles;
-  try {
-    actualPageFiles = (await readdir(STORY_OUTPUT_DIR, { withFileTypes: true }))
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name)
-      .sort();
-  } catch (error) {
-    throw new Error(`Unable to read generated story pages ${STORY_OUTPUT_DIR}: ${error.message}`);
-  }
+  const actualPageFiles = await generatedFiles(STORY_OUTPUT_DIR, "story pages");
   const expectedPageFiles = [...artifacts.pages.keys()].sort();
   if (JSON.stringify(actualPageFiles) !== JSON.stringify(expectedPageFiles)) {
     throw new Error("Generated story page set is out of date. Run: npm run content:build");
@@ -555,8 +603,23 @@ async function check() {
       ),
     ),
   );
+
+  const actualCardFiles = await generatedFiles(SHARE_OUTPUT_DIR, "share cards");
+  const expectedCardFiles = [...artifacts.cards.keys()].sort();
+  if (JSON.stringify(actualCardFiles) !== JSON.stringify(expectedCardFiles)) {
+    throw new Error("Generated share-card set is out of date. Run: npm run content:build");
+  }
+  await Promise.all(
+    expectedCardFiles.map((filename) =>
+      assertBinaryFileMatches(
+        join(SHARE_OUTPUT_DIR, filename),
+        artifacts.cards.get(filename),
+        `share card ${filename}`,
+      ),
+    ),
+  );
   console.log(
-    `Content valid; feed, ${artifacts.reportingCount} reporting pages, sitemap, and routing manifest match deterministic output.`,
+    `Content valid; feed, ${artifacts.reportingCount} reporting pages and share cards, sitemap, and routing manifest match deterministic output.`,
   );
 }
 
@@ -688,6 +751,9 @@ async function test() {
   assert(artifacts.pages.size === 2, "Did not generate exactly one page per published reporting story");
   assert(!artifacts.pages.has(`${draft.id}.html`), "Draft fixture received a generated story page");
   assert(!artifacts.pages.has(`${sample.id}.html`), "Prototype sample received a generated story page");
+  assert(artifacts.cards.size === 2, "Did not generate exactly one card per published reporting story");
+  assert(!artifacts.cards.has(`${draft.id}.png`), "Draft fixture received a generated share card");
+  assert(!artifacts.cards.has(`${sample.id}.png`), "Prototype sample received a generated share card");
   assert(artifacts.sitemap.includes(`${SITE_ORIGIN}/`), "Sitemap is missing the homepage");
   assert(artifacts.sitemap.includes(canonicalStoryUrl(unsafe.id)), "Sitemap is missing a reporting page");
   assert(!artifacts.sitemap.includes(draft.id), "Draft fixture entered the sitemap");
@@ -698,9 +764,44 @@ async function test() {
 
   const page = artifacts.pages.get(`${unsafe.id}.html`);
   const canonicalUrl = canonicalStoryUrl(unsafe.id);
+  const imageUrl = canonicalShareCardUrl(unsafe.id);
+  const imageAlt = shareCardAlt(unsafe);
   assert(page.includes(`<link rel="canonical" href="${canonicalUrl}" />`), "Canonical link is incorrect");
   assert(page.includes(`<meta property="og:url" content="${canonicalUrl}" />`), "Open Graph URL is incorrect");
   assert(page.includes('<meta property="og:type" content="article" />'), "Open Graph article type is missing");
+  assert(page.includes(`<meta property="og:image" content="${imageUrl}" />`), "Open Graph image URL is incorrect");
+  assert(page.includes(`<meta property="og:image:width" content="${CARD_WIDTH}" />`), "Open Graph image width is incorrect");
+  assert(page.includes(`<meta property="og:image:height" content="${CARD_HEIGHT}" />`), "Open Graph image height is incorrect");
+  assert(page.includes('<meta property="og:image:type" content="image/png" />'), "Open Graph image type is incorrect");
+  assert(page.includes(`<meta property="og:image:alt" content="${escapeHtml(imageAlt)}" />`), "Open Graph image alt is missing or incorrect");
+  assert(page.includes('<meta name="twitter:card" content="summary_large_image" />'), "Large-card metadata is missing");
+  assert(page.includes(`<meta name="twitter:image" content="${imageUrl}" />`), "Twitter image URL is incorrect");
+  assert(imageUrl.startsWith("https://shockedbutnotsurprised.news/share/"), "Share-card URL is not canonical HTTPS");
+  for (const reportingStory of [unsafe, related]) {
+    const reportingPage = artifacts.pages.get(`${reportingStory.id}.html`);
+    const reportingImageUrl = canonicalShareCardUrl(reportingStory.id);
+    const reportingImageAlt = shareCardAlt(reportingStory);
+    assert(
+      reportingPage.includes(`<meta property="og:image" content="${reportingImageUrl}" />`),
+      `${reportingStory.id} is missing its Open Graph image`,
+    );
+    assert(
+      reportingPage.includes(`<meta property="og:image:alt" content="${escapeHtml(reportingImageAlt)}" />`),
+      `${reportingStory.id} is missing useful Open Graph image alt text`,
+    );
+    assert(
+      reportingPage.includes('<meta name="twitter:card" content="summary_large_image" />'),
+      `${reportingStory.id} is missing large-card metadata`,
+    );
+    const reportingJsonLdMatch = reportingPage.match(
+      /<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/,
+    );
+    assert(reportingJsonLdMatch, `${reportingStory.id} is missing NewsArticle JSON-LD`);
+    assert(
+      JSON.parse(reportingJsonLdMatch[1]).image === reportingImageUrl,
+      `${reportingStory.id} has inconsistent NewsArticle image metadata`,
+    );
+  }
   assert(page.includes('property="article:published_time"'), "Article publication metadata is missing");
   assert(page.includes(PUBLICATION_NAME), "Publication name is missing from direct HTML");
   assert(page.includes(`<span>${unsafe.category}</span>`), "Category is missing from direct HTML");
@@ -715,8 +816,6 @@ async function test() {
   assert(page.includes("&lt;script&gt;alert"), "Untrusted story text was not HTML-escaped");
   assert(!page.includes('<script>alert("headline")'), "Headline injected executable HTML");
   assert(!page.includes("<img src=x"), "Summary injected executable HTML");
-  assert(!page.includes("twitter:card"), "A large-image Twitter card was invented without an image");
-  assert(!page.includes("og:image"), "An Open Graph image was invented without story image data");
   assert(page.includes("You may also be unsurprised by…"), "Related-story section is missing");
   assert(page.includes(`/story/${related.id}`), "Related-story link is missing");
   assert(page.includes("data-copy-link"), "Copy Link control is missing");
@@ -727,8 +826,27 @@ async function test() {
   const jsonLd = JSON.parse(jsonLdMatch[1]);
   assert(jsonLd["@type"] === "NewsArticle", "JSON-LD type is not NewsArticle");
   assert(jsonLd.mainEntityOfPage["@id"] === canonicalUrl, "JSON-LD canonical identity is incorrect");
+  assert(jsonLd.image === imageUrl, "NewsArticle image does not match the canonical share card");
   assert(jsonLd.headline === unsafe.headline, "JSON-LD headline does not preserve source data");
   assert(!Object.hasOwn(jsonLd, "author"), "JSON-LD invented an author");
+
+  const unsafeCard = generateShareCard(unsafe);
+  const png = validatePng(unsafeCard.png);
+  assert(png.width === CARD_WIDTH && png.height === CARD_HEIGHT, "Share card dimensions are incorrect");
+  assert(png.format === "png", "Share card format is not PNG");
+  assert(unsafeCard.svg.includes(PUBLICATION_NAME.toUpperCase()), "Share card is missing publication branding");
+  assert(unsafeCard.svg.includes(unsafe.category.toUpperCase()), "Share card is missing its category");
+  assert(unsafeCard.svg.includes(`SEVERITY ${unsafe.severity} / 5`), "Share card is missing its severity");
+  assert(unsafeCard.svg.includes("SHOCKEDBUTNOTSURPRISED.NEWS"), "Share card is missing the publication domain");
+  assert(!unsafeCard.svg.includes("<script>"), "Story text injected executable SVG");
+  assert(unsafeCard.svg.includes("&lt;/title&gt;"), "Story text was not safely escaped in SVG");
+  assert(!unsafeCard.svg.includes("<image"), "Share card introduced an external image element");
+  assert(!/https?:\/\/(?!www\.w3\.org)/u.test(unsafeCard.svg), "Share card contains an external URL");
+
+  const metadataImageUrls = [...page.matchAll(/<meta (?:property="og:image"|name="twitter:image") content="([^"]+)" \/>/gu)]
+    .map((match) => match[1]);
+  assert(metadataImageUrls.length === 2, "Unexpected image metadata field count");
+  assert(metadataImageUrls.every((url) => url === imageUrl), "Metadata contains an external image URL");
 
   const pageTitles = [...artifacts.pages.values()].map(
     (html) => html.match(/<title>(.*?)<\/title>/)?.[1],
@@ -744,8 +862,34 @@ async function test() {
   });
   assert(
     serializedArtifacts(artifacts) === serializedArtifacts(reverseArtifacts),
-    "Generated story artifacts are not deterministic",
+    "Generated text artifacts are not deterministic",
   );
+  assert(
+    JSON.stringify([...artifacts.cards.keys()]) === JSON.stringify([...reverseArtifacts.cards.keys()]),
+    "Generated share-card set is not deterministic",
+  );
+  for (const [filename, card] of artifacts.cards) {
+    assert(card.equals(reverseArtifacts.cards.get(filename)), `${filename} is not byte deterministic`);
+    validatePng(card);
+  }
+
+  const longHeadline = reportingFixture({
+    id: "long-headline-fixture",
+    headline: "Federal Inspectors Say a Multi-Agency Modernization Program Still Lacks Reliable Cost Controls, an Integrated Schedule, and a Plan for Accountability",
+  });
+  const longLayout = layoutHeadline(longHeadline.headline);
+  const longCard = generateShareCard(longHeadline);
+  assert(longLayout.lines.length <= 4, "Long headline exceeded the defined line limit");
+  assert(longLayout.lineWidths.every((width) => width <= longLayout.maxWidth), "Long headline exceeded the card width");
+  assert(longLayout.bottom <= 512, "Long headline exceeded the card height");
+  validatePng(longCard.png);
+  let excessiveHeadlineFailed = false;
+  try {
+    layoutHeadline("W".repeat(241));
+  } catch (error) {
+    excessiveHeadlineFailed = error.message.includes("Unable to fit share-card headline");
+  }
+  assert(excessiveHeadlineFailed, "An excessively long headline did not fail clearly");
 
   const rankingCurrent = reportingFixture({
     id: "ranking-current",
@@ -780,7 +924,7 @@ async function test() {
   );
 
   console.log(
-    "Content tests passed: validation, feed compatibility, reporting-only pages and sitemap, escaping, metadata, JSON-LD, recommendations, and determinism.",
+    "Content tests passed: validation, feed compatibility, reporting-only pages/cards/sitemap, PNG dimensions and structure, safe text, metadata, JSON-LD, long-headline handling, recommendations, and determinism.",
   );
 }
 

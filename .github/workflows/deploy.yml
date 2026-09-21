@@ -7,11 +7,13 @@ on:
       - main
     paths:
       - .github/workflows/deploy.yml
+      - assets/fonts/**
       - content/**
       - package-lock.json
       - package.json
       - public/**
       - scripts/content.mjs
+      - scripts/share-card.mjs
       - src/index.js
       - wrangler.jsonc
 
@@ -51,6 +53,7 @@ jobs:
           npm run public:test
           node --check public/app.js
           node --check public/story.js
+          node --check scripts/share-card.mjs
           node --check scripts/public.mjs
           node --check src/index.js
           npx wrangler deploy --config wrangler.jsonc --dry-run
