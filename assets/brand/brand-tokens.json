@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "canonical_name": "ShockedButNotSurprised.news",
+  "display_wordmark": "Shocked But Not Surprised.news",
+  "descriptor": "Independent Accountability Reporting",
+  "process_signature": "Observe. Verify. Explain.",
+  "brand_promise": "Same Questions. A More Accountable Tomorrow.",
+  "brand_aspiration": [
+    "A More Informed Public",
+    "A More Accountable World"
+  ],
+  "colors": {
+    "ink_black": "#0B0B0D",
+    "newsprint_gray": "#4B4F56",
+    "slate": "#9AA0A6",
+    "paper_white": "#F8F7F4",
+    "signal_red": "#C8102E",
+    "rule_gray": "#D9D9D6",
+    "white": "#FFFFFF"
+  },
+  "typography": {
+    "display_serif": "EB Garamond",
+    "ui_sans": "Inter",
+    "fallback_serif": "Georgia",
+    "fallback_sans": "Arial"
+  },
+  "spacing_base_px": 8,
+  "logo_clearspace": "Use at least the diameter of the magnifying-glass star center around the lockup."
+}

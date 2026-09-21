@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - .github/workflows/deploy.yml
+      - assets/brand/**
       - assets/fonts/**
       - content/**
       - package-lock.json

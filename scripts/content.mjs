@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  BRAND_COLORS,
+  BRAND_TYPOGRAPHY,
   CARD_HEIGHT,
   CARD_WIDTH,
   canonicalShareCardUrl,
@@ -834,10 +836,39 @@ async function test() {
   const png = validatePng(unsafeCard.png);
   assert(png.width === CARD_WIDTH && png.height === CARD_HEIGHT, "Share card dimensions are incorrect");
   assert(png.format === "png", "Share card format is not PNG");
-  assert(unsafeCard.svg.includes(PUBLICATION_NAME.toUpperCase()), "Share card is missing publication branding");
+  assert(unsafeCard.svg.includes("Shocked But Not Surprised"), "Share card is missing canonical publication branding");
+  assert(
+    unsafeCard.svg.includes("INDEPENDENT ACCOUNTABILITY REPORTING"),
+    "Share card is missing the canonical descriptor",
+  );
+  assert(
+    unsafeCard.svg.includes('d="M28 18 H98 L116 36 V122 H28 Z"'),
+    "Share card is missing the canonical page-and-lens mark",
+  );
   assert(unsafeCard.svg.includes(unsafe.category.toUpperCase()), "Share card is missing its category");
   assert(unsafeCard.svg.includes(`SEVERITY ${unsafe.severity} / 5`), "Share card is missing its severity");
-  assert(unsafeCard.svg.includes("SHOCKEDBUTNOTSURPRISED.NEWS"), "Share card is missing the publication domain");
+  assert(unsafeCard.svg.includes("ShockedButNotSurprised"), "Share card is missing the publication domain");
+  assert(unsafeCard.svg.includes(BRAND_TYPOGRAPHY.serif), "Share card is missing the canonical display serif");
+  assert(unsafeCard.svg.includes(BRAND_TYPOGRAPHY.sans), "Share card is missing the canonical supporting sans");
+  assert(
+    Object.values(BRAND_COLORS).every((color) => unsafeCard.svg.includes(color)),
+    "Share card does not use the complete canonical palette",
+  );
+  assert(!unsafeCard.svg.includes("#101827"), "Obsolete navy remains in the share card");
+  assert(!unsafeCard.svg.includes("#0a101b"), "Obsolete dark navy remains in the share card");
+  assert(!unsafeCard.svg.includes("#c6a15b"), "Obsolete gold remains in the share card");
+  assert(!unsafeCard.svg.includes("Barlow"), "Obsolete Barlow typography remains in the share card");
+  assert(
+    !unsafeCard.svg.includes("THE INSTITUTIONAL FAILURE DESK"),
+    "Share card stacks the retired surface label with the canonical descriptor",
+  );
+  assert(!unsafeCard.svg.includes("Same Questions."), "Static campaign copy remains in the story-card body");
+  const severityMarkup = unsafeCard.svg.match(/<g data-role="severity">[\s\S]*?<\/g>/u)?.[0];
+  assert(severityMarkup, "Share card severity group is missing");
+  assert(
+    !severityMarkup.includes(BRAND_COLORS.signalRed),
+    "Signal Red incorrectly encodes story severity",
+  );
   assert(!unsafeCard.svg.includes("<script>"), "Story text injected executable SVG");
   assert(unsafeCard.svg.includes("&lt;/title&gt;"), "Story text was not safely escaped in SVG");
   assert(!unsafeCard.svg.includes("<image"), "Share card introduced an external image element");

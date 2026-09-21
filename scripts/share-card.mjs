@@ -1,33 +1,92 @@
-import { Resvg } from "@resvg/resvg-js";
-import { inflateSync } from "node:zlib";
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inflateSync } from "node:zlib";
+import { Resvg } from "@resvg/resvg-js";
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const FONT_FILE = resolve(
-  process.env.SBNS_SHARE_CARD_FONT ||
-    resolve(ROOT, "assets", "fonts", "barlow-condensed-latin-700-normal.ttf"),
+const BRAND_TOKENS_FILE = resolve(ROOT, "assets", "brand", "brand-tokens.json");
+const BRAND_TEMPLATE_FILE = resolve(ROOT, "assets", "brand", "sbns-social-og.svg");
+const SERIF_FONT_FILE = resolve(
+  process.env.SBNS_SHARE_CARD_SERIF_FONT ||
+    resolve(ROOT, "assets", "fonts", "eb-garamond-variable.ttf"),
 );
-const FONT_FAMILY = "Barlow Condensed";
+const SANS_FONT_FILE = resolve(
+  process.env.SBNS_SHARE_CARD_SANS_FONT ||
+    resolve(ROOT, "assets", "fonts", "inter-variable.ttf"),
+);
+
+const brandTokens = JSON.parse(readFileSync(BRAND_TOKENS_FILE, "utf8"));
+const canonicalTemplate = readFileSync(BRAND_TEMPLATE_FILE, "utf8");
+
+export const BRAND_COLORS = Object.freeze({
+  inkBlack: brandTokens.colors.ink_black,
+  newsprintGray: brandTokens.colors.newsprint_gray,
+  slate: brandTokens.colors.slate,
+  paperWhite: brandTokens.colors.paper_white,
+  signalRed: brandTokens.colors.signal_red,
+  ruleGray: brandTokens.colors.rule_gray,
+  white: brandTokens.colors.white,
+});
+
+export const BRAND_TYPOGRAPHY = Object.freeze({
+  serif: brandTokens.typography.display_serif,
+  sans: brandTokens.typography.ui_sans,
+});
+
 const SITE_ORIGIN = "https://shockedbutnotsurprised.news";
-const HEADLINE_X = 72;
-const HEADLINE_TOP = 250;
-const HEADLINE_BOTTOM = 512;
-const HEADLINE_MAX_WIDTH = 1056;
+const HEADLINE_X = 78;
+const HEADLINE_TOP = 270;
+const HEADLINE_BOTTOM = 515;
+const HEADLINE_MAX_WIDTH = 1044;
 const HEADLINE_MAX_LINES = 4;
 const HEADLINE_MAX_CHARACTERS = 240;
-const HEADLINE_FONT_SIZES = [64, 60, 56, 52, 48, 44];
+const HEADLINE_FONT_SIZES = [54, 51, 48, 45, 42, 39];
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const COLORS = {
-  navy: "#101827",
-  navyDark: "#0a101b",
-  paper: "#f5f0e6",
-  gold: "#c6a15b",
-  muted: "#aab2c0",
-};
+const measurementCache = new Map();
+
+function requireBrandInputs() {
+  const requiredColors = [
+    "inkBlack",
+    "newsprintGray",
+    "slate",
+    "paperWhite",
+    "signalRed",
+    "ruleGray",
+    "white",
+  ];
+  for (const key of requiredColors) {
+    if (!/^#[0-9A-F]{6}$/u.test(BRAND_COLORS[key])) {
+      throw new Error(`Canonical brand token ${key} is missing or invalid`);
+    }
+  }
+  if (!BRAND_TYPOGRAPHY.serif || !BRAND_TYPOGRAPHY.sans) {
+    throw new Error("Canonical brand typography tokens are missing");
+  }
+  if (
+    !canonicalTemplate.includes(`width="${CARD_WIDTH}" height="${CARD_HEIGHT}"`) ||
+    !canonicalTemplate.includes(BRAND_COLORS.inkBlack) ||
+    !canonicalTemplate.includes(BRAND_COLORS.signalRed) ||
+    !canonicalTemplate.includes("Shocked But Not Surprised") ||
+    !canonicalTemplate.includes("INDEPENDENT ACCOUNTABILITY REPORTING")
+  ) {
+    throw new Error("Canonical social template does not satisfy the SBNS share-card contract");
+  }
+}
+
+function canonicalHeader() {
+  const dividerPattern =
+    /<line x1="70" y1="190" x2="1130" y2="190" stroke="[^"]+" stroke-width="2"\/>/u;
+  const divider = dividerPattern.exec(canonicalTemplate);
+  if (!divider) throw new Error("Canonical social template divider was not found");
+  return `${canonicalTemplate.slice(0, divider.index)}<line x1="70" y1="190" x2="1130" y2="190" stroke="${BRAND_COLORS.newsprintGray}" stroke-width="2"/>`;
+}
+
+requireBrandInputs();
+const CANONICAL_HEADER = canonicalHeader();
 
 function escapeXml(value) {
   return String(value)
@@ -41,10 +100,11 @@ function escapeXml(value) {
 function rendererOptions() {
   return {
     font: {
-      fontFiles: [FONT_FILE],
+      fontFiles: [SERIF_FONT_FILE, SANS_FONT_FILE],
       loadSystemFonts: false,
-      defaultFontFamily: FONT_FAMILY,
-      sansSerifFamily: FONT_FAMILY,
+      defaultFontFamily: BRAND_TYPOGRAPHY.serif,
+      serifFamily: BRAND_TYPOGRAPHY.serif,
+      sansSerifFamily: BRAND_TYPOGRAPHY.sans,
     },
     shapeRendering: 2,
     textRendering: 2,
@@ -54,12 +114,15 @@ function rendererOptions() {
 }
 
 function measureText(value, fontSize) {
-  const baseline = Math.ceil(fontSize * 1.25);
+  const cacheKey = `${fontSize}\u0000${value}`;
+  if (measurementCache.has(cacheKey)) return measurementCache.get(cacheKey);
+  const baseline = Math.ceil(fontSize * 1.35);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="256">
-  <text x="0" y="${baseline}" fill="#fff" font-family="${FONT_FAMILY}" font-size="${fontSize}" font-weight="700">${escapeXml(value)}</text>
+  <text x="0" y="${baseline}" fill="#fff" font-family="${BRAND_TYPOGRAPHY.serif}" font-size="${fontSize}" font-weight="700">${escapeXml(value)}</text>
 </svg>`;
   const box = new Resvg(svg, rendererOptions()).innerBBox();
-  if (!box) throw new Error("Unable to measure share-card text with the bundled font");
+  if (!box) throw new Error("Unable to measure share-card text with the bundled canonical font");
+  measurementCache.set(cacheKey, box.width);
   return box.width;
 }
 
@@ -81,7 +144,7 @@ function wrapAtSize(headline, fontSize) {
   if (current) lines.push(current);
   if (lines.length === 0 || lines.length > HEADLINE_MAX_LINES) return null;
 
-  const lineHeight = Math.ceil(fontSize * 1.08);
+  const lineHeight = Math.ceil(fontSize * 1.1);
   const finalTextBottom =
     HEADLINE_TOP + fontSize + (lines.length - 1) * lineHeight + Math.ceil(fontSize * 0.22);
   if (finalTextBottom > HEADLINE_BOTTOM) return null;
@@ -127,19 +190,22 @@ function formatDate(timestamp) {
 }
 
 function renderSeverity(severity) {
-  return Array.from({ length: 5 }, (_, index) => {
-    const x = 250 + index * 48;
-    const fill = index < severity ? COLORS.gold : "none";
-    const stroke = index < severity ? COLORS.gold : COLORS.muted;
-    return `  <rect x="${x}" y="571" width="34" height="9" rx="4.5" fill="${fill}" stroke="${stroke}" stroke-width="2" />`;
+  const bars = Array.from({ length: 5 }, (_, index) => {
+    const x = 232 + index * 42;
+    const fill = index < severity ? BRAND_COLORS.paperWhite : "none";
+    return `    <rect x="${x}" y="572" width="28" height="8" rx="4" fill="${fill}" stroke="${BRAND_COLORS.ruleGray}" stroke-width="2" />`;
   }).join("\n");
+  return `  <g data-role="severity">
+    <text x="78" y="581" fill="${BRAND_COLORS.paperWhite}" font-family="${BRAND_TYPOGRAPHY.sans}" font-size="15" font-weight="600" letter-spacing="2">SEVERITY ${severity} / 5</text>
+${bars}
+  </g>`;
 }
 
 function renderHeadline(layout) {
   return layout.lines
     .map((line, index) => {
       const y = HEADLINE_TOP + layout.fontSize + index * layout.lineHeight;
-      return `  <text x="${HEADLINE_X}" y="${y}" fill="${COLORS.paper}" font-family="${FONT_FAMILY}" font-size="${layout.fontSize}" font-weight="700">${escapeXml(line)}</text>`;
+      return `  <text x="${HEADLINE_X}" y="${y}" fill="${BRAND_COLORS.paperWhite}" font-family="${BRAND_TYPOGRAPHY.serif}" font-size="${layout.fontSize}" font-weight="700">${escapeXml(line)}</text>`;
     })
     .join("\n");
 }
@@ -154,22 +220,14 @@ export function shareCardAlt(story) {
 
 export function generateShareCard(story) {
   const layout = layoutHeadline(story.headline);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}">
-  <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${COLORS.navy}" />
-  <path d="M0 88H1200 M0 206H1200 M0 540H1200" stroke="${COLORS.paper}" stroke-opacity="0.07" />
-  <path d="M246 0V630 M954 0V630" stroke="${COLORS.paper}" stroke-opacity="0.035" />
-  <rect width="14" height="${CARD_HEIGHT}" fill="${COLORS.gold}" />
-  <rect x="72" y="54" width="76" height="6" fill="${COLORS.gold}" />
-  <text x="72" y="91" fill="${COLORS.gold}" font-family="${FONT_FAMILY}" font-size="21" font-weight="700" letter-spacing="4">THE INSTITUTIONAL FAILURE DESK</text>
-  <text x="72" y="166" fill="${COLORS.paper}" font-family="${FONT_FAMILY}" font-size="68" font-weight="700" letter-spacing="1">SHOCKED BUT NOT SURPRISED</text>
-  <text x="1128" y="82" fill="${COLORS.paper}" font-family="${FONT_FAMILY}" font-size="28" font-weight="700" text-anchor="end" letter-spacing="2">${escapeXml(story.category.toUpperCase())}</text>
-  <text x="1128" y="116" fill="${COLORS.muted}" font-family="${FONT_FAMILY}" font-size="20" font-weight="700" text-anchor="end" letter-spacing="1.5">${escapeXml(formatDate(story.published_at).toUpperCase())}</text>
-  <line x1="72" y1="206" x2="1128" y2="206" stroke="${COLORS.gold}" stroke-width="2" />
+  const svg = `${CANONICAL_HEADER}
+  <line x1="78" y1="226" x2="106" y2="226" stroke="${BRAND_COLORS.signalRed}" stroke-width="6" />
+  <text x="120" y="233" fill="${BRAND_COLORS.paperWhite}" font-family="${BRAND_TYPOGRAPHY.sans}" font-size="15" font-weight="600" letter-spacing="2.4">${escapeXml(story.category.toUpperCase())}</text>
+  <text x="1122" y="233" fill="${BRAND_COLORS.slate}" font-family="${BRAND_TYPOGRAPHY.sans}" font-size="15" font-weight="600" text-anchor="end" letter-spacing="1.4">${escapeXml(formatDate(story.published_at).toUpperCase())}</text>
 ${renderHeadline(layout)}
-  <rect x="0" y="540" width="1200" height="90" fill="${COLORS.navyDark}" />
-  <text x="72" y="581" fill="${COLORS.muted}" font-family="${FONT_FAMILY}" font-size="20" font-weight="700" letter-spacing="2">SEVERITY ${story.severity} / 5</text>
+  <line x1="78" y1="538" x2="1122" y2="538" stroke="${BRAND_COLORS.newsprintGray}" stroke-width="2" />
 ${renderSeverity(story.severity)}
-  <text x="1128" y="585" fill="${COLORS.gold}" font-family="${FONT_FAMILY}" font-size="27" font-weight="700" text-anchor="end" letter-spacing="1.2">SHOCKEDBUTNOTSURPRISED.NEWS</text>
+  <text x="1122" y="583" fill="${BRAND_COLORS.paperWhite}" font-family="${BRAND_TYPOGRAPHY.sans}" font-size="18" font-weight="600" text-anchor="end">ShockedButNotSurprised<tspan fill="${BRAND_COLORS.signalRed}">.news</tspan></text>
 </svg>`;
   if (svg.includes("<image") || /https?:\/\//u.test(svg.replace('xmlns="http://www.w3.org/2000/svg"', ""))) {
     throw new Error("Share-card SVG must not contain external image references");

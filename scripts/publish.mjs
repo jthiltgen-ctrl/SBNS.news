@@ -242,6 +242,7 @@ async function initializeTempRepo(basePackage) {
   const root = await mkdtemp(path.join(ROOT, "node_modules", ".sbns-publication-"));
   await Promise.all([
     mkdir(path.join(root, "scripts"), { recursive: true }),
+    mkdir(path.join(root, "assets", "brand"), { recursive: true }),
     mkdir(path.join(root, "assets", "fonts"), { recursive: true }),
     mkdir(path.join(root, "content", "stories"), { recursive: true }),
     mkdir(path.join(root, "public"), { recursive: true }),
@@ -251,8 +252,20 @@ async function initializeTempRepo(basePackage) {
     copyFile(path.join(ROOT, "scripts", "content.mjs"), path.join(root, "scripts", "content.mjs")),
     copyFile(path.join(ROOT, "scripts", "share-card.mjs"), path.join(root, "scripts", "share-card.mjs")),
     copyFile(
-      path.join(ROOT, "assets", "fonts", "barlow-condensed-latin-700-normal.ttf"),
-      path.join(root, "assets", "fonts", "barlow-condensed-latin-700-normal.ttf"),
+      path.join(ROOT, "assets", "brand", "brand-tokens.json"),
+      path.join(root, "assets", "brand", "brand-tokens.json"),
+    ),
+    copyFile(
+      path.join(ROOT, "assets", "brand", "sbns-social-og.svg"),
+      path.join(root, "assets", "brand", "sbns-social-og.svg"),
+    ),
+    copyFile(
+      path.join(ROOT, "assets", "fonts", "eb-garamond-variable.ttf"),
+      path.join(root, "assets", "fonts", "eb-garamond-variable.ttf"),
+    ),
+    copyFile(
+      path.join(ROOT, "assets", "fonts", "inter-variable.ttf"),
+      path.join(root, "assets", "fonts", "inter-variable.ttf"),
     ),
     copyFile(SCHEMA_FILE, path.join(root, "publication", "schemas", "package.schema.json")),
   ]);
