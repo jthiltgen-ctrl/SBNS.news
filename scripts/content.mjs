@@ -297,7 +297,7 @@ function generateStoryPage(story, reporting) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="${escapedSummary}" />
-    <meta name="theme-color" content="#1a1714" />
+    <meta name="theme-color" content="#0B0B0D" />
     <title>${escapedHeadline} | ${PUBLICATION_NAME}</title>
     <link rel="canonical" href="${canonicalUrl}" />
     <meta property="og:type" content="article" />
@@ -318,12 +318,6 @@ ${articleTags}
     <script type="application/ld+json">
 ${jsonForHtml(jsonLd)}
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Bebas+Neue&family=Lora:ital,wght@0,400;0,600;1,400&family=Special+Elite&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="/styles.css" />
     <script src="/story.js" type="module"></script>
   </head>
@@ -351,6 +345,7 @@ ${jsonForHtml(jsonLd)}
             <span>${escapeHtml(story.category)}</span>
             <time datetime="${escapeHtml(story.published_at)}">${escapeHtml(publishedDate(story.published_at))}</time>
             <span class="severity" aria-label="Severity ${story.severity} out of 5">
+              <span class="severity-value" aria-hidden="true">Severity ${story.severity}/5</span>
 ${severityDots}
             </span>
           </div>
@@ -809,6 +804,10 @@ async function test() {
   assert(page.includes(`<span>${unsafe.category}</span>`), "Category is missing from direct HTML");
   assert(page.includes("September 20, 2026"), "Publication date is missing from direct HTML");
   assert(page.includes(`Severity ${unsafe.severity} out of 5`), "Severity is missing from direct HTML");
+  assert(
+    page.includes(`>Severity ${unsafe.severity}/5</span>`),
+    "Visible numeric severity is missing from direct HTML",
+  );
   assert(page.includes(escapeHtml(unsafe.headline)), "Headline is missing from direct HTML");
   assert(page.includes(escapeHtml(unsafe.summary)), "Summary is missing from direct HTML");
   assert(page.includes(escapeHtml(unsafe.sources[0].name)), "Complete source list is missing from direct HTML");
