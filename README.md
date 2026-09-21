@@ -7,6 +7,12 @@ durable editorial workflow state lives in Cloudflare D1.
 The governing rule is simple: AI may help analyze evidence, but human editorial
 judgment remains authoritative and publication remains intentional.
 
+The public reader is static-first: published reporting and permanent story
+links are present in the initial homepage HTML, while JavaScript provides
+progressive filtering, Prototype archive access, and refresh behavior. See
+[READER-ACCOUNTABILITY.md](READER-ACCOUNTABILITY.md) for the reader,
+transparency, attribution, AI-use, and voice boundaries.
+
 ## Runtime surfaces
 
 - `sbns-news`: public website and `GET /api/health`
@@ -61,7 +67,9 @@ npm run content:check
 ```
 
 `public/stories.json` is generated deterministically. Do not edit it manually.
-Drafts never enter the public feed.
+Drafts never enter the public feed. The generated reporting region in
+`public/index.html` and the canonical pages under `public/story/` come from the
+same approved story files; they are not separate content sources.
 
 ## Operations and deployment records
 
@@ -85,10 +93,13 @@ Drafts never enter the public feed.
 
 Deployment, remote migrations, production DNS, nameservers, public visitor
 submissions, and automated repository publication require separate
-authorization. `.github/workflows/deploy.yml` validates and deploys only the
-public `sbns-news` Worker after changes reach `main`; it requires the
+authorization. A qualifying push or merge to `main` automatically starts
+`.github/workflows/deploy.yml`, which validates and deploys only the public
+`sbns-news` Worker; it requires the
 `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets in the `staging`
 GitHub environment. The environment name is retained for credential management
 and does not describe the public Worker's production identity. The root-level
 legacy GreenGeeks `deploy.yml` remains as a historical reference and is not
-invoked by GitHub Actions.
+invoked by GitHub Actions. Inspect the workflow triggers before every future
+merge authorization; a merge affecting its watched paths is not a
+non-deploying action.

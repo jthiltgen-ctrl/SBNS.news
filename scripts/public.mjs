@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import worker from "../src/index.js";
+import { refreshStoryFeed, storyMatchesView } from "../public/reader-state.js";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -41,21 +42,107 @@ assert(homepageHtml.includes("Public Edition"), "Public Edition identity regress
 assert(homepageHtml.includes("Prototype archive"), "Prototype archive identity regressed");
 assert(homepageHtml.includes('data-view="Samples"'), "Prototype archive filter regressed");
 const publicStories = JSON.parse(feedText);
+const reportingStories = publicStories.filter((story) => story.content_type === "reporting");
+const sampleStories = publicStories.filter((story) => story.content_type === "sample");
 assert(
-  publicStories.filter((story) => story.content_type === "reporting").length === 6,
+  reportingStories.length === 6,
   "Homepage feed does not contain exactly six reporting stories",
 );
 assert(
-  publicStories.filter((story) => story.content_type === "sample").length === 6,
+  sampleStories.length === 6,
   "Homepage feed does not contain exactly six Prototype samples",
 );
 assert(
-  appScript.includes('if (activeView === "Samples") return story.content_type === "sample";') &&
-    appScript.includes('if (activeView === "Reporting") return story.content_type === "reporting";'),
+  sampleStories.every((story) => storyMatchesView(story, "Samples")) &&
+    reportingStories.every((story) => storyMatchesView(story, "Reporting")) &&
+    sampleStories.every((story) => !storyMatchesView(story, "Reporting")),
   "Reporting and Prototype filter isolation regressed",
+);
+assert(
+  (homepageHtml.match(/class="story-card"/g) || []).length === reportingStories.length,
+  "Homepage initial HTML does not contain one card per published reporting story",
+);
+assert(
+  !homepageHtml.includes('data-content-type="sample"'),
+  "Prototype material entered the homepage initial reporting HTML",
+);
+for (const story of reportingStories) {
+  assert(
+    homepageHtml.includes(`data-story-id="${story.id}"`) &&
+      homepageHtml.includes(`href="/story/${story.id}"`),
+    `Homepage initial HTML is missing ${story.id} or its permanent link`,
+  );
+}
+assert(
+  homepageHtml.includes('id="status"') && homepageHtml.includes('role="status"') &&
+    homepageHtml.includes("hidden"),
+  "Homepage status does not begin non-destructively hidden",
+);
+assert(!homepageHtml.includes("Loading the latest failures"), "Loading copy replaced initial reporting");
+assert(
+  appScript.includes("Refresh failed. The reporting already on the page stays put."),
+  "Refresh failure does not communicate preserved reporting",
+);
+let committedAfterFailure = false;
+let reportedFailure = false;
+const refreshSucceeded = await refreshStoryFeed({
+  fetchImplementation: async () => {
+    throw new Error("synthetic refresh failure");
+  },
+  url: "/stories.json",
+  minimumStories: 1,
+  onSuccess() {
+    committedAfterFailure = true;
+  },
+  onFailure() {
+    reportedFailure = true;
+  },
+});
+assert(!refreshSucceeded, "Synthetic refresh failure was reported as successful");
+assert(!committedAfterFailure, "Refresh failure committed destructive replacement content");
+assert(reportedFailure, "Refresh failure did not reach the non-destructive failure path");
+let committedInvalidFeed = false;
+const invalidFeedSucceeded = await refreshStoryFeed({
+  fetchImplementation: async () => ({
+    ok: true,
+    async json() {
+      return sampleStories;
+    },
+  }),
+  url: "/stories.json",
+  minimumStories: 1,
+  validateStories: (stories) => stories.some((story) => story.content_type === "reporting"),
+  onSuccess() {
+    committedInvalidFeed = true;
+  },
+  onFailure() {},
+});
+assert(!invalidFeedSucceeded, "A feed missing published reporting was accepted");
+assert(!committedInvalidFeed, "A feed missing reporting erased the valid rendered publication");
+assert(
+  homepageHtml.includes("Edited &amp; published by") && homepageHtml.includes("Justin Thiltgen"),
+  "Homepage human editorial accountability is missing",
+);
+assert(
+  homepageHtml.includes('href="#transparency"') &&
+    homepageHtml.includes('id="transparency"') &&
+    homepageHtml.includes("AI-assisted work"),
+  "Transparency surface is not reachable or complete",
 );
 assert(appScript.includes("Severity ${severity}/5"), "Homepage severity has no visible numeric value");
 assert(storyHtml.includes('class="severity-value"'), "Story severity has no visible numeric value");
+assert(
+  storyHtml.includes('class="story-byline"') && storyHtml.includes("By <a") &&
+    storyHtml.includes("Justin Thiltgen"),
+  "Story page human attribution is missing",
+);
+const storyJsonLd = JSON.parse(
+  storyHtml.match(/<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/)?.[1] || "null",
+);
+assert(
+  storyJsonLd?.author?.["@type"] === "Person" && storyJsonLd.author.name === "Justin Thiltgen",
+  "Story NewsArticle metadata is missing factual human attribution",
+);
 const severityStyles = styles.match(/\.severity \{[\s\S]*?(?=\.story-masthead)/u)?.[0];
 assert(severityStyles, "Reader severity styles are missing");
 assert(!severityStyles.includes("--sbns-signal-red"), "Signal Red incorrectly encodes reader severity");
@@ -114,5 +201,5 @@ assert(homepage.status === 200, "Homepage asset routing regressed");
 assert(assetRequests.length === 2, "Homepage did not pass through to the asset binding");
 
 console.log(
-  "Public reader tests passed: canonical brand assets, local fonts, neutral visible severity, accessibility media, routing, health, and homepage pass-through.",
+  "Public reader tests passed: initial-HTML reporting, progressive refresh preservation, Prototype isolation, accountability, canonical brand assets, local fonts, neutral visible severity, accessibility media, routing, health, and homepage pass-through.",
 );

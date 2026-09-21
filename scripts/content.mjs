@@ -18,6 +18,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT_DIR = resolve(process.env.SBNS_CONTENT_DIR || join(ROOT, "content", "stories"));
 const OUTPUT_FILE = resolve(process.env.SBNS_OUTPUT_FILE || join(ROOT, "public", "stories.json"));
 const PUBLIC_DIR = resolve(process.env.SBNS_PUBLIC_DIR || dirname(OUTPUT_FILE));
+const HOMEPAGE_FILE = resolve(process.env.SBNS_HOMEPAGE_FILE || join(PUBLIC_DIR, "index.html"));
 const STORY_OUTPUT_DIR = resolve(process.env.SBNS_STORY_OUTPUT_DIR || join(PUBLIC_DIR, "story"));
 const SHARE_OUTPUT_DIR = resolve(process.env.SBNS_SHARE_OUTPUT_DIR || join(PUBLIC_DIR, "share"));
 const SITEMAP_FILE = resolve(process.env.SBNS_SITEMAP_FILE || join(PUBLIC_DIR, "sitemap.xml"));
@@ -26,6 +27,9 @@ const STORY_IDS_FILE = resolve(
 );
 const SITE_ORIGIN = "https://shockedbutnotsurprised.news";
 const PUBLICATION_NAME = "Shocked But Not Surprised";
+const EDITOR_NAME = "Justin Thiltgen";
+const HOMEPAGE_REPORTING_START = "<!-- SBNS_GENERATED_REPORTING_START -->";
+const HOMEPAGE_REPORTING_END = "<!-- SBNS_GENERATED_REPORTING_END -->";
 const COMMANDS = new Set(["build", "check", "test"]);
 const REQUIRED_FIELDS = [
   "id",
@@ -203,6 +207,92 @@ function publishedDate(timestamp) {
   }).format(new Date(timestamp));
 }
 
+function homepagePublishedDate(timestamp) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(timestamp));
+}
+
+function renderSeverity(severity, indentation = "") {
+  const dots = Array.from(
+    { length: 5 },
+    (_, index) =>
+      `${indentation}  <span class="severity-dot${index < severity ? " active" : ""}" aria-hidden="true"></span>`,
+  ).join("\n");
+  return `${indentation}<span class="severity" aria-label="Severity ${severity} out of 5">
+${indentation}  <span class="severity-value" aria-hidden="true">Severity ${severity}/5</span>
+${dots}
+${indentation}</span>`;
+}
+
+function renderHomepageCard(story) {
+  const isSample = story.content_type === "sample";
+  const headline = isSample
+    ? escapeHtml(story.headline)
+    : `<a href="/story/${escapeHtml(story.id)}">${escapeHtml(story.headline)}</a>`;
+  const sampleLabel = isSample
+    ? '        <p class="fictional-label">Fictional prototype sample — not real news</p>\n'
+    : "";
+  const sourceLabel = isSample ? "Fictional sample source" : "Primary sources";
+  const sources = story.sources
+    .map((source) => {
+      const name = escapeHtml(source.name);
+      return isValidHttpUrl(source.url)
+        ? `          <a class="source-name" href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer">${name}</a>`
+        : `          <span class="source-name">${name}</span>`;
+    })
+    .join("\n");
+  const tags = story.topic_tags
+    .map((tag) => `          <span class="tag">${escapeHtml(tag)}</span>`)
+    .join("\n");
+
+  return `      <article
+        class="story-card"
+        data-story-id="${escapeHtml(story.id)}"
+        data-content-type="${escapeHtml(story.content_type)}"
+        data-category="${escapeHtml(story.category)}"
+      >
+        <div class="story-body">
+${sampleLabel}          <div class="story-meta">
+            <span>${escapeHtml(story.category)} · <time datetime="${escapeHtml(story.published_at)}">${escapeHtml(homepagePublishedDate(story.published_at))}</time></span>
+${renderSeverity(story.severity, "            ")}
+          </div>
+          <h3>${headline}</h3>
+          <p class="summary">${escapeHtml(story.summary)}</p>
+          <div class="source-area">
+            <span class="source-label">${sourceLabel}</span>
+${sources}
+          </div>
+          <div class="tags">
+${tags}
+          </div>
+        </div>
+        <p class="kicker">${escapeHtml(story.fml_kicker)}</p>
+      </article>`;
+}
+
+function generateHomepage(homepage, reporting) {
+  const start = homepage.indexOf(HOMEPAGE_REPORTING_START);
+  const end = homepage.indexOf(HOMEPAGE_REPORTING_END);
+  if (
+    start === -1 ||
+    end === -1 ||
+    end < start ||
+    homepage.indexOf(HOMEPAGE_REPORTING_START, start + 1) !== -1 ||
+    homepage.indexOf(HOMEPAGE_REPORTING_END, end + 1) !== -1
+  ) {
+    throw new Error("Homepage must contain exactly one ordered generated-reporting marker pair");
+  }
+
+  const cards = reporting.map(renderHomepageCard).join("\n");
+  const before = homepage.slice(0, start + HOMEPAGE_REPORTING_START.length);
+  const after = homepage.slice(end);
+  return `${before}\n${cards}\n      ${after}`;
+}
+
 function relatedStories(story, reportingStories, limit = 3) {
   const storyTags = new Set(story.topic_tags.map((tag) => tag.toLocaleLowerCase("en-US")));
   return reportingStories
@@ -277,6 +367,10 @@ function generateStoryPage(story, reporting) {
     datePublished: story.published_at,
     articleSection: story.category,
     keywords: story.topic_tags,
+    author: {
+      "@type": "Person",
+      name: EDITOR_NAME,
+    },
     publisher: {
       "@type": "Organization",
       name: PUBLICATION_NAME,
@@ -314,6 +408,7 @@ function generateStoryPage(story, reporting) {
     <meta name="twitter:image" content="${imageUrl}" />
     <meta property="article:published_time" content="${escapeHtml(story.published_at)}" />
     <meta property="article:section" content="${escapeHtml(story.category)}" />
+    <meta property="article:author" content="${EDITOR_NAME}" />
 ${articleTags}
     <script type="application/ld+json">
 ${jsonForHtml(jsonLd)}
@@ -350,6 +445,7 @@ ${severityDots}
             </span>
           </div>
           <h1>${escapedHeadline}</h1>
+          <p class="story-byline">By <a href="/#transparency">${EDITOR_NAME}</a> · ${PUBLICATION_NAME}</p>
           <p class="story-deck">${escapedSummary}</p>
         </header>
 
@@ -411,6 +507,7 @@ ${renderRelated(story, reporting)}
         <a href="/#reports">Reports</a>
         <a href="/#method">Method</a>
         <a href="/#standards">Standards</a>
+        <a href="/#transparency">About &amp; transparency</a>
       </nav>
     </footer>
   </body>
@@ -446,7 +543,7 @@ ${ids}
 `;
 }
 
-function generateArtifacts(stories) {
+function generateArtifacts(stories, homepage) {
   const published = publishedStories(stories);
   const reporting = published.filter((story) => story.content_type === "reporting");
   const pages = new Map(
@@ -457,6 +554,7 @@ function generateArtifacts(stories) {
   );
   return {
     feed: `${JSON.stringify(published, null, 2)}\n`,
+    homepage: generateHomepage(homepage, reporting),
     pages,
     cards,
     sitemap: generateSitemap(reporting),
@@ -511,8 +609,11 @@ async function loadStories(contentDir = CONTENT_DIR) {
 }
 
 async function build() {
-  const stories = await loadStories();
-  const artifacts = generateArtifacts(stories);
+  const [stories, homepage] = await Promise.all([
+    loadStories(),
+    readFile(HOMEPAGE_FILE, "utf8"),
+  ]);
+  const artifacts = generateArtifacts(stories, homepage);
   await Promise.all([
     mkdir(dirname(OUTPUT_FILE), { recursive: true }),
     mkdir(dirname(SITEMAP_FILE), { recursive: true }),
@@ -528,6 +629,7 @@ async function build() {
   ]);
   await Promise.all([
     writeFile(OUTPUT_FILE, artifacts.feed, "utf8"),
+    writeFile(HOMEPAGE_FILE, artifacts.homepage, "utf8"),
     writeFile(SITEMAP_FILE, artifacts.sitemap, "utf8"),
     writeFile(STORY_IDS_FILE, artifacts.storyIds, "utf8"),
     ...[...artifacts.pages].map(([filename, html]) =>
@@ -578,10 +680,14 @@ async function generatedFiles(directory, label) {
 }
 
 async function check() {
-  const stories = await loadStories();
-  const artifacts = generateArtifacts(stories);
+  const [stories, homepage] = await Promise.all([
+    loadStories(),
+    readFile(HOMEPAGE_FILE, "utf8"),
+  ]);
+  const artifacts = generateArtifacts(stories, homepage);
   await Promise.all([
     assertFileMatches(OUTPUT_FILE, artifacts.feed, "feed"),
+    assertFileMatches(HOMEPAGE_FILE, artifacts.homepage, "homepage reporting"),
     assertFileMatches(SITEMAP_FILE, artifacts.sitemap, "sitemap"),
     assertFileMatches(STORY_IDS_FILE, artifacts.storyIds, "story ID manifest"),
   ]);
@@ -738,8 +844,15 @@ async function test() {
     { filename: "unsafe.json", story: unsafe },
     { filename: "related.json", story: related },
   ];
-  const artifacts = generateArtifacts(fixtureStories);
-  const reverseArtifacts = generateArtifacts(fixtureStories.toReversed());
+  const homepageFixture = `<!doctype html>
+<main>
+      ${HOMEPAGE_REPORTING_START}
+      <p>stale output</p>
+      ${HOMEPAGE_REPORTING_END}
+</main>
+`;
+  const artifacts = generateArtifacts(fixtureStories, homepageFixture);
+  const reverseArtifacts = generateArtifacts(fixtureStories.toReversed(), homepageFixture);
 
   assert(artifacts.feed === generateFeed(fixtureStories), "Existing public feed generation changed");
   const parsedFeed = JSON.parse(artifacts.feed);
@@ -758,6 +871,18 @@ async function test() {
   assert((artifacts.sitemap.match(/<url>/g) || []).length === 3, "Sitemap entry count is incorrect");
   assert(artifacts.storyIds.includes(JSON.stringify(unsafe.id)), "Routing manifest is missing a reporting ID");
   assert(!artifacts.storyIds.includes(sample.id), "Prototype sample entered the routing manifest");
+  assert(
+    (artifacts.homepage.match(/class="story-card"/g) || []).length === 2,
+    "Homepage did not contain exactly one initial card per published reporting story",
+  );
+  assert(
+    artifacts.homepage.includes(`/story/${unsafe.id}`) && artifacts.homepage.includes(`/story/${related.id}`),
+    "Homepage initial HTML is missing permanent reporting links",
+  );
+  assert(!artifacts.homepage.includes(sample.headline), "Prototype sample entered homepage initial HTML");
+  assert(!artifacts.homepage.includes(draft.headline), "Draft entered homepage initial HTML");
+  assert(artifacts.homepage.includes("&lt;/title&gt;"), "Homepage story text was not safely escaped");
+  assert(!artifacts.homepage.includes('<script>alert("headline")'), "Homepage headline injected executable HTML");
 
   const page = artifacts.pages.get(`${unsafe.id}.html`);
   const canonicalUrl = canonicalStoryUrl(unsafe.id);
@@ -829,7 +954,14 @@ async function test() {
   assert(jsonLd.mainEntityOfPage["@id"] === canonicalUrl, "JSON-LD canonical identity is incorrect");
   assert(jsonLd.image === imageUrl, "NewsArticle image does not match the canonical share card");
   assert(jsonLd.headline === unsafe.headline, "JSON-LD headline does not preserve source data");
-  assert(!Object.hasOwn(jsonLd, "author"), "JSON-LD invented an author");
+  assert(
+    jsonLd.author?.["@type"] === "Person" && jsonLd.author?.name === EDITOR_NAME,
+    "JSON-LD human attribution is missing or incorrect",
+  );
+  assert(
+    page.includes(`By <a href="/#transparency">${EDITOR_NAME}</a> · ${PUBLICATION_NAME}`),
+    "Visible story attribution is missing",
+  );
 
   const unsafeCard = generateShareCard(unsafe);
   const png = validatePng(unsafeCard.png);
@@ -886,6 +1018,7 @@ async function test() {
 
   const serializedArtifacts = (value) => JSON.stringify({
     feed: value.feed,
+    homepage: value.homepage,
     pages: [...value.pages],
     sitemap: value.sitemap,
     storyIds: value.storyIds,
