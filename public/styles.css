@@ -87,8 +87,66 @@ button {
 .nameplate {
   max-width: 1120px;
   margin: auto;
-  padding: 2.5rem 1rem 2.2rem;
+  padding: 0 1rem 2.2rem;
   text-align: center;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 100%;
+  /* Clearspace remains larger than the rendered star-center diameter. */
+  padding: 2rem;
+  color: var(--sbns-paper-white);
+  text-align: left;
+  text-decoration: none;
+}
+
+.brand-lockup:hover .brand-wordmark,
+.brand-lockup:focus-visible .brand-wordmark {
+  text-decoration: underline;
+  text-decoration-color: var(--sbns-signal-red);
+  text-underline-offset: 0.1em;
+}
+
+.brand-mark {
+  flex: 0 0 auto;
+  width: clamp(4.25rem, 8vw, 5.5rem);
+  height: auto;
+}
+
+.brand-lockup-copy,
+.brand-wordmark,
+.brand-descriptor {
+  display: block;
+}
+
+.brand-wordmark {
+  margin: 0;
+  color: var(--sbns-paper-white);
+  font-family: var(--sbns-display);
+  font-size: clamp(2.2rem, 7vw, 4.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.brand-tld {
+  color: var(--sbns-signal-red);
+}
+
+.brand-descriptor {
+  margin-top: 0.65rem;
+  color: var(--sbns-paper-white);
+  font-family: var(--sbns-utility);
+  font-size: clamp(0.55rem, 1.2vw, 0.72rem);
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
 }
 
 .publication-nav {
@@ -161,7 +219,7 @@ h1 {
 }
 
 .tagline {
-  margin: 1rem 0 0;
+  margin: 0;
   color: var(--sbns-paper-white);
   font-size: clamp(0.86rem, 2.4vw, 1.05rem);
   font-style: italic;
@@ -594,31 +652,12 @@ a.source-name:focus-visible {
 }
 
 .severity-dot.active {
-  background: var(--sbns-ink-black);
-  border-color: var(--sbns-ink-black);
+  background: var(--sbns-signal-red);
+  border-color: var(--sbns-signal-red);
 }
 
 .story-masthead .nameplate {
   padding-block: 2rem;
-}
-
-.story-nameplate {
-  display: block;
-  color: var(--sbns-paper-white);
-  font-family: var(--sbns-display);
-  font-size: clamp(2.8rem, 8vw, 5.5rem);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 0.9;
-  text-decoration: none;
-}
-
-.story-nameplate:hover,
-.story-nameplate:focus-visible {
-  color: var(--sbns-paper-white);
-  text-decoration: underline;
-  text-decoration-color: var(--sbns-signal-red);
-  text-underline-offset: 0.1em;
 }
 
 .story-page-main {
@@ -788,6 +827,21 @@ a.source-name:focus-visible {
 
 .share-buttons button {
   min-width: 8rem;
+  color: var(--sbns-paper-white);
+  background: var(--sbns-signal-red);
+  border-color: var(--sbns-signal-red);
+}
+
+.share-buttons button:hover,
+.share-buttons button:focus-visible {
+  color: var(--sbns-paper-white);
+  background: var(--sbns-ink-black);
+  border-color: var(--sbns-ink-black);
+}
+
+.share-buttons button:active {
+  background: var(--sbns-newsprint-gray);
+  border-color: var(--sbns-newsprint-gray);
 }
 
 .share-url-label {
@@ -916,6 +970,33 @@ footer nav {
 }
 
 @media (max-width: 580px) {
+  .dateline {
+    align-items: center;
+    flex-direction: column;
+    gap: 0.4rem;
+    letter-spacing: 0.06em;
+    text-align: center;
+  }
+
+  .brand-lockup {
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .brand-mark {
+    width: 4.25rem;
+  }
+
+  .brand-wordmark {
+    font-size: clamp(1.4rem, 8vw, 2.15rem);
+  }
+
+  .brand-descriptor {
+    font-size: 0.55rem;
+  }
+
   .edition-notice,
   .filters,
   .briefing {
@@ -938,10 +1019,10 @@ footer nav {
   }
 
   .publication-nav {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.8rem;
-    overflow-x: auto;
-    white-space: nowrap;
+    text-align: center;
   }
 
   button {
@@ -1015,7 +1096,9 @@ footer nav {
   }
 
   .dateline,
-  .masthead .eyebrow,
+  .brand-wordmark,
+  .brand-descriptor,
+  .brand-tld,
   .tagline,
   .accountability-line {
     color: #000;
@@ -1039,6 +1122,14 @@ footer nav {
   .related-story a {
     color: #000;
     text-decoration: underline;
+  }
+
+  .brand-lockup {
+    padding: 0 0 1rem;
+  }
+
+  .brand-mark {
+    display: none;
   }
 
   .story-article,

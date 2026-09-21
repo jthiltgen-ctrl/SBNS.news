@@ -43,6 +43,23 @@ Unknown facts remain explicitly unstated until a human decision establishes
 them; the reader must not invent a legal structure, funding model, policy, or
 contact channel.
 
+## Canonical reader identity
+
+The masthead combines the approved document/magnifying-glass/centered-star mark
+with the exact `Shocked But Not Surprised.news` wordmark and formal
+`Independent Accountability Reporting` descriptor. The voice-forward tagline
+remains `Another day. Another system that had one job.`; `The institutional
+failure desk` is supporting desk language, not a competing descriptor. The
+process signature and brand promise are reserved for method and About contexts
+rather than stacked into the masthead.
+
+Reader severity meters use Signal Red for filled dots only. The visible numeric
+value and `Severity N out of 5` accessible label remain mandatory, empty dots
+remain neutral, and color does not encode evidence quality, guilt, certainty,
+or political meaning. Story share and Copy Link controls use Signal Red as the
+bounded primary action treatment. Story kicker labels read `SBNS Kicker`; the
+legacy `fml_kicker` data field remains unchanged for compatibility.
+
 ## AI-use boundary
 
 AI and automation may assist with research organization, source comparison,

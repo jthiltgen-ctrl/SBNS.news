@@ -27,6 +27,7 @@ const STORY_IDS_FILE = resolve(
 );
 const SITE_ORIGIN = "https://shockedbutnotsurprised.news";
 const PUBLICATION_NAME = "Shocked But Not Surprised";
+const PUBLICATION_WORDMARK = "Shocked But Not Surprised.news";
 const EDITOR_NAME = "Justin Thiltgen";
 const HOMEPAGE_REPORTING_START = "<!-- SBNS_GENERATED_REPORTING_START -->";
 const HOMEPAGE_REPORTING_END = "<!-- SBNS_GENERATED_REPORTING_END -->";
@@ -392,7 +393,8 @@ function generateStoryPage(story, reporting) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="${escapedSummary}" />
     <meta name="theme-color" content="#0B0B0D" />
-    <title>${escapedHeadline} | ${PUBLICATION_NAME}</title>
+    <title>${escapedHeadline} | ${PUBLICATION_WORDMARK}</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="canonical" href="${canonicalUrl}" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="${PUBLICATION_NAME}" />
@@ -420,11 +422,20 @@ ${jsonForHtml(jsonLd)}
     <header class="masthead story-masthead">
       <div class="dateline">
         <span>Public Edition</span>
-        <span>Est. 2026</span>
+        <span>The institutional failure desk · Est. 2026</span>
       </div>
       <div class="nameplate">
-        <p class="eyebrow">The institutional failure desk</p>
-        <a class="story-nameplate" href="/">${PUBLICATION_NAME}</a>
+        <a
+          class="brand-lockup"
+          href="/"
+          aria-label="${PUBLICATION_WORDMARK} — Independent Accountability Reporting"
+        >
+          <img class="brand-mark" src="/brand/sbns-mark.svg" alt="" width="192" height="192" />
+          <span class="brand-lockup-copy">
+            <span class="brand-wordmark">${PUBLICATION_NAME}<span class="brand-tld">.news</span></span>
+            <span class="brand-descriptor">Independent Accountability Reporting</span>
+          </span>
+        </a>
         <p class="tagline">Another day. Another system that had one job.</p>
       </div>
     </header>
@@ -463,8 +474,8 @@ ${renderTags(story)}
           </ul>
         </section>
 
-        <aside class="story-kicker" aria-label="FML kicker">
-          <span>FML</span>
+        <aside class="story-kicker" aria-label="SBNS Kicker">
+          <span>SBNS Kicker</span>
           <p>${escapeHtml(story.fml_kicker)}</p>
         </aside>
 
@@ -933,11 +944,23 @@ async function test() {
     page.includes(`>Severity ${unsafe.severity}/5</span>`),
     "Visible numeric severity is missing from direct HTML",
   );
+  assert(
+    (page.match(/class="severity-dot active"/g) || []).length === unsafe.severity &&
+      (page.match(/class="severity-dot"/g) || []).length === 5 - unsafe.severity,
+    "Severity dot count does not match the visible numeric severity",
+  );
   assert(page.includes(escapeHtml(unsafe.headline)), "Headline is missing from direct HTML");
   assert(page.includes(escapeHtml(unsafe.summary)), "Summary is missing from direct HTML");
   assert(page.includes(escapeHtml(unsafe.sources[0].name)), "Complete source list is missing from direct HTML");
   assert(page.includes(escapeHtml(unsafe.topic_tags[1])), "Topic tags are missing from direct HTML");
-  assert(page.includes(escapeHtml(unsafe.fml_kicker)), "FML kicker is missing from direct HTML");
+  assert(page.includes(escapeHtml(unsafe.fml_kicker)), "Kicker prose is missing from direct HTML");
+  assert(page.includes('aria-label="SBNS Kicker"'), "Approved kicker label is missing from direct HTML");
+  assert(page.includes("<span>SBNS Kicker</span>"), "Visible kicker label is incorrect");
+  assert(!page.includes('aria-label="FML kicker"') && !page.includes("<span>FML</span>"), "Legacy reader-visible kicker label remains");
+  assert(page.includes('href="/favicon.svg"'), "Canonical favicon is missing from direct HTML");
+  assert(page.includes('src="/brand/sbns-mark.svg"'), "Canonical masthead mark is missing from direct HTML");
+  assert(page.includes(PUBLICATION_WORDMARK), "Canonical wordmark is missing from direct HTML");
+  assert(page.includes("Independent Accountability Reporting"), "Formal descriptor is missing from direct HTML");
   assert(page.includes('href="/#reports"'), "Return navigation is missing from direct HTML");
   assert(page.includes("&lt;script&gt;alert"), "Untrusted story text was not HTML-escaped");
   assert(!page.includes('<script>alert("headline")'), "Headline injected executable HTML");
