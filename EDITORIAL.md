@@ -27,6 +27,21 @@ Never edit `public/stories.json` directly. It is generated from published files
 in `content/stories/`; draft stories remain source-controlled but are excluded
 from the public feed.
 
+## Optional public evidence components
+
+A story may include an explicitly ordered `visuals` array with at most three
+Receipt, Number, or Timeline components. A source used by a component needs a
+unique lowercase story-local `id`; every visual source reference must resolve
+to one of those existing story sources. Missing facts, unsupported fields,
+invalid provenance, over-limit arrays, and malformed dates or numbers fail the
+content build rather than being guessed or silently omitted.
+
+These components present approved evidence; they do not score truth, trust, or
+culpability. Preserve quote/paraphrase distinctions, number scope and
+denominators, date precision, material qualifications, and claim-specific
+source authority. Review the full authoring contract and examples in
+[PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md) before adding one.
+
 ## Public accountability and assistance
 
 The public reader identifies Justin Thiltgen as editor and publisher. Published
