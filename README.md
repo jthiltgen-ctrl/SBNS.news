@@ -24,6 +24,11 @@ approved stories.
   structured analysis
 - `sbns-editorial-staging`: staging D1 editorial database
 
+The authenticated admin Worker also exposes the bounded, manually invoked
+Watchdesk discovery run contract. See [WATCHDESK.md](WATCHDESK.md) for its
+curated sources, deterministic pipeline, no-quota ceiling, operator guide, and
+human-authority boundary.
+
 See [V1.5-ARCHITECTURE-SPEC.md](V1.5-ARCHITECTURE-SPEC.md) for the complete
 trust boundaries and rollout sequence.
 
@@ -54,9 +59,10 @@ npm run check
 ```
 
 The check suite validates source-controlled stories, intake and monitoring
-contracts, human-gated publication preparation, D1 persistence, authenticated
-admin APIs, live-analysis safety boundaries, and all three Worker builds. It
-uses isolated local D1 state and does not deploy or apply remote migrations.
+contracts, Watchdesk discovery, human-gated publication preparation, D1
+persistence, authenticated admin APIs, live-analysis safety boundaries, and
+all three Worker builds. It uses isolated local D1 state and does not deploy or
+apply remote migrations.
 
 ## Editorial content
 

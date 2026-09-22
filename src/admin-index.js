@@ -1,4 +1,5 @@
 import { verifyAccessRequest } from "./access-auth.js";
+import { runWatchdeskScan } from "./watchdesk.js";
 import {
   createDecisionWithAudit,
   createDraftWithAudit,
@@ -187,9 +188,16 @@ async function createDecision(request, env, actor, intakeId) {
   return json(responseBody, 201);
 }
 
-async function route(request, env, actor) {
+async function runWatchdesk(request, env, actor, executeWatchdesk) {
+  const body = await readJson(request);
+  if (Object.keys(body).some((key) => key !== "dry_run") || (body.dry_run != null && typeof body.dry_run !== "boolean")) throw new ApiError(400, "VALIDATION_ERROR", "Watchdesk run accepts only an optional dry_run boolean.");
+  return json(await executeWatchdesk(env, { dryRun: body.dry_run === true, requestedBy: actor.actorId }), 200);
+}
+
+async function route(request, env, actor, executeWatchdesk) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/admin/session") return json({ ok: true, actor: { role: "editor", email: actor.email } });
+  if (request.method === "POST" && url.pathname === "/api/admin/watchdesk/runs") return runWatchdesk(request, env, actor, executeWatchdesk);
   if (url.pathname === "/api/admin/intakes" && request.method === "GET") {
     const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50));
     const status = url.searchParams.get("status"); const origin = url.searchParams.get("origin");
@@ -208,14 +216,14 @@ async function route(request, env, actor) {
   throw new ApiError(404, "NOT_FOUND", "Not Found");
 }
 
-export function createAdminHandler({ authenticate = verifyAccessRequest } = {}) {
+export function createAdminHandler({ authenticate = verifyAccessRequest, executeWatchdesk = runWatchdeskScan } = {}) {
   return async function handle(request, env) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ADMIN_ASSETS.fetch(request);
     if (!url.pathname.startsWith("/api/admin/")) return json({ ok: false, error: { code: "NOT_FOUND", message: "Not Found" } }, 404);
     try {
       const actor = await authenticate(request, env);
-      return await route(request, env, actor);
+      return await route(request, env, actor, executeWatchdesk);
     } catch (error) {
       if (error?.message === "AUTH_REQUIRED") return json({ ok: false, error: { code: "AUTH_REQUIRED", message: "Authentication required." } }, 401);
       return errorResponse(error);

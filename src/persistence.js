@@ -31,7 +31,8 @@ export async function listIntakes(env, { status = null, origin = null, limit = 5
     (SELECT severity FROM analyses WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_severity,
     (SELECT revision FROM editorial_drafts WHERE intake_id = intakes.id ORDER BY revision DESC LIMIT 1) AS latest_draft_revision,
     (SELECT decision FROM editorial_decisions WHERE intake_id = intakes.id ORDER BY decided_at DESC, id DESC LIMIT 1) AS latest_decision
-    ,(SELECT state FROM analysis_jobs WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_analysis_job_state
+    ,(SELECT state FROM analysis_jobs WHERE intake_id = intakes.id ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_analysis_job_state,
+    (SELECT metadata_json FROM audit_events WHERE entity_type = 'intake' AND entity_id = intakes.id AND action = 'watchdesk.candidate_submitted' ORDER BY created_at DESC, id DESC LIMIT 1) AS latest_discovery_metadata_json
     FROM intakes${where} ORDER BY updated_at DESC, id ASC LIMIT ?`).bind(...values).all();
   return result.results;
 }
@@ -140,6 +141,23 @@ export async function getIntakeDetail(env, intakeId) {
   return { intake, analyses: analyses.results, drafts: drafts.results, decisions: decisions.results, audit, analysis_jobs: analysisJobs.results, sources: sources.results, claims: claims.results, claim_sources: claimSources.results };
 }
 
+export async function findDiscoveryMatches(env, normalizedUrl, titleFingerprint) {
+  const result = await database(env).prepare(`SELECT intakes.*,
+    audit_events.metadata_json AS discovery_metadata_json
+    FROM intakes
+    JOIN audit_events ON audit_events.entity_type = 'intake'
+      AND audit_events.entity_id = intakes.id
+      AND audit_events.action = 'watchdesk.candidate_submitted'
+    WHERE intakes.origin = 'discovery'
+      AND (intakes.submitted_url = ? OR json_extract(audit_events.metadata_json, '$.candidate.title_fingerprint') = ?)
+    ORDER BY intakes.updated_at DESC, intakes.id ASC`).bind(normalizedUrl, titleFingerprint).all();
+  return result.results;
+}
+
+export async function findMonitoringMatch(env, normalizedUrl) {
+  return database(env).prepare("SELECT * FROM monitoring_events WHERE development_url = ? ORDER BY checked_at DESC, id DESC LIMIT 1").bind(normalizedUrl).first();
+}
+
 function idempotencyStatement(env, record) {
   return database(env).prepare(`INSERT INTO idempotency_records
     (key, actor_id, operation, request_hash, response_status, response_json, created_at)
@@ -150,6 +168,17 @@ function auditStatement(env, event) {
   return database(env).prepare(`INSERT INTO audit_events
     (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(event.id, event.actor_type, event.actor_id, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
+}
+
+export async function storeDiscoveryCandidate(env, intake, audit) {
+  return database(env).batch([
+    database(env).prepare(`INSERT OR IGNORE INTO intakes
+      (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(intake.id, intake.origin, intake.submitted_url, intake.submitted_at, intake.submitter_note ?? null, intake.status, intake.analysis_status, intake.created_at, intake.updated_at),
+    database(env).prepare(`INSERT OR IGNORE INTO audit_events
+      (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(audit.id, audit.actor_type, audit.actor_id ?? null, audit.action, audit.entity_type, audit.entity_id, audit.metadata_json, audit.created_at),
+  ]);
 }
 
 export async function createIntakeWithAudit(env, intake, audit, idempotency) {

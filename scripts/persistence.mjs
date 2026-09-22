@@ -187,7 +187,17 @@ async function test() {
     await execute(persist, "INSERT INTO claim_sources VALUES ('claim-b','source-b','intake-visitor')");
     pass((await execute(persist, "SELECT intake_id FROM claim_sources WHERE claim_id='claim-b' AND source_id='source-b'"))[0]?.intake_id === "intake-visitor", "same-intake claim source failed");
 
-    expect(count === 33, `Expected 33 persistence scenarios, got ${count}`);
+    await execute(persist, `INSERT OR IGNORE INTO intakes VALUES ('intake-watchdesk','discovery','https://example.com/watchdesk','${now}','DISCOVERY CANDIDATE','submitted','not_started','${now}','${now}')`);
+    await execute(persist, `INSERT OR IGNORE INTO audit_events VALUES ('audit-watchdesk','system',NULL,'watchdesk.candidate_submitted','intake','intake-watchdesk','{"candidate":{"research_burden":"MODERATE","content_fingerprint":"synthetic"}}','${now}')`);
+    pass((await execute(persist, "SELECT origin, analysis_status FROM intakes WHERE id='intake-watchdesk'"))[0]?.origin === "discovery", "Watchdesk discovery intake reuse failed");
+    await execute(persist, `INSERT OR IGNORE INTO intakes VALUES ('intake-watchdesk','discovery','https://example.com/watchdesk','${now}','DISCOVERY CANDIDATE','submitted','not_started','${now}','${now}')`);
+    await execute(persist, `INSERT OR IGNORE INTO audit_events VALUES ('audit-watchdesk','system',NULL,'watchdesk.candidate_submitted','intake','intake-watchdesk','{"candidate":{"research_burden":"MODERATE","content_fingerprint":"synthetic"}}','${now}')`);
+    pass((await execute(persist, "SELECT COUNT(*) AS count FROM intakes WHERE id='intake-watchdesk'"))[0]?.count === 1 && (await execute(persist, "SELECT COUNT(*) AS count FROM audit_events WHERE id='audit-watchdesk'"))[0]?.count === 1, "Watchdesk idempotent insert failed");
+    const watchdeskState = await execute(persist, "SELECT json_extract(metadata_json, '$.candidate.research_burden') AS burden FROM audit_events WHERE id='audit-watchdesk'");
+    const watchdeskJobs = await execute(persist, "SELECT COUNT(*) AS count FROM analysis_jobs WHERE intake_id='intake-watchdesk'");
+    pass(watchdeskState[0]?.burden === "MODERATE" && watchdeskJobs[0]?.count === 0, "Watchdesk metadata must persist without a formal analysis job");
+
+    expect(count === 36, `Expected 36 persistence scenarios, got ${count}`);
     console.log(`Persistence tests passed: ${count} local D1 scenarios, including constraints, relationships, immutable revisions, and audit safety.`);
   });
 }

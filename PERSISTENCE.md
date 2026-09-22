@@ -59,6 +59,20 @@ Application-generated opaque TEXT IDs, ISO-8601 UTC TEXT timestamps, constrained
 
 No `submission_contacts` table exists in Phase 1.
 
+## Watchdesk discovery reuse
+
+Watchdesk requires no new table or migration. Submitted candidates reuse
+`intakes.origin = 'discovery'`; the normalized public source URL is the intake
+URL, and the complete structured candidate is stored in the existing
+`audit_events.metadata_json` record with action
+`watchdesk.candidate_submitted`. Deterministic content fingerprints and
+`INSERT OR IGNORE` make repeated unchanged submissions idempotent. Watchdesk
+does not create an `analysis_jobs` row, an editorial decision, a publication
+attempt, or a monitoring event.
+
+See [WATCHDESK.md](WATCHDESK.md) for the candidate contract and operating
+boundary.
+
 ## Recovery
 
 Migrations move forward; there is no automatic destructive down migration. A failing D1 migration is rolled back while earlier successful migrations remain applied.
