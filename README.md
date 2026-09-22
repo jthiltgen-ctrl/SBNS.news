@@ -100,13 +100,14 @@ without the field remain unchanged.
 
 Deployment, remote migrations, production DNS, nameservers, public visitor
 submissions, and automated repository publication require separate
-authorization. A qualifying push or merge to `main` automatically starts
-`.github/workflows/deploy.yml`, which validates and deploys only the public
-`sbns-news` Worker; it requires the
-`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` secrets in the `staging`
-GitHub environment. The environment name is retained for credential management
-and does not describe the public Worker's production identity. The root-level
-legacy GreenGeeks `deploy.yml` remains as a historical reference and is not
-invoked by GitHub Actions. Inspect the workflow triggers before every future
-merge authorization; a merge affecting its watched paths is not a
-non-deploying action.
+authorization. Qualifying pushes or merges to `main` automatically start
+the scoped public and/or admin Worker deployment workflows. The public
+`sbns-news` Worker uses `.github/workflows/deploy.yml` and `wrangler.jsonc`;
+the protected `sbns-admin` Worker uses `.github/workflows/deploy-admin.yml`
+and `wrangler.admin.jsonc`. Both use the existing `staging` GitHub environment
+for credential management, not as a statement of production identity. See
+[ADMIN-DEPLOYMENT.md](ADMIN-DEPLOYMENT.md) for trigger paths, validation,
+machine-health authorization, and post-deployment verification. The root-level
+legacy GreenGeeks `deploy.yml` remains a historical reference and is not
+invoked by GitHub Actions. Inspect both workflows before future merge
+authorization; a merge may deploy either Worker or both.

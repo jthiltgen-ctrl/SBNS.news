@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPair, SignJWT, exportJWK, createLocalJWKSet, jwtVerify } from "jose";
-import { verifyAccessRequest } from "../src/access-auth.js";
+import { verifyAccessRequest, verifyAccessServiceRequest } from "../src/access-auth.js";
 import { createAdminHandler } from "../src/admin-index.js";
 
 const actor = { actorType: "editor", actorId: "editor@example.com", email: "editor@example.com" };
@@ -95,6 +95,56 @@ async function apiTests(){
   return count;
 }
 
+async function machineHealthTests(){
+  let count=0;const pass=(condition,message)=>{assert.ok(condition,message);count++};
+  const {publicKey,privateKey}=await generateKeyPair("RS256");
+  const jwk=await exportJWK(publicKey);jwk.kid="health-test";jwk.alg="RS256";
+  const local=createLocalJWKSet({keys:[jwk]});
+  const verifier=(token,_remote,config)=>jwtVerify(token,local,config);
+  const env={ACCESS_TEAM_DOMAIN:"https://team.cloudflareaccess.com",ACCESS_AUD:"admin-audience",SBNS_ADMIN_BUILD_SHA:"a".repeat(40)};
+  const sign=(claims,options={})=>new SignJWT(claims).setProtectedHeader({alg:"RS256",kid:"health-test"})
+    .setIssuer(options.issuer??env.ACCESS_TEAM_DOMAIN).setAudience(options.audience??env.ACCESS_AUD)
+    .setIssuedAt().setExpirationTime(options.exp??"5m").sign(privateKey);
+  const machine=await sign({type:"app",sub:"",common_name:"synthetic.access"});
+  const human=await sign({type:"app",sub:"human-id",email:"editor@example.com"});
+  const headers=(token)=>({"Cf-Access-Jwt-Assertion":token});
+  const handler=createAdminHandler({
+    authenticate:(req,runtime)=>verifyAccessRequest(req,runtime,verifier),
+    authenticateMachine:(req,runtime)=>verifyAccessServiceRequest(req,runtime,verifier),
+  });
+  const callHealth=(path,token,runtime=env,method="GET")=>handler(request(path,{method,headers:token?headers(token):{}}),runtime);
+  let response=await callHealth("/api/admin/health",machine);
+  pass(response.status===200,"signed service token reaches health");
+  pass(response.headers.get("cache-control")==="no-store","health is not cached");
+  const health=await response.json();
+  pass(JSON.stringify(health)===JSON.stringify({ok:true,name:"Shocked But Not Surprised Admin",worker:"sbns-admin",revision:env.SBNS_ADMIN_BUILD_SHA}),"health exposes only the expected contract");
+  pass((await callHealth("/api/admin/health",null)).status===401,"missing Access JWT is rejected");
+  response=await handler(request("/api/admin/health",{headers:{"CF-Access-Client-Id":"synthetic.access","CF-Access-Client-Secret":"untrusted"}}),env);
+  pass(response.status===401,"caller-supplied service headers do not authorize health");
+  pass((await callHealth("/api/admin/health",human)).status===401,"human JWT does not use machine health");
+  response=await callHealth("/api/admin/session",human);
+  pass(response.status===200&&(await response.json()).actor.email==="editor@example.com","human session remains available");
+  pass((await callHealth("/api/admin/session",machine)).status===401,"service token cannot become an editor session");
+  pass((await callHealth("/api/admin/intakes",machine)).status===401,"service token cannot read editorial queue");
+  pass((await callHealth("/api/admin/intakes",machine,env,"POST")).status===401,"service token cannot write editorial queue");
+  pass((await callHealth("/api/admin/health",machine,env,"POST")).status===401,"machine route accepts GET only");
+  pass((await callHealth("/api/admin/unknown",machine)).status===401,"machine identity is not inherited by other routes");
+  const wrongAudience=await sign({type:"app",sub:"",common_name:"synthetic.access"},{audience:"other-app"});
+  pass((await callHealth("/api/admin/health",wrongAudience)).status===401,"wrong application audience is rejected");
+  const wrongIssuer=await sign({type:"app",sub:"",common_name:"synthetic.access"},{issuer:"https://other.cloudflareaccess.com"});
+  pass((await callHealth("/api/admin/health",wrongIssuer)).status===401,"wrong Access issuer is rejected");
+  const expired=await sign({type:"app",sub:"",common_name:"synthetic.access"},{exp:"-1m"});
+  pass((await callHealth("/api/admin/health",expired)).status===401,"expired JWT is rejected");
+  const unsignedLookalike="eyJhbGciOiJub25lIn0.eyJ0eXBlIjoiYXBwIiwic3ViIjoiIiwiY29tbW9uX25hbWUiOiJzeW50aGV0aWMuYWNjZXNzIn0.";
+  pass((await callHealth("/api/admin/health",unsignedLookalike)).status===401,"unsigned claim lookalike is rejected");
+  const missingServiceClaim=await sign({type:"app",sub:""});
+  pass((await callHealth("/api/admin/health",missingServiceClaim)).status===401,"JWT without service-token identity is rejected");
+  const emailClaim=await sign({type:"app",sub:"",common_name:"synthetic.access",email:"editor@example.com"});
+  pass((await callHealth("/api/admin/health",emailClaim)).status===401,"mixed human and machine claims are rejected");
+  pass((await callHealth("/api/admin/health",machine,{...env,SBNS_ADMIN_BUILD_SHA:undefined})).status===503,"missing build identity fails health");
+  return count;
+}
+
 async function check(){await import("../src/admin-index.js");await import("../src/access-auth.js");console.log("Admin contract valid: authenticated routes, bounded writes, static fallback, and no runtime auth bypass.")}
-async function test(){const jwt=await jwtTests();const api=await apiTests();console.log(`Admin tests passed: ${api} API scenarios and ${jwt} JWT scenarios.`)}
+async function test(){const jwt=await jwtTests();const api=await apiTests();const health=await machineHealthTests();console.log(`Admin tests passed: ${api} API scenarios, ${jwt} human JWT scenarios, and ${health} machine-health scenarios.`)}
 const command=process.argv[2];if(!COMMANDS.has(command)){console.error("Usage: node scripts/admin-api.mjs <check|test>");process.exitCode=1}else{try{if(command==="check")await check();else await test()}catch(error){console.error(error.stack||error.message);process.exitCode=1}}
