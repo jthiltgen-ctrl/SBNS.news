@@ -89,6 +89,10 @@ const publicStories = JSON.parse(feedText);
 const reportingStories = publicStories.filter((story) => story.content_type === "reporting");
 const sampleStories = publicStories.filter((story) => story.content_type === "sample");
 assert(
+  publicStories.every((story) => !Object.hasOwn(story, "visuals")),
+  "The current public feed changed even though no real story has approved visuals",
+);
+assert(
   reportingStories.length === 6,
   "Homepage feed does not contain exactly six reporting stories",
 );
@@ -175,6 +179,10 @@ assert(
 );
 assert(appScript.includes("Severity ${severity}/5"), "Homepage severity has no visible numeric value");
 assert(storyHtml.includes('class="severity-value"'), "Story severity has no visible numeric value");
+assert(
+  !storyHtml.includes('class="story-evidence"'),
+  "A current story gained empty or unapproved evidence-component markup",
+);
 assert(storyHtml.includes('aria-label="SBNS Kicker"'), "Story kicker lacks the approved public label");
 assert(storyHtml.includes("<span>SBNS Kicker</span>"), "Story kicker visible label is incorrect");
 assert(!storyHtml.includes('aria-label="FML kicker"') && !storyHtml.includes("<span>FML</span>"), "Reader-visible FML label remains");
@@ -212,6 +220,14 @@ assert(
 );
 assert(styles.includes("@media (forced-colors: active)"), "Forced-colors support is missing");
 assert(styles.includes("@media print"), "Print styling is missing");
+for (const evidenceStyle of [
+  ".story-evidence",
+  ".evidence-component",
+  ".evidence-timeline-list",
+  ".evidence-qualification",
+]) {
+  assert(styles.includes(evidenceStyle), `Evidence presentation style is missing: ${evidenceStyle}`);
+}
 
 const assetRequests = [];
 const env = {

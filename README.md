@@ -12,6 +12,9 @@ links are present in the initial homepage HTML, while JavaScript provides
 progressive filtering, Prototype archive access, and refresh behavior. See
 [READER-ACCOUNTABILITY.md](READER-ACCOUNTABILITY.md) for the reader,
 transparency, attribution, AI-use, and voice boundaries.
+[PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md) defines the optional,
+source-grounded Receipt, Number, and Timeline infrastructure used by future
+approved stories.
 
 ## Runtime surfaces
 
@@ -70,6 +73,10 @@ npm run content:check
 Drafts never enter the public feed. The generated reporting region in
 `public/index.html` and the canonical pages under `public/story/` come from the
 same approved story files; they are not separate content sources.
+Stories may optionally include up to three ordered evidence-presentation
+objects under `visuals[]`; see
+[PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md). Existing stories
+without the field remain unchanged.
 
 ## Operations and deployment records
 

@@ -68,6 +68,12 @@ Thiltgen as editor and publisher, adds the same factual attribution to canonical
 story pages, and exposes one homepage transparency surface for editorial and
 AI-use accountability. See [READER-ACCOUNTABILITY.md](READER-ACCOUNTABILITY.md).
 
+The content model and static story generator also support an optional maximum
+of three explicitly ordered, source-grounded Receipt, Number, or Timeline
+components. No current published story uses them; a real-story pilot remains a
+separate editorial decision. See
+[PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md).
+
 ## Public-launch state and remaining v1.5 sequence
 
 The canonical apex and v1.5 production reader completed formal public-launch
@@ -88,8 +94,9 @@ infrastructure discrepancy is temporary local resolver/cache convergence.
    public historical mutation.
 
 No later phase is implicitly authorized by the existence of this project map.
-Receipt · Number · Timeline and the Newsroom Workbench remain explicitly
-deferred and are not part of the reader-resilience milestone.
+A real-story Receipt · Number · Timeline pilot and the Newsroom Workbench remain
+explicitly deferred; the available public grammar infrastructure does not
+publish evidence components on its own.
 
 ## Development and validation
 

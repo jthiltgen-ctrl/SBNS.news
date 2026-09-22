@@ -29,6 +29,13 @@ last valid reporting already present in the document.
 Prototype samples remain excluded from the initial reporting region and appear
 only through the clearly labeled Prototype archive enhancement.
 
+Approved stories may optionally add up to three source-grounded Receipt,
+Number, or Timeline components. The build places the explicitly ordered
+sequence after the story deck and before Sources, entirely in initial semantic
+HTML. Stories without the field emit no empty evidence section. The schema,
+provenance rules, and presentation boundaries are defined in
+[PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md).
+
 ## Public accountability
 
 Shocked But Not Surprised remains the primary publication identity. Justin
@@ -99,8 +106,9 @@ their consequences. A draft PR or local validation does not deploy.
 
 ## Explicit deferrals
 
-This reader contract does not implement Receipt · Number · Timeline, The Shock
-or Why We're Not Surprised, The Job / The Record / The Gap, Records Room,
-System Files, Challenge the Record, story-history or institutional-response
-data models, Newsroom Workbench, Secure Source, visitor submissions,
-subscriptions, RSS, semantic search, or new publication automation.
+This reader contract does not add a Receipt, Number, or Timeline to a current
+story. It also does not implement The Shock or Why We're Not Surprised, The Job
+/ The Record / The Gap, Records Room, System Files, Challenge the Record,
+story-history or institutional-response data models, Newsroom Workbench, Secure
+Source, visitor submissions, subscriptions, RSS, semantic search, or new
+publication automation.

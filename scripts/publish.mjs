@@ -250,6 +250,7 @@ async function initializeTempRepo(basePackage) {
   ]);
   await Promise.all([
     copyFile(path.join(ROOT, "scripts", "content.mjs"), path.join(root, "scripts", "content.mjs")),
+    copyFile(path.join(ROOT, "scripts", "evidence.mjs"), path.join(root, "scripts", "evidence.mjs")),
     copyFile(path.join(ROOT, "scripts", "share-card.mjs"), path.join(root, "scripts", "share-card.mjs")),
     copyFile(
       path.join(ROOT, "assets", "brand", "brand-tokens.json"),

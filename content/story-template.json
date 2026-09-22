@@ -10,9 +10,11 @@
   "topic_tags": ["replace-me"],
   "sources": [
     {
+      "id": "source-1",
       "name": "Replace with publication name",
       "url": "https://example.com/replace-with-source-url"
     }
   ],
+  "visuals": [],
   "published_at": null
 }

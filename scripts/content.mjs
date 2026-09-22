@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,14 @@ import {
   shareCardAlt,
   validatePng,
 } from "./share-card.mjs";
+import {
+  escapeHtml,
+  normalizeSource,
+  normalizeVisuals,
+  renderStoryEvidence,
+  syntheticEvidenceVisuals,
+  validateStoryEvidence,
+} from "./evidence.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTENT_DIR = resolve(process.env.SBNS_CONTENT_DIR || join(ROOT, "content", "stories"));
@@ -31,7 +39,7 @@ const PUBLICATION_WORDMARK = "Shocked But Not Surprised.news";
 const EDITOR_NAME = "Justin Thiltgen";
 const HOMEPAGE_REPORTING_START = "<!-- SBNS_GENERATED_REPORTING_START -->";
 const HOMEPAGE_REPORTING_END = "<!-- SBNS_GENERATED_REPORTING_END -->";
-const COMMANDS = new Set(["build", "check", "test"]);
+const COMMANDS = new Set(["build", "check", "test", "fixture"]);
 const REQUIRED_FIELDS = [
   "id",
   "status",
@@ -144,11 +152,13 @@ function validateStory(story, filename) {
     }
   }
 
+  for (const evidenceError of validateStoryEvidence(story)) issue(evidenceError);
+
   return errors;
 }
 
 function normalizedStory(story) {
-  return {
+  const normalized = {
     id: story.id,
     status: story.status,
     content_type: story.content_type,
@@ -158,9 +168,11 @@ function normalizedStory(story) {
     fml_kicker: story.fml_kicker,
     severity: story.severity,
     topic_tags: story.topic_tags,
-    sources: story.sources.map(({ name, url }) => ({ name, url })),
+    sources: story.sources.map(normalizeSource),
     published_at: story.published_at,
   };
+  if (Object.hasOwn(story, "visuals")) normalized.visuals = normalizeVisuals(story.visuals);
+  return normalized;
 }
 
 function publishedStories(stories) {
@@ -175,15 +187,6 @@ function publishedStories(stories) {
 
 function generateFeed(stories) {
   return `${JSON.stringify(publishedStories(stories), null, 2)}\n`;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function jsonForHtml(value) {
@@ -459,7 +462,7 @@ ${severityDots}
           <p class="story-byline">By <a href="/#transparency">${EDITOR_NAME}</a> · ${PUBLICATION_NAME}</p>
           <p class="story-deck">${escapedSummary}</p>
         </header>
-
+${renderStoryEvidence(story)}
         <section class="story-sources" aria-labelledby="sources-title">
           <h2 id="sources-title">Sources</h2>
           <ol>
@@ -836,10 +839,19 @@ async function test() {
     summary: 'Summary " onmouseover="alert(1)" & <img src=x onerror=alert(1)>',
     fml_kicker: "Kicker </p><script>alert(2)</script>",
     topic_tags: ["oversight", "<unsafe>"],
-    sources: [{
-      name: "Source </a><script>alert(3)</script>",
-      url: "https://example.com/source?a=1&b=2",
-    }],
+    sources: [
+      {
+        id: "source-1",
+        name: "Source </a><script>alert(3)</script>",
+        url: "https://example.com/source?a=1&b=2",
+      },
+      {
+        id: "source-2",
+        name: "Second synthetic source",
+        url: "https://example.com/second-source",
+      },
+    ],
+    visuals: syntheticEvidenceVisuals(),
     published_at: "2026-09-20T12:00:00Z",
   });
   const related = reportingFixture({
@@ -969,6 +981,19 @@ async function test() {
   assert(page.includes(`/story/${related.id}`), "Related-story link is missing");
   assert(page.includes("data-copy-link"), "Copy Link control is missing");
   assert(page.includes("data-native-share"), "Native Share control is missing");
+  assert(page.includes('class="story-evidence"'), "Synthetic evidence sequence is missing");
+  assert(
+    page.indexOf('id="receipt-1"') < page.indexOf('id="number-1"') &&
+      page.indexOf('id="number-1"') < page.indexOf('id="timeline-1"'),
+    "Story-level evidence order was not preserved",
+  );
+  assert(page.includes("Synthetic finding 2, page 7"), "Evidence locator is missing from direct HTML");
+  assert(page.includes("Chronology alone does not establish"), "Timeline qualification is missing");
+  assert(page.includes('<ol class="evidence-timeline-list">'), "Timeline lacks semantic list structure");
+  assert(
+    parsedFeed.find((story) => story.id === unsafe.id)?.visuals?.length === 3,
+    "Approved visuals were not preserved in the deterministic public feed",
+  );
 
   const jsonLdMatch = page.match(/<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/);
   assert(jsonLdMatch, "NewsArticle JSON-LD is missing");
@@ -1114,13 +1139,71 @@ async function test() {
   );
 }
 
+async function fixture() {
+  const outputDirectory = await mkdtemp(join(tmpdir(), "sbns-evidence-fixture-"));
+  const story = reportingFixture({
+    id: "synthetic-evidence-grammar-fixture",
+    headline: "Synthetic Receipt · Number · Timeline Fixture — Not Reporting",
+    summary: "This local-only synthetic page exercises the public evidence grammar without adding factual claims to a published story.",
+    fml_kicker: "Synthetic records, real guardrails, and absolutely no accidental publication.",
+    sources: [
+      {
+        id: "source-1",
+        name: "Synthetic inspector report",
+        url: "https://example.com/synthetic-report",
+      },
+      {
+        id: "source-2",
+        name: "Synthetic policy record",
+        url: "https://example.com/synthetic-policy",
+      },
+    ],
+    visuals: syntheticEvidenceVisuals(),
+  });
+  const errors = validateStory(story, "synthetic-evidence-fixture.json");
+  if (errors.length > 0) throw new Error(`Synthetic evidence fixture is invalid:\n- ${errors.join("\n- ")}`);
+  const normalized = normalizedStory(story);
+  const html = generateStoryPage(normalized, [normalized]).replace(
+    "<span>Public Edition</span>",
+    "<span>Synthetic test fixture — not published</span>",
+  );
+  await Promise.all([
+    mkdir(join(outputDirectory, "brand"), { recursive: true }),
+    mkdir(join(outputDirectory, "fonts"), { recursive: true }),
+    mkdir(join(outputDirectory, "share"), { recursive: true }),
+  ]);
+  await Promise.all([
+    writeFile(join(outputDirectory, "index.html"), html, "utf8"),
+    writeFile(
+      join(outputDirectory, "share", `${normalized.id}.png`),
+      generateShareCard(normalized).png,
+    ),
+    copyFile(join(PUBLIC_DIR, "styles.css"), join(outputDirectory, "styles.css")),
+    copyFile(join(PUBLIC_DIR, "story.js"), join(outputDirectory, "story.js")),
+    copyFile(join(PUBLIC_DIR, "favicon.svg"), join(outputDirectory, "favicon.svg")),
+    copyFile(
+      join(PUBLIC_DIR, "brand", "sbns-mark.svg"),
+      join(outputDirectory, "brand", "sbns-mark.svg"),
+    ),
+    copyFile(
+      join(PUBLIC_DIR, "fonts", "eb-garamond-variable.ttf"),
+      join(outputDirectory, "fonts", "eb-garamond-variable.ttf"),
+    ),
+    copyFile(
+      join(PUBLIC_DIR, "fonts", "inter-variable.ttf"),
+      join(outputDirectory, "fonts", "inter-variable.ttf"),
+    ),
+  ]);
+  console.log(`Synthetic evidence fixture generated outside the public tree: ${outputDirectory}`);
+}
+
 const command = process.argv[2];
 if (!COMMANDS.has(command)) {
-  console.error("Usage: node scripts/content.mjs <build|check|test>");
+  console.error("Usage: node scripts/content.mjs <build|check|test|fixture>");
   process.exitCode = 1;
 } else {
   try {
-    await { build, check, test }[command]();
+    await { build, check, test, fixture }[command]();
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
