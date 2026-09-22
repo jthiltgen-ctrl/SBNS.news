@@ -1,0 +1,107 @@
+name: Deploy admin Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/deploy-admin.yml
+      - package.json
+      - package-lock.json
+      - wrangler.admin.jsonc
+      - src/**
+      - public/admin-persistent/**
+      - public/stories.json
+      - content/stories/**
+      - scripts/content.mjs
+      - scripts/admin-api.mjs
+      - scripts/persistence.mjs
+      - scripts/watchdesk.mjs
+      - watchdesk/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: admin-staging-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate and deploy sbns-admin
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate admin runtime
+        shell: bash
+        run: |
+          npm run content:check
+          npm run admin:check
+          npm run admin:test
+          npm run persistence:check
+          npm run persistence:test
+          npm run --if-present watchdesk:check
+          npm run --if-present watchdesk:test
+          node --check src/admin-index.js
+          node --check src/access-auth.js
+          node --check src/persistence.js
+          node --check public/admin-persistent/admin.js
+          for source in src/watchdesk.js src/watchdesk-adapters.js watchdesk/source-registry.js; do
+            if [[ -f "$source" ]]; then node --check "$source"; fi
+          done
+          npx wrangler deploy --config wrangler.admin.jsonc --dry-run --keep-vars --var "SBNS_ADMIN_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Deploy admin Worker
+        run: npx wrangler deploy --config wrangler.admin.jsonc --keep-vars --var "SBNS_ADMIN_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Verify protected admin health
+        shell: bash
+        env:
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+        run: |
+          test -n "$CLOUDFLARE_ACCESS_CLIENT_ID"
+          test -n "$CLOUDFLARE_ACCESS_CLIENT_SECRET"
+          for attempt in {1..10}; do
+            if health="$(curl --fail --silent --show-error --max-time 15 \
+              -H "CF-Access-Client-Id: ${CLOUDFLARE_ACCESS_CLIENT_ID}" \
+              -H "CF-Access-Client-Secret: ${CLOUDFLARE_ACCESS_CLIENT_SECRET}" \
+              -H 'Cache-Control: no-cache' \
+              "https://sbns-admin.sbns-news.workers.dev/api/admin/health?run=${GITHUB_RUN_ID}&attempt=${attempt}")" &&
+              node -e '
+                try {
+                  const health = JSON.parse(process.argv[1]);
+                  if (health.ok !== true || health.name !== "Shocked But Not Surprised Admin" ||
+                      health.worker !== "sbns-admin" || health.revision !== process.env.GITHUB_SHA) {
+                    throw new Error("Unexpected admin Worker identity or revision");
+                  }
+                  console.log(`Verified admin Worker revision ${health.revision}`);
+                } catch (error) {
+                  console.error(`Admin health verification failed: ${error.message}`);
+                  process.exit(1);
+                }
+              ' "$health"; then
+                exit 0
+            fi
+            echo "Waiting for protected admin Worker propagation (${attempt}/10)."
+            sleep 3
+          done
+          echo "Protected admin health did not reach the expected revision."
+          exit 1
