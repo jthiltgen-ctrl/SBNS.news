@@ -1,4 +1,4 @@
-import { verifyAccessRequest } from "./access-auth.js";
+import { verifyAccessRequest, verifyAccessServiceRequest } from "./access-auth.js";
 import { runWatchdeskScan } from "./watchdesk.js";
 import {
   createDecisionWithAudit,
@@ -216,12 +216,24 @@ async function route(request, env, actor, executeWatchdesk) {
   throw new ApiError(404, "NOT_FOUND", "Not Found");
 }
 
-export function createAdminHandler({ authenticate = verifyAccessRequest, executeWatchdesk = runWatchdeskScan } = {}) {
+export function createAdminHandler({ authenticate = verifyAccessRequest, authenticateMachine = verifyAccessServiceRequest, executeWatchdesk = runWatchdeskScan } = {}) {
   return async function handle(request, env) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ADMIN_ASSETS.fetch(request);
     if (!url.pathname.startsWith("/api/admin/")) return json({ ok: false, error: { code: "NOT_FOUND", message: "Not Found" } }, 404);
     try {
+      if (request.method === "GET" && url.pathname === "/api/admin/health") {
+        await authenticateMachine(request, env);
+        if (!/^[0-9a-f]{40}$/.test(env?.SBNS_ADMIN_BUILD_SHA ?? "")) {
+          throw new ApiError(503, "BUILD_IDENTITY_UNAVAILABLE", "Admin build identity unavailable.");
+        }
+        return new Response(JSON.stringify({
+          ok: true,
+          name: "Shocked But Not Surprised Admin",
+          worker: "sbns-admin",
+          revision: env.SBNS_ADMIN_BUILD_SHA,
+        }), { headers: { ...JSON_HEADERS, "cache-control": "no-store" } });
+      }
       const actor = await authenticate(request, env);
       return await route(request, env, actor, executeWatchdesk);
     } catch (error) {

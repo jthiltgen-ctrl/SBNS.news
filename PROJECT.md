@@ -113,7 +113,10 @@ deploy, mutate the remote database, or create Cloudflare resources.
 ## Deployment files
 
 The root `deploy.yml` is a legacy GreenGeeks artifact retained for historical
-reference. `.github/workflows/deploy.yml` is the active, scoped public Worker
-deployment workflow. Qualifying pushes or merges to `main` automatically run
-that workflow and deploy the public Worker, so its trigger consequences must be
-inspected and reported before future merge authorization.
+reference. `.github/workflows/deploy.yml` deploys the public Worker with
+`wrangler.jsonc`; `.github/workflows/deploy-admin.yml` deploys the protected
+admin Worker with `wrangler.admin.jsonc`. Qualifying pushes or merges to `main`
+may run either or both workflows. Their trigger consequences must be inspected
+and reported before future merge authorization. See
+[ADMIN-DEPLOYMENT.md](ADMIN-DEPLOYMENT.md) for the admin trigger, validation,
+and protected machine-health verification boundary.
