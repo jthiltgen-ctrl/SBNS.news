@@ -1,6 +1,6 @@
 # Public Editorial Grammar
 
-Status: implemented infrastructure; no current story uses these components
+Status: implemented infrastructure; first bounded real-story pilot in use
 
 ## Purpose and authority
 
@@ -202,10 +202,15 @@ automatically a Receipt, silence is not evidence of wrongdoing, The Job must be
 sourced, and background must not be reverse-engineered to fit the publication
 name.
 
-## Deferred
+## Current pilot and deferred work
 
-The following remain out of scope: a real-story R·N·T pilot; The Shock / Why
-We're Not Surprised; The Job / The Record / The Gap; Institutional Response;
+The FAA / BNATCS / GAO story is the first bounded real-story pilot. It uses a
+Receipt and Number sourced to the story's approved GAO report; a Timeline was
+not added because it did not materially improve reader understanding. No other
+published story uses evidence components.
+
+The following remain out of scope: The Shock / Why We're Not Surprised; The Job
+/ The Record / The Gap; Institutional Response;
 Story History; a Workbench contract or implementation; Records Room; System
 Files; Challenge the Record; Brief / Show Me the Receipts modes; RSS / Follow
 the System; subscriptions; and Secure Source.
