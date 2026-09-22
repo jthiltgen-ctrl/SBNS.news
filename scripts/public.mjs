@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import worker from "../src/index.js";
 import { refreshStoryFeed, storyMatchesView } from "../public/reader-state.js";
+import { validateStoryEvidence } from "./evidence.mjs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -29,6 +30,7 @@ const [
   appScript,
   storyHtml,
   feedText,
+  faaSourceText,
   sourceDisplayFont,
   publicDisplayFont,
   sourceUtilityFont,
@@ -43,6 +45,7 @@ const [
     readFile(new URL("../public/app.js", import.meta.url), "utf8"),
     readFile(new URL(`../public/story/${knownId}.html`, import.meta.url), "utf8"),
     readFile(new URL("../public/stories.json", import.meta.url), "utf8"),
+    readFile(new URL("../content/stories/2026-09-20-faa-bnatcs-gao-review.json", import.meta.url), "utf8"),
     readFile(new URL("../assets/fonts/eb-garamond-variable.ttf", import.meta.url)),
     readFile(new URL("../public/fonts/eb-garamond-variable.ttf", import.meta.url)),
     readFile(new URL("../assets/fonts/inter-variable.ttf", import.meta.url)),
@@ -77,7 +80,10 @@ for (const html of [homepageHtml, storyHtml]) {
   assert(html.includes("Independent Accountability Reporting"), "Formal publication descriptor is missing");
 }
 assert(homepageHtml.includes("Observe. Verify. Explain."), "Process signature is missing from the method surface");
-assert(homepageHtml.includes("Same Questions. A More Accountable Tomorrow."), "Brand promise is missing from the About surface");
+assert(
+  homepageHtml.includes("Accountability should apply to the publication itself, too."),
+  "Publication-accountability introduction is missing from the About surface",
+);
 assert(
   homepageHtml.includes("The institutional failure desk · Est. 2026"),
   "Desk language is not subordinate in the dateline",
@@ -88,9 +94,58 @@ assert(homepageHtml.includes('data-view="Samples"'), "Prototype archive filter r
 const publicStories = JSON.parse(feedText);
 const reportingStories = publicStories.filter((story) => story.content_type === "reporting");
 const sampleStories = publicStories.filter((story) => story.content_type === "sample");
+const faaStory = publicStories.find((story) => story.id === knownId);
+const faaSourceStory = JSON.parse(faaSourceText);
 assert(
-  publicStories.every((story) => !Object.hasOwn(story, "visuals")),
-  "The current public feed changed even though no real story has approved visuals",
+  publicStories.filter((story) => Object.hasOwn(story, "visuals")).every((story) => story.id === knownId) &&
+    publicStories.filter((story) => Object.hasOwn(story, "visuals")).length === 1,
+  "Evidence components were published on a story outside the bounded FAA pilot",
+);
+assert(faaStory?.visuals?.length === 2 && faaStory.visuals.length <= 3, "FAA pilot does not contain exactly two bounded components");
+assert(validateStoryEvidence(faaSourceStory).length === 0, "FAA pilot evidence does not validate");
+assert(
+  faaStory.visuals.map((visual) => visual.type).join(",") === "receipt,number",
+  "FAA pilot component order or approved types changed",
+);
+assert(
+  faaStory.visuals.every((visual) => visual.source_id === "gao-report") &&
+    faaSourceStory.sources.some((source) => source.id === "gao-report"),
+  "FAA pilot evidence does not resolve to its approved story-local GAO source",
+);
+const { visuals: ignoredFaaVisuals, ...faaFactsWithSourceIds } = faaSourceStory;
+const faaFacts = {
+  ...faaFactsWithSourceIds,
+  sources: faaFactsWithSourceIds.sources.map(({ id: ignoredSourceId, ...source }) => source),
+};
+const expectedFaaFacts = {
+  id: "faa-bnatcs-gao-cost-schedule-review",
+  status: "published",
+  content_type: "reporting",
+  category: "National",
+  headline: "GAO Says FAA’s Air-Traffic Overhaul Lacks the Cost and Schedule Controls It Needs",
+  summary: "The Government Accountability Office says the FAA has made progress on its accelerated Brand New Air Traffic Control System, but the agency still lacks a reliable lifecycle cost estimate and a detailed integrated master schedule while implementation is already underway across nine of 13 phase-one programs. GAO found FAA’s $10.6 billion phase-one systems-modernization estimate omits government costs, most post-implementation operations and maintenance, and all phase-two costs, while 11,389 individual project schedules had not been integrated as of May 2026. The Transportation Department partially concurred with GAO’s recommendations, while FAA Administrator Bryan Bedford says the agency is meeting or exceeding its accelerated transformation schedule and cites substantial deployment progress.",
+  fml_kicker: "Nothing says integrated modernization like 11,389 schedules waiting to meet each other.",
+  severity: 4,
+  topic_tags: ["FAA", "air traffic control", "modernization", "GAO", "infrastructure", "oversight"],
+  sources: [
+    {
+      name: "U.S. Government Accountability Office — Air Traffic Control Systems: Ambitious New Modernization Effort Needs to Improve Cost and Schedule Planning",
+      url: "https://www.gao.gov/products/gao-26-107992",
+    },
+    {
+      name: "Federal Aviation Administration — Bryan Bedford FY2027 budget testimony",
+      url: "https://www.faa.gov/testimony/testimony-bryan-bedford-faa-administrator-hearing-committee-appropriations-subcommittee",
+    },
+    {
+      name: "Reuters — FAA says billions more needed to modernize air traffic control",
+      url: "https://www.reuters.com/business/us-faa-says-billions-more-needed-modernize-air-traffic-control-2026-09-15/",
+    },
+  ],
+  published_at: "2026-09-20T12:43:42Z",
+};
+assert(
+  JSON.stringify(faaFacts) === JSON.stringify(expectedFaaFacts),
+  "FAA facts outside the approved evidence components and source ID changed",
 );
 assert(
   reportingStories.length === 6,
@@ -173,15 +228,78 @@ assert(
 );
 assert(
   homepageHtml.includes('href="#transparency"') &&
-    homepageHtml.includes('id="transparency"') &&
-    homepageHtml.includes("AI-assisted work"),
+    homepageHtml.includes('id="transparency"'),
   "Transparency surface is not reachable or complete",
 );
+const transparencyTitles = [
+  "Publication identity",
+  "Editor &amp; publisher",
+  "Ownership",
+  "Funding",
+  "Method &amp; provenance",
+  "Corrections &amp; updates",
+  "AI-assisted work",
+  "Conflicts &amp; disclosures",
+  "Contact",
+];
+for (const title of transparencyTitles) {
+  assert(homepageHtml.includes(`<h3>${title}</h3>`), `Transparency category is missing: ${title}`);
+}
+for (const phrase of [
+  "independent publication edited and published by Justin Thiltgen",
+  "A formal public funding model has not yet been established",
+  "Relevant relationships belong in the record, too.",
+  "Ordinary email should not be treated as an anonymous or secure-source system",
+]) {
+  assert(homepageHtml.includes(phrase), `Revised transparency copy is missing: ${phrase}`);
+}
+assert(
+  homepageHtml.includes('href="mailto:editor@shockedbutnotsurprised.news"') &&
+    (homepageHtml.match(/mailto:/g) || []).length === 1,
+  "Public editorial email is missing or duplicated",
+);
+assert(!homepageHtml.includes('href="tel:'), "A private telephone contact was exposed");
+for (const obsoletePlaceholder of [
+  "belongs here rather than in a guess",
+  "reserved for that disclosure when it is established",
+  "No standing public conflict disclosure is currently established",
+  "A public editorial contact channel has not yet been designated",
+]) {
+  assert(!homepageHtml.includes(obsoletePlaceholder), `Obsolete transparency placeholder remains: ${obsoletePlaceholder}`);
+}
 assert(appScript.includes("Severity ${severity}/5"), "Homepage severity has no visible numeric value");
 assert(storyHtml.includes('class="severity-value"'), "Story severity has no visible numeric value");
 assert(
-  !storyHtml.includes('class="story-evidence"'),
-  "A current story gained empty or unapproved evidence-component markup",
+  storyHtml.includes('class="story-evidence"') &&
+    (storyHtml.match(/class="evidence-component /g) || []).length === 2,
+  "FAA page does not contain exactly the two approved evidence components",
+);
+assert(
+  storyHtml.indexOf('id="receipt-unintegrated-project-schedules"') <
+    storyHtml.indexOf('id="number-phase-one-estimate"'),
+  "FAA evidence components do not follow story-data order",
+);
+assert(
+  storyHtml.includes('class="evidence-component evidence-receipt"') &&
+    storyHtml.includes('class="evidence-component evidence-number"') &&
+    !storyHtml.includes('class="evidence-component evidence-timeline"') &&
+    !storyHtml.includes("<blockquote>"),
+  "FAA Receipt, Number, or omitted Timeline semantics regressed",
+);
+for (const evidenceText of [
+  "GAO-26-107992, pp. 30–31",
+  "The scheduling risk does not establish that any specific disruption will occur.",
+  "$10.6B",
+  "billion U.S. dollars",
+  "excludes facilities construction",
+  "GAO-26-107992, pp. 20, 28",
+  "all phase-two costs",
+]) {
+  assert(storyHtml.includes(evidenceText), `FAA evidence lost required context: ${evidenceText}`);
+}
+assert(
+  (storyHtml.match(/href="https:\/\/www\.gao\.gov\/products\/gao-26-107992"/g) || []).length >= 3,
+  "FAA evidence provenance does not link to the approved GAO source",
 );
 assert(storyHtml.includes('aria-label="SBNS Kicker"'), "Story kicker lacks the approved public label");
 assert(storyHtml.includes("<span>SBNS Kicker</span>"), "Story kicker visible label is incorrect");
@@ -281,5 +399,5 @@ assert(homepage.status === 200, "Homepage asset routing regressed");
 assert(assetRequests.length === 2, "Homepage did not pass through to the asset binding");
 
 console.log(
-  "Public reader tests passed: initial-HTML reporting, progressive refresh preservation, Prototype isolation, accountability, canonical mark/wordmark/site identity, local fonts, labeled kickers, Signal Red actions and filled severity, accessibility media, routing, health, and homepage pass-through.",
+  "Public reader tests passed: FAA Receipt/Number pilot, source-linked qualifications, nine-part transparency copy, initial-HTML reporting, progressive refresh preservation, Prototype isolation, accountability, canonical identity, accessibility media, routing, health, and homepage pass-through.",
 );

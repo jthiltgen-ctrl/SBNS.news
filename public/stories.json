@@ -18,6 +18,7 @@
     ],
     "sources": [
       {
+        "id": "gao-report",
         "name": "U.S. Government Accountability Office — Air Traffic Control Systems: Ambitious New Modernization Effort Needs to Improve Cost and Schedule Planning",
         "url": "https://www.gao.gov/products/gao-26-107992"
       },
@@ -30,7 +31,37 @@
         "url": "https://www.reuters.com/business/us-faa-says-billions-more-needed-modernize-air-traffic-control-2026-09-15/"
       }
     ],
-    "published_at": "2026-09-20T12:43:42Z"
+    "published_at": "2026-09-20T12:43:42Z",
+    "visuals": [
+      {
+        "id": "receipt-unintegrated-project-schedules",
+        "type": "receipt",
+        "label": "Receipt",
+        "body": "As of May 2026, GAO found that FAA had not integrated the 11,389 schedules for the 11,389 projects supporting 13 phase-one BNATCS programs.",
+        "presentation": "finding",
+        "source_id": "gao-report",
+        "title": "Thousands of schedules, not one integrated plan",
+        "source_locator": "GAO-26-107992, pp. 30–31",
+        "context": "GAO reported that nine programs with work underway were proceeding without an integrated master schedule. The scheduling risk does not establish that any specific disruption will occur."
+      },
+      {
+        "id": "number-phase-one-estimate",
+        "type": "number",
+        "label": "Number",
+        "kind": "currency",
+        "value": "10.6",
+        "unit": "billion U.S. dollars",
+        "display_value": "$10.6B",
+        "description": "FAA’s June 2026 high-level estimate for phase-one systems modernization.",
+        "scope": "BNATCS phase-one systems modernization; excludes facilities construction",
+        "precision": "estimated",
+        "source_id": "gao-report",
+        "title": "FAA’s phase-one systems estimate",
+        "period": "Estimate provided June 2026",
+        "qualification": "GAO found this is not a reliable lifecycle cost estimate: it omits government costs, most post-implementation operations and maintenance, and all phase-two costs.",
+        "source_locator": "GAO-26-107992, pp. 20, 28"
+      }
+    ]
   },
   {
     "id": "dubuque-fy2025-budget-audit-overrun",
