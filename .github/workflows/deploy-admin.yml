@@ -105,3 +105,42 @@ jobs:
           done
           echo "Protected admin health did not reach the expected revision."
           exit 1
+
+      - name: Verify machine cannot open editor session
+        shell: bash
+        env:
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+        run: |
+          node --input-type=module -e '
+            const clientId = process.env.CLOUDFLARE_ACCESS_CLIENT_ID;
+            const clientSecret = process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET;
+            if (!clientId || !clientSecret) {
+              console.error("Access service-token credentials are unavailable.");
+              process.exit(1);
+            }
+            let response;
+            try {
+              response = await fetch("https://sbns-admin.sbns-news.workers.dev/api/admin/session", {
+                method: "GET",
+                redirect: "manual",
+                signal: AbortSignal.timeout(15000),
+                headers: {
+                  "CF-Access-Client-Id": clientId,
+                  "CF-Access-Client-Secret": clientSecret,
+                  "Cache-Control": "no-cache",
+                },
+              });
+            } catch (error) {
+              console.error(`Machine session request failed: ${error.message}`);
+              process.exit(1);
+            }
+            let result = null;
+            try { result = await response.json(); } catch {}
+            if (response.status !== 401 || result?.ok !== false ||
+                result?.error?.code !== "AUTH_REQUIRED" || "actor" in (result ?? {})) {
+              console.error(`Machine session denial mismatch: HTTP ${response.status}, code ${result?.error?.code ?? "none"}`);
+              process.exit(1);
+            }
+            console.log("Verified machine session denied: HTTP 401 AUTH_REQUIRED.");
+          '
