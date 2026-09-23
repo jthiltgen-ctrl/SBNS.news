@@ -3,13 +3,13 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdminHandler } from "../src/admin-index.js";
-import { parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
-import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, triageCandidate } from "../src/watchdesk.js";
+import { fetchRegistrySource, parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
+import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, submissionReadiness, triageCandidate } from "../src/watchdesk.js";
 import { SOURCE_CLASSES, WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = path.join(ROOT, "watchdesk", "fixtures");
-const COMMANDS = new Set(["check", "test", "dry-run"]);
+const COMMANDS = new Set(["check", "test", "dry-run", "probe"]);
 const FIXED_NOW = "2026-09-22T12:00:00.000Z";
 
 async function fixtureData() { return JSON.parse(await readFile(path.join(FIXTURE_DIR, "synthetic-cases.json"), "utf8")); }
@@ -22,7 +22,7 @@ function noKnown() { return []; }
 async function check() {
   validateSourceRegistry();
   const data = await fixtureData();
-  const expected = ["strong-gao-style-candidate", "duplicate-known-url", "existing-published-story-development", "generic-press-release-weak-fit", "partisan-opinion-no-primary-evidence", "secondary-with-primary-record", "secondary-primary-needed", "local-accountability-candidate", "unchanged-repeated-scan", "source-fetch-failure", "zero-qualifying-candidates"];
+  const expected = ["strong-gao-style-candidate", "duplicate-known-url", "existing-published-story-development", "generic-press-release-weak-fit", "partisan-opinion-no-primary-evidence", "secondary-with-primary-record", "secondary-primary-needed", "local-accountability-candidate", "unchanged-repeated-scan", "official-listing-only", "partially-reviewed-primary", "boilerplate-only", "telecom-compliance-without-gap", "tribal-water-explicit-gap", "gsa-accessibility-explicit-gap", "property-disposal-progress-only", "global-aging-implications-only", "source-fetch-failure", "zero-qualifying-candidates"];
   assert.equal(data.notice.startsWith("SYNTHETIC-ONLY"), true);
   assert.deepEqual(data.cases.map((entry) => entry.id), expected);
   assert.equal(WATCHDESK_SOURCES.length, 5);
@@ -31,6 +31,8 @@ async function check() {
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.source_class === "local_regional"), true);
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.jurisdiction === "Iowa"), true);
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.jurisdiction === "Dubuque, Iowa"), true);
+  assert.equal(source("gao-reports").discovery_url, "https://www.gao.gov/rss/reports.xml");
+  assert.equal(source("gao-reports").adapter, "rss_atom");
   assert.equal([...SOURCE_CLASSES].length, 4);
   for (const entry of WATCHDESK_SOURCES) {
     assert.equal(new URL(entry.discovery_url).protocol, "https:");
@@ -40,7 +42,7 @@ async function check() {
   assert.equal(/\bcrons?\b|scheduled\s*:/i.test(config), false);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
   assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql"]);
-  console.log("Watchdesk check passed: 5 curated sources, 11 synthetic fixture cases, no schedule, and no schema migration.");
+  console.log("Watchdesk check passed: 5 curated sources, 19 synthetic fixture cases, official GAO RSS, no schedule, and no schema migration.");
 }
 
 async function test() {
@@ -57,6 +59,17 @@ async function test() {
   const rssItems = parseRssAtom(xml, { ...gao, adapter: "rss_atom" });
   pass(rssItems.length === 1 && rssItems[0].published_at === "2026-09-20T12:00:00.000Z", "RSS/Atom adapter must normalize output and dates");
   pass(rssItems[0].summary === "A synthetic review summary.", "RSS adapter must reduce markup to plain text");
+  pass(parseRssAtom(xml.replace(/<pubDate>[\s\S]*?<\/pubDate>/, ""), gao).length === 0, "GAO RSS adapter must enforce its required publication date");
+  pass(!rssItems[0].evidence_review_state, "short feed boilerplate must not imply primary-record review");
+  const abstractXml = await readFile(path.join(FIXTURE_DIR, "synthetic-gao-abstract.xml"), "utf8");
+  const abstractItems = parseRssAtom(abstractXml, gao);
+  pass(abstractItems.length === 1 && abstractItems[0].evidence_review_state === "PARTIALLY REVIEWED", "official GAO abstract may establish bounded partial review, not full-report review");
+  pass(abstractItems[0].record_summary.includes("three required quarterly safety checks"), "official abstract must retain candidate-specific factual material");
+  const fetched = await fetchRegistrySource(gao, async (url, options) => {
+    pass(url === "https://www.gao.gov/rss/reports.xml" && options.headers.accept.includes("application/rss+xml"), "GAO adapter must request its advertised official RSS URL with ordinary headers");
+    return new Response(abstractXml, { status: 200, headers: { "content-type": "application/rss+xml" } });
+  });
+  pass(fetched.length === 1 && fetched[0].url.endsWith("gao-26-synthetic-abstract"), "GAO RSS adapter must parse the official feed shape");
   pass(normalizeDiscoveryUrl("HTTPS://Example.COM:443/report/?utm_source=x&b=2&a=1#part") === "https://example.com/report?a=1&b=2", "URL normalization must remove tracking, default port, fragment, and obvious trailing slash");
   pass(normalizeDiscoveryUrl("https://example.com/report?case=7") === "https://example.com/report?case=7", "URL normalization must preserve meaningful query parameters");
 
@@ -64,11 +77,12 @@ async function test() {
   const strong = await buildCandidate(strongCase.item, source(strongCase.source_id), FIXED_NOW, "run_test");
   pass(strong.publication_date === "2026-09-20T00:00:00.000Z", "candidate must retain publication date");
   pass(strong.original_url.includes("utm_source=test") && !strong.normalized_url.includes("utm_"), "candidate must retain original URL while storing a normalized URL");
+  pass(strong.primary_record_status === "PRIMARY RECORD REVIEWED" && strong.evidence_review_state === "REVIEWED" && Boolean(strong.primary_record_url), "reviewed record must have a distinct location and review state");
   pass(fitGate(strong, strongCase.item).passes, "strong primary watchdog record must survive the fit gate");
   pass(triageCandidate(strong, strongCase.item, fitGate(strong, strongCase.item)).recommendation === "DEVELOP", "strong supported candidate may receive DEVELOP");
-  const noJobItem = { ...strongCase.item, apparent_job: undefined, url: "https://www.gao.gov/products/gao-26-synthetic-no-job" };
+  const noJobItem = { ...strongCase.item, apparent_job: undefined, record_summary: "The Synthetic Grant Administration reported that a quarterly review program exists and costs were estimated at ten million dollars.", url: "https://www.gao.gov/products/gao-26-synthetic-no-job" };
   const noJob = await buildCandidate(noJobItem, gao, FIXED_NOW, "run_test");
-  pass(noJob.apparent_job === null, "Watchdesk must not fabricate the Job");
+  pass(noJob.apparent_job === null, "Watchdesk must not fabricate the Job from a named actor and quantitative facts");
 
   const weakCase = fixture(data, "generic-press-release-weak-fit");
   pass(!deterministicFilter(weakCase.item, source(weakCase.source_id)).passes, "generic press-release churn must stop deterministically");
@@ -76,11 +90,62 @@ async function test() {
   pass(deterministicFilter(opinionCase.item, source(opinionCase.source_id)).reason === "opinion_or_partisan_commentary", "unsupported partisan opinion must stop");
   const secondaryCase = fixture(data, "secondary-with-primary-record");
   const secondary = await buildCandidate(secondaryCase.item, source(secondaryCase.source_id), FIXED_NOW, "run_test");
-  pass(secondary.primary_record_status === "PRIMARY RECORD FOUND" && secondary.key_sources.length === 2, "secondary reporting must retain an identified primary record");
+  pass(secondary.primary_record_status === "PRIMARY RECORD LOCATED" && secondary.evidence_review_state === "NOT REVIEWED" && secondary.key_sources.length === 2, "secondary reporting must retain a located but unreviewed primary record");
   const neededCase = fixture(data, "secondary-primary-needed");
   const needed = await buildCandidate(neededCase.item, source(neededCase.source_id), FIXED_NOW, "run_test");
   pass(needed.primary_record_status === "SECONDARY SIGNAL — PRIMARY RECORD NEEDED" && needed.research_burden === "HIGH", "missing primary record must remain explicit");
   pass(triageCandidate(needed, neededCase.item, fitGate(needed, neededCase.item)).recommendation === "EXPLORE", "bounded secondary signal may receive EXPLORE");
+  const listingCase = fixture(data, "official-listing-only");
+  const listing = await buildCandidate(listingCase.item, source(listingCase.source_id), FIXED_NOW, "run_listing");
+  const listingFit = fitGate(listing, listingCase.item);
+  pass(listing.primary_record_status === "PRIMARY RECORD LOCATED" && listing.evidence_review_state === "NOT REVIEWED" && listing.reviewed_material.includes("Listing"), "official listing must show location without claiming record review");
+  pass(!listingFit.passes && listingFit.research_worthy && !listingFit.substantive_evidence, "listing title, date, and generic fallback text cannot satisfy substantive fit");
+  pass(triageCandidate(listing, listingCase.item, listingFit).recommendation === "EXPLORE", "unqualified discovery lead may retain EXPLORE without becoming submission-ready");
+  const partialCase = fixture(data, "partially-reviewed-primary");
+  const partialCandidate = await buildCandidate(partialCase.item, source(partialCase.source_id), FIXED_NOW, "run_partial");
+  pass(partialCandidate.primary_record_status === "PRIMARY RECORD PARTIALLY REVIEWED" && partialCandidate.reviewed_material.includes("abstract") && fitGate(partialCandidate, partialCase.item).passes, "bounded substantive material must remain visibly partial and may pass fit");
+  pass(triageCandidate(partialCandidate, partialCase.item, fitGate(partialCandidate, partialCase.item)).recommendation === "EXPLORE", "partial review must not be promoted to DEVELOP solely by primary provenance");
+  const boilerplateCase = fixture(data, "boilerplate-only");
+  const boilerplate = await buildCandidate(boilerplateCase.item, source(boilerplateCase.source_id), FIXED_NOW, "run_boilerplate");
+  pass(!fitGate(boilerplate, boilerplateCase.item).passes, "boilerplate record text cannot satisfy candidate-specific evidence threshold even with a review claim");
+  const headingOnlyItem = { ...boilerplateCase.item, record_summary: "The official report feed abstract states: What GAO Found This synthetic report describes a public program and provides general background.", evidence_review_state: "PARTIALLY REVIEWED" };
+  const headingOnly = await buildCandidate(headingOnlyItem, gao, FIXED_NOW, "run_heading_only");
+  pass(!fitGate(headingOnly, headingOnlyItem).passes, "What GAO Found heading must not itself count as a factual finding");
+  const assess = async (entry, item = entry.item) => {
+    const candidate = await buildCandidate(item, source(entry.source_id), FIXED_NOW, "run_gap_fixture");
+    const fit = fitGate(candidate, item);
+    candidate.triage = triageCandidate(candidate, item, fit);
+    candidate.submission_readiness = submissionReadiness(candidate, item, fit);
+    return { candidate, fit };
+  };
+  const abstractCandidate = await assess({ source_id: "gao-reports", item: abstractItems[0] });
+  pass(abstractCandidate.candidate.institution_or_system === "Synthetic Transit Authority" && abstractCandidate.candidate.submission_readiness.ready, "official abstract with a named actor, criterion, observed condition, and gap may be submission-ready without full-report retrieval");
+  pass(abstractCandidate.candidate.accountability_question.includes("quarterly safety checks"), "automatic accountability question must use inspected source facts");
+  const telecom = await assess(fixture(data, "telecom-compliance-without-gap"));
+  pass(telecom.fit.passes && !telecom.candidate.submission_readiness.ready && telecom.candidate.observed_condition === null && telecom.candidate.accountability_gap === null, "Section 889-style compliance context without an actor-attributed unmet condition must stay a lead");
+  const tribal = await assess(fixture(data, "tribal-water-explicit-gap"));
+  pass(tribal.candidate.institution_or_system === "Synthetic Indian Health Service" && tribal.candidate.submission_readiness.ready, "explicit IHS-style actor, program expectation, observed exclusion, and gap may support intake");
+  const tribalWithoutJob = await assess(fixture(data, "tribal-water-explicit-gap"), { ...fixture(data, "tribal-water-explicit-gap").item, record_summary: "The Synthetic Indian Health Service reported that three tribal water assistance requests were not evaluated under its eligibility interpretation." });
+  pass(!tribalWithoutJob.candidate.submission_readiness.ready && tribalWithoutJob.candidate.apparent_job === null, "the same topic without a supported Job must not auto-submit");
+  const accessibility = await assess(fixture(data, "gsa-accessibility-explicit-gap"));
+  pass(accessibility.candidate.topic === "Synthetic Federal Real Property" && accessibility.candidate.institution_or_system === "Synthetic General Services Administration", "topic heading must remain separate from the explicit accountable agency");
+  pass(accessibility.candidate.submission_readiness.ready && accessibility.candidate.accountability_question.includes("accessibility complaint process"), "specific recommendation and unfulfilled condition may support an evidence-derived GSA-style question");
+  const differentAction = await assess(fixture(data, "gsa-accessibility-explicit-gap"), { ...fixture(data, "gsa-accessibility-explicit-gap").item, record_summary: "The Synthetic General Services Administration was required to publish the accessibility complaint process. The Synthetic General Services Administration did not review the accessibility complaint process." });
+  pass(!differentAction.candidate.submission_readiness.ready && differentAction.candidate.accountability_gap === null, "shared topic words cannot manufacture a gap when the expected and observed actions differ");
+  const differentObject = await assess(fixture(data, "gsa-accessibility-explicit-gap"), { ...fixture(data, "gsa-accessibility-explicit-gap").item, record_summary: "The Synthetic General Services Administration was required to publish the accessibility complaint process. The Synthetic General Services Administration did not publish the annual procurement process." });
+  pass(!differentObject.candidate.submission_readiness.ready && differentObject.candidate.accountability_gap === null, "matching verbs and one generic object word cannot conflate different institutional processes");
+  const disposal = await assess(fixture(data, "property-disposal-progress-only"));
+  pass(disposal.fit.passes && !disposal.candidate.submission_readiness.ready && !disposal.candidate.apparent_job, "quantified disposal progress without an applicable target must stay a lead");
+  const aging = await assess(fixture(data, "global-aging-implications-only"));
+  pass(aging.fit.passes && aging.candidate.institution_or_system === null && !aging.candidate.submission_readiness.ready, "broad policy implications without an accountable actor or gap must not auto-submit");
+  const genericQuestion = await assess(fixture(data, "global-aging-implications-only"), { ...fixture(data, "global-aging-implications-only").item, accountability_question: "What accountability issue does this report raise?" });
+  pass(genericQuestion.candidate.accountability_question === null && Boolean(genericQuestion.candidate.research_prompt) && !genericQuestion.candidate.submission_readiness.ready, "generic research prompt cannot serve as evidence-derived accountability question or satisfy readiness");
+  const ambiguous = await assess(fixture(data, "strong-gao-style-candidate"), { ...strongCase.item, institution: undefined, record_summary: "The Synthetic Water Authority was required to document quarterly controls. The Synthetic Water Authority did not document quarterly controls. The Synthetic Power Authority was required to document annual controls. The Synthetic Power Authority did not document annual controls." });
+  pass(ambiguous.candidate.institution_or_system === null && !ambiguous.candidate.submission_readiness.ready, "two materially accountable actors without a justified selection must remain ambiguous and non-submittable");
+  const resolved = await assess(fixture(data, "strong-gao-style-candidate"), { ...strongCase.item, material_qualification: "The issue has been corrected and the gap was resolved." });
+  pass(!resolved.candidate.submission_readiness.ready && resolved.candidate.submission_readiness.reasons.includes("material_qualification_defeats_gap"), "material resolution qualification must defeat apparent readiness");
+  pass(listing.institution_or_system === null && listing.topic === "justice oversight", "listing metadata and a supplied institution hint cannot establish a reviewed accountable actor");
+  pass(strong.institution_or_system === "Synthetic Grant Administration" && strong.apparent_job && strong.observed_condition && strong.accountability_gap, "reviewed synthetic record must retain distinct actor, Job, observation, and gap");
   const stop = triageCandidate(strong, { ...strongCase.item, novelty: false }, fitGate(strong, strongCase.item));
   pass(stop.recommendation === "STOP / NO ACTION", "Rabbit Hole STOP must remain valid");
   const route = triageCandidate(strong, { ...strongCase.item, route: true }, fitGate(strong, strongCase.item));
@@ -96,6 +161,7 @@ async function test() {
   const runOptions = { registry: registryFor(strongCase.source_id), discoverSource: discovery(strongCase.item), lookupDiscovery, lookupMonitoring: async () => null, submitCandidate, now: () => FIXED_NOW, runId: "synthetic_run" };
   const first = await runWatchdeskScan({}, runOptions);
   pass(first.metrics.submitted_to_newsroom === 1 && stored[0].origin === "discovery", "qualifying candidate must enter the existing discovery intake queue");
+  pass(first.source_health.length === 1 && first.source_health[0].items_parsed === 1 && first.source_health[0].checked_at === FIXED_NOW, "source health must include check time, success, and parsed count");
   const queued = stored[0];
   const queuedCandidate = JSON.parse(queued.discovery_metadata_json).candidate;
   pass(queued.submitted_url === strong.normalized_url, "queue insertion must retain the normalized source URL");
@@ -104,6 +170,12 @@ async function test() {
   pass(Boolean(queuedCandidate.material_qualification && queuedCandidate.remains_unproven), "queue insertion must retain qualifications and uncertainty");
   pass(queuedCandidate.research_burden === "LOW" && queuedCandidate.provenance.automated === true, "queue insertion must retain burden and automation provenance");
   pass(queuedCandidate.triage.recommendation === "DEVELOP" && !Object.hasOwn(queuedCandidate, "editorial_decision"), "automated triage must remain distinct from editorial decision");
+  const listingRun = await runWatchdeskScan({}, { ...runOptions, registry: registryFor(listingCase.source_id), discoverSource: discovery(listingCase.item), lookupDiscovery: async () => [], submitCandidate: async () => { throw new Error("listing must not submit"); }, runId: "synthetic_listing" });
+  pass(listingRun.metrics.discovery_leads === 1 && listingRun.discovery_leads[0].triage.recommendation === "EXPLORE" && listingRun.metrics.would_submit === 0 && listingRun.metrics.submitted_to_newsroom === 0, "EXPLORE listing lead must not auto-submit, even in a local live-mode simulation");
+  const abstractRun = await runWatchdeskScan({}, { ...runOptions, discoverSource: discovery(abstractItems[0]), lookupDiscovery: async () => [], dryRun: true, submitCandidate: async () => { throw new Error("dry run must not submit"); }, runId: "synthetic_abstract" });
+  pass(abstractRun.metrics.submission_ready === 1 && abstractRun.metrics.would_submit === 1 && abstractRun.metrics.submitted_to_newsroom === 0 && abstractRun.candidates[0].evidence_review_state === "PARTIALLY REVIEWED", "specific official abstract may be submission-ready while true dry run performs no write");
+  const funnel = await runWatchdeskScan({}, { ...runOptions, discoverSource: async () => [strongCase.item, fixture(data, "telecom-compliance-without-gap").item], lookupDiscovery: async () => [], dryRun: true });
+  pass(funnel.metrics.fit_gate_survivors === 2 && funnel.metrics.discovery_leads === 1 && funnel.metrics.submission_ready === 1 && funnel.metrics.would_submit === 1 && funnel.metrics.submitted_to_newsroom === 0, "run funnel must distinguish substantive fit, non-submittable leads, and submission readiness");
   const repeated = await runWatchdeskScan({}, runOptions);
   pass(repeated.metrics.duplicates_known === 1 && repeated.metrics.submitted_to_newsroom === 0 && stored.length === 1, "unchanged repeated scan must be idempotent");
   const changedItem = { ...strongCase.item, published_at: "2026-09-22T00:00:00.000Z", record_summary: `${strongCase.item.record_summary} A later synthetic corrective-action notice was added.` };
@@ -119,7 +191,7 @@ async function test() {
   const monitored = await runWatchdeskScan({}, { ...runOptions, discoverSource: discovery({ ...strongCase.item, url: "https://www.gao.gov/products/gao-26-synthetic-monitor" }), lookupDiscovery: async () => [], lookupMonitoring: async () => ({ id: "monitor-synthetic" }), dryRun: true });
   pass(monitored.metrics.duplicates_known === 1 && monitored.metrics.would_submit === 0, "existing monitor must suppress redundant discovery intake");
 
-  const many = Array.from({ length: 7 }, (_, index) => ({ ...strongCase.item, title: `Synthetic Grant ${index}: Audit Found Controls Failed and Costs Overran Plan`, url: `https://www.gao.gov/products/gao-26-synthetic-cap-${index}`, institution: `Synthetic Grant Office ${index}` }));
+  const many = Array.from({ length: 7 }, (_, index) => ({ ...strongCase.item, title: `Synthetic Grant ${index}: Audit Found Controls Failed and Costs Overran Plan`, url: `https://www.gao.gov/products/gao-26-synthetic-cap-${index}`, institution: "Synthetic Grant Administration" }));
   const capped = await runWatchdeskScan({}, { ...runOptions, discoverSource: async () => many, lookupDiscovery: async () => [], dryRun: true });
   pass(capped.metrics.would_submit === MAX_SUBMISSIONS_PER_RUN && capped.metrics.deferred_by_ceiling === 2 && capped.deferred_candidates.length === 2, "per-run ceiling must be five and preserve the remainder as deferred");
   const one = await runWatchdeskScan({}, { ...runOptions, lookupDiscovery: async () => [], dryRun: true });
@@ -130,6 +202,7 @@ async function test() {
   const failureSource = registryFor("iowa-auditor-reports")[0];
   const partial = await runWatchdeskScan({}, { ...runOptions, registry: [failureSource, ...registryFor(strongCase.source_id)], discoverSource: async (entry) => { if (entry.id === failureSource.id) throw new Error("SYNTHETIC_SOURCE_UNAVAILABLE"); return [strongCase.item]; }, lookupDiscovery: async () => [], dryRun: true });
   pass(partial.status === "partial" && partial.source_failures.length === 1 && partial.metrics.would_submit === 1, "one source failure must be visible without aborting independent sources");
+  pass(partial.source_health[0].status === "failed" && partial.source_health[0].error === "SYNTHETIC_SOURCE_UNAVAILABLE" && partial.source_health[1].status === "succeeded", "partial run must name failed source and preserve successful-source health");
 
   let capturedOptions;
   const handler = createAdminHandler({ authenticate: async () => ({ actorType: "editor", actorId: "editor@example.com", email: "editor@example.com" }), executeWatchdesk: async (_env, options) => { capturedOptions = options; return { ok: true, dry_run: options.dryRun, metrics: {} }; } });
@@ -140,6 +213,9 @@ async function test() {
 
   const implementation = await readFile(path.join(ROOT, "src", "watchdesk.js"), "utf8");
   pass(!/ANALYSIS_QUEUE|insertPublicationAttempt|sendEmail|mailto:|content\/stories/.test(implementation), "Watchdesk must not queue formal analysis, publish, contact subjects, or write story source files");
+  const adminUi = await readFile(path.join(ROOT, "public", "admin-persistent", "admin.js"), "utf8");
+  pass(["Evidence review state", "Primary-record location", "Topic", "Accountable institution", "Job / expectation", "Observed condition", "Accountability gap", "Submission readiness", "accountableInstitution(candidate)"].every((label) => adminUi.includes(label)), "admin candidate view must expose evidence, actor, Job, observed condition, gap, and readiness separately");
+  pass(adminUi.includes('candidate.schema_version==="1.2"') && adminUi.includes("Unverified (legacy candidate)"), "legacy topic-like institution metadata must not be relabeled as a verified accountable actor");
   const adminConfig = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
   pass(!/\bcrons?\b|scheduled\s*:/i.test(adminConfig), "Watchdesk must not activate a production schedule");
   pass(first.submitted.every((entry) => entry.intake_id.startsWith("synthetic-")), "test suite must use synthetic in-memory queue records only");
@@ -167,15 +243,36 @@ async function dryRun() {
   console.log(JSON.stringify({ notice: data.notice, ...result }, null, 2));
 }
 
+async function probe() {
+  const result = await runWatchdeskScan({}, {
+    dryRun: true,
+    lookupDiscovery: async () => [],
+    lookupMonitoring: async () => null,
+    submitCandidate: async () => { throw new Error("Read-only source probe must never submit."); },
+  });
+  console.log(JSON.stringify({
+    note: "Read-only public-source probe; no production D1 duplicate lookup or queue write.",
+    run_id: result.run_id,
+    status: result.status,
+    metrics: result.metrics,
+    candidates_reaching_fit_review: result.metrics.failed_fit_gate + result.metrics.fit_gate_survivors,
+    evidence_state_distribution: result.metrics.evidence_state_distribution,
+    source_health: result.source_health,
+    source_failures: result.source_failures,
+    actual_submissions: result.submitted.length,
+  }, null, 2));
+}
+
 const command = process.argv[2];
 if (!COMMANDS.has(command) || process.argv.length !== 3) {
-  console.error("Usage: node scripts/watchdesk.mjs <check|test|dry-run>");
+  console.error("Usage: node scripts/watchdesk.mjs <check|test|dry-run|probe>");
   process.exitCode = 1;
 } else {
   try {
     if (command === "check") await check();
     if (command === "test") await test();
     if (command === "dry-run") await dryRun();
+    if (command === "probe") await probe();
   } catch (error) {
     console.error(`Watchdesk ${command} failed: ${error.stack || error.message}`);
     process.exitCode = 1;

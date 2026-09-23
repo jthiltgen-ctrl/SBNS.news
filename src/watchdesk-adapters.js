@@ -1,6 +1,7 @@
 const MAX_SOURCE_BYTES = 768 * 1024;
 const MAX_ITEMS_PER_SOURCE = 40;
 const SOURCE_TIMEOUT_MS = 10_000;
+const SUBSTANTIVE_ABSTRACT = /\b(found|reported|identified|determined|estimated|documented|did not|does not|lacked|failed|reduced|increased|recommended|prohibits?|requires?)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|years?)\b/i;
 
 function decodeEntities(value) {
   return String(value || "")
@@ -79,12 +80,22 @@ export function parseRssAtom(xml, source) {
     const href = (linkTag ? attribute(linkTag, "href") : null) || tagValue(fragment, ["link", "guid"]);
     const url = allowedLink(source, href);
     if (!title || !url || seen.has(url)) continue;
+    const publishedAt = normalizeDate(tagValue(fragment, ["pubDate", "published", "updated", "dc:date"]));
+    if (source.require_date && !publishedAt) continue;
+    const summary = tagValue(fragment, ["description", "summary", "content:encoded", "content"]);
+    const abstract = source.official_report_abstract && /^What GAO Found\b/i.test(summary || "")
+      && summary.length >= 120 && SUBSTANTIVE_ABSTRACT.test(summary.replace(/^What GAO Found\b/i, ""));
     seen.add(url);
     items.push({
       title,
       url,
-      published_at: normalizeDate(tagValue(fragment, ["pubDate", "published", "updated", "dc:date"])),
-      summary: tagValue(fragment, ["description", "summary", "content:encoded", "content"]),
+      published_at: publishedAt,
+      summary,
+      ...(abstract ? {
+        record_summary: `The official report feed abstract states: ${summary}`,
+        evidence_review_state: "PARTIALLY REVIEWED",
+        reviewed_material: "Official report abstract in the first-party RSS feed; full report not reviewed",
+      } : {}),
     });
     if (items.length >= MAX_ITEMS_PER_SOURCE) break;
   }

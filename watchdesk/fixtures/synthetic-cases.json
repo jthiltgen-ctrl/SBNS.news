@@ -11,7 +11,9 @@
         "institution": "Synthetic Grant Administration",
         "topic": "synthetic grant controls",
         "apparent_job": "The synthetic contract required quarterly control reviews and documented cost controls.",
-        "record_summary": "A clearly labeled synthetic audit found that required reviews were not documented and costs exceeded the approved plan.",
+        "record_summary": "The Synthetic Grant Administration was required to document quarterly control reviews under a synthetic contract. The Synthetic Grant Administration did not document three quarterly control reviews, and costs exceeded the approved plan.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic underlying audit record",
         "accountability_question": "Why were the synthetic control reviews not completed before costs exceeded the approved plan?",
         "material_qualification": "The synthetic record does not establish personal motive or criminal conduct.",
         "remains_unproven": "The causes of the synthetic overrun and the effect of planned corrective action remain unproven.",
@@ -26,7 +28,9 @@
         "url": "https://www.gao.gov/products/gao-26-synthetic-duplicate",
         "published_at": "2026-09-20T00:00:00.000Z",
         "institution": "Synthetic Transit Office",
-        "record_summary": "A synthetic review found required checks were not completed.",
+        "record_summary": "The Synthetic Transit Office was required to document quarterly safety checks. The Synthetic Transit Office did not document three quarterly safety checks.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic underlying review record",
         "accountability_question": "Why were the required synthetic checks not completed?",
         "apparent_job": "The synthetic procedure required checks before launch."
       }
@@ -39,7 +43,9 @@
         "url": "https://www.gao.gov/products/gao-26-synthetic-faa-update",
         "published_at": "2026-09-21T00:00:00.000Z",
         "institution": "Federal Aviation Administration",
-        "record_summary": "A synthetic fixture describes a later review of cost planning.",
+        "record_summary": "The Federal Aviation Administration was required to complete an integrated cost baseline for the synthetic program. The Federal Aviation Administration did not complete the integrated cost baseline in the later review.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic underlying review record",
         "accountability_question": "What has changed since the earlier cost and schedule review?",
         "apparent_job": "The synthetic plan required an integrated and reliable cost baseline.",
         "related_story_id": "faa-bnatcs-gao-cost-schedule-review"
@@ -105,7 +111,9 @@
         "institution": "Synthetic City Program",
         "primary_source_url": "https://www.cityofdubuque.org/ArchiveCenter/ViewFile/Item/synthetic-001",
         "apparent_job": "The synthetic budget rule required an amendment before spending exceeded the approved amount.",
-        "record_summary": "A synthetic local audit found spending exceeded the approved amount before an amendment was adopted.",
+        "record_summary": "The Synthetic City Program was required to adopt a budget amendment before spending exceeded its approved amount. The Synthetic City Program did not adopt a budget amendment before spending exceeded its approved amount.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic underlying local audit",
         "accountability_question": "Why was the synthetic budget not amended before the expenditure?",
         "material_qualification": "The synthetic audit reported no questioned costs.",
         "remains_unproven": "The record does not establish fraud or personal benefit.",
@@ -121,8 +129,106 @@
         "published_at": "2026-09-20T00:00:00.000Z",
         "institution": "Synthetic Custody Program",
         "apparent_job": "The synthetic policy required monthly control checks.",
-        "record_summary": "A synthetic review found the required checks were incomplete.",
+        "record_summary": "The Synthetic Custody Program was required to perform monthly control checks. The Synthetic Custody Program did not perform three monthly control checks.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic underlying review record",
         "accountability_question": "Why were the synthetic monthly checks incomplete?"
+      }
+    },
+    {
+      "id": "official-listing-only",
+      "source_id": "doj-oig-reports",
+      "item": {
+        "title": "Synthetic Audit of Controls over International Personnel Risks",
+        "url": "https://oig.justice.gov/reports/synthetic-international-personnel-audit",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Bureau"
+      }
+    },
+    {
+      "id": "partially-reviewed-primary",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Grant Controls: Audit Identified Missing Quarterly Reviews",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-partial",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Grant Administration",
+        "record_summary": "The Synthetic Grant Administration was required to document quarterly control reviews. The Synthetic Grant Administration did not document three quarterly control reviews, according to the synthetic official abstract.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
+      }
+    },
+    {
+      "id": "boilerplate-only",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Audit of Government Program Controls and Risks",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-boilerplate",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Program Office",
+        "record_summary": "An official audit report exists for this institution.",
+        "evidence_review_state": "REVIEWED",
+        "reviewed_material": "Synthetic record title only"
+      }
+    },
+    {
+      "id": "telecom-compliance-without-gap",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Telecommunications: Section 889 Compliance Review",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-telecom",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "record_summary": "Section 889 prohibits certain covered equipment purchases. The Synthetic Procurement Office reported that 90 percent of vendors represented compliance and described a screening process, but the synthetic abstract did not identify a remaining violation.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
+      }
+    },
+    {
+      "id": "tribal-water-explicit-gap",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Tribal Water Infrastructure: Eligibility Review",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-water",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "record_summary": "The Synthetic Indian Health Service was required to evaluate all eligible tribal water assistance requests under its program rule. The Synthetic Indian Health Service did not evaluate three eligible tribal water assistance requests because of its documented eligibility interpretation.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
+      }
+    },
+    {
+      "id": "gsa-accessibility-explicit-gap",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Federal Real Property: Accessibility Complaint Process",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-accessibility",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "record_summary": "An oversight recommendation said the Synthetic General Services Administration should publicize its accessibility complaint process. The Synthetic General Services Administration has not publicized the accessibility complaint process.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
+      }
+    },
+    {
+      "id": "property-disposal-progress-only",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Federal Property Disposal: Funding and Schedule Review",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-property",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "record_summary": "The Synthetic Property Board reported that 14 of 23 properties were disposed of and schedule estimates for later properties remained uncertain. The synthetic abstract did not identify an applicable disposal deadline or target.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
+      }
+    },
+    {
+      "id": "global-aging-implications-only",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Global Aging: Policy Risks and Implications Report",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-aging",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "record_summary": "The synthetic abstract estimated that aging populations may affect labor markets and health policy in several countries, but it did not identify a responsible public body or unmet requirement.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only"
       }
     },
     {
