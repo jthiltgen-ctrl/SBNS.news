@@ -1,0 +1,145 @@
+{
+  "notice": "SYNTHETIC-ONLY WATCHDESK TEST DATA — contains no real source or confidential information.",
+  "cases": [
+    {
+      "id": "strong-gao-style-candidate",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Grant Oversight: Audit Found Controls Failed and Costs Overran Plan",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-001?utm_source=test",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Grant Administration",
+        "topic": "synthetic grant controls",
+        "apparent_job": "The synthetic contract required quarterly control reviews and documented cost controls.",
+        "record_summary": "A clearly labeled synthetic audit found that required reviews were not documented and costs exceeded the approved plan.",
+        "accountability_question": "Why were the synthetic control reviews not completed before costs exceeded the approved plan?",
+        "material_qualification": "The synthetic record does not establish personal motive or criminal conduct.",
+        "remains_unproven": "The causes of the synthetic overrun and the effect of planned corrective action remain unproven.",
+        "research_burden": "LOW"
+      }
+    },
+    {
+      "id": "duplicate-known-url",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Transit Controls: Review Found Required Checks Were Not Completed",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-duplicate",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Transit Office",
+        "record_summary": "A synthetic review found required checks were not completed.",
+        "accountability_question": "Why were the required synthetic checks not completed?",
+        "apparent_job": "The synthetic procedure required checks before launch."
+      }
+    },
+    {
+      "id": "existing-published-story-development",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Air Traffic Control Systems: New Synthetic Review Finds Cost Planning Still Incomplete",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-faa-update",
+        "published_at": "2026-09-21T00:00:00.000Z",
+        "institution": "Federal Aviation Administration",
+        "record_summary": "A synthetic fixture describes a later review of cost planning.",
+        "accountability_question": "What has changed since the earlier cost and schedule review?",
+        "apparent_job": "The synthetic plan required an integrated and reliable cost baseline.",
+        "related_story_id": "faa-bnatcs-gao-cost-schedule-review"
+      }
+    },
+    {
+      "id": "generic-press-release-weak-fit",
+      "source_id": "dubuque-city-news",
+      "item": {
+        "title": "Synthetic Department Announces Community Appreciation Week",
+        "url": "https://www.cityofdubuque.org/m/NewsFlash/Home/Detail/9000",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Department"
+      }
+    },
+    {
+      "id": "partisan-opinion-no-primary-evidence",
+      "source_id": "propublica-archive",
+      "item": {
+        "title": "Opinion: Vote Against the Synthetic Candidate Because the Program Failed",
+        "url": "https://www.propublica.org/article/synthetic-opinion-001",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Campaign",
+        "accountability_question": "What happened in the synthetic program?"
+      }
+    },
+    {
+      "id": "secondary-with-primary-record",
+      "source_id": "propublica-archive",
+      "item": {
+        "title": "Investigation: Synthetic Housing Program Failed Required Safety Reviews",
+        "url": "https://www.propublica.org/article/synthetic-housing-controls",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Housing Authority",
+        "primary_source_url": "https://www.gao.gov/products/gao-26-synthetic-housing",
+        "apparent_job": "The synthetic safety standard required a review before occupancy.",
+        "record_summary": "The synthetic primary audit found that three required reviews were not completed.",
+        "accountability_question": "Why did occupancy begin before the required synthetic reviews?",
+        "material_qualification": "The synthetic authority disputes whether the delay created a safety consequence.",
+        "remains_unproven": "No specific injury or deliberate misconduct is established."
+      }
+    },
+    {
+      "id": "secondary-primary-needed",
+      "source_id": "propublica-archive",
+      "item": {
+        "title": "Investigation Reports Synthetic Procurement Controls Failed During Cost Overrun",
+        "url": "https://www.propublica.org/article/synthetic-procurement-signal",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Procurement Office",
+        "record_summary": "The synthetic secondary report attributes a control finding to an unidentified review.",
+        "accountability_question": "Can the referenced primary review establish the reported control gap?",
+        "remains_unproven": "The primary record and governing requirement have not yet been obtained."
+      }
+    },
+    {
+      "id": "local-accountability-candidate",
+      "source_id": "dubuque-city-news",
+      "item": {
+        "title": "Synthetic City Budget Audit: Required Amendment Missing After Overrun",
+        "url": "https://www.cityofdubuque.org/m/NewsFlash/Home/Detail/9001",
+        "published_at": "2026-09-21T00:00:00.000Z",
+        "institution": "Synthetic City Program",
+        "primary_source_url": "https://www.cityofdubuque.org/ArchiveCenter/ViewFile/Item/synthetic-001",
+        "apparent_job": "The synthetic budget rule required an amendment before spending exceeded the approved amount.",
+        "record_summary": "A synthetic local audit found spending exceeded the approved amount before an amendment was adopted.",
+        "accountability_question": "Why was the synthetic budget not amended before the expenditure?",
+        "material_qualification": "The synthetic audit reported no questioned costs.",
+        "remains_unproven": "The record does not establish fraud or personal benefit.",
+        "research_burden": "LOW"
+      }
+    },
+    {
+      "id": "unchanged-repeated-scan",
+      "source_id": "doj-oig-reports",
+      "item": {
+        "title": "Synthetic Custody Review Found Required Controls Were Incomplete",
+        "url": "https://oig.justice.gov/reports/synthetic-custody-review",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Custody Program",
+        "apparent_job": "The synthetic policy required monthly control checks.",
+        "record_summary": "A synthetic review found the required checks were incomplete.",
+        "accountability_question": "Why were the synthetic monthly checks incomplete?"
+      }
+    },
+    {
+      "id": "source-fetch-failure",
+      "source_id": "iowa-auditor-reports",
+      "failure": "SYNTHETIC_SOURCE_UNAVAILABLE"
+    },
+    {
+      "id": "zero-qualifying-candidates",
+      "source_id": "iowa-auditor-reports",
+      "item": {
+        "title": "Synthetic Office Announces New Lobby Hours",
+        "url": "https://www.auditor.iowa.gov/reports/audit-reports/synthetic-hours",
+        "published_at": "2026-09-20T00:00:00.000Z",
+        "institution": "Synthetic Office",
+        "routine": true
+      }
+    }
+  ]
+}

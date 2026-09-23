@@ -108,9 +108,11 @@ async function machineHealthTests(){
   const machine=await sign({type:"app",sub:"",common_name:"synthetic.access"});
   const human=await sign({type:"app",sub:"human-id",email:"editor@example.com"});
   const headers=(token)=>({"Cf-Access-Jwt-Assertion":token});
+  let watchdeskCalls=0;
   const handler=createAdminHandler({
     authenticate:(req,runtime)=>verifyAccessRequest(req,runtime,verifier),
     authenticateMachine:(req,runtime)=>verifyAccessServiceRequest(req,runtime,verifier),
+    executeWatchdesk:async()=>{watchdeskCalls++;return {ok:true}},
   });
   const callHealth=(path,token,runtime=env,method="GET")=>handler(request(path,{method,headers:token?headers(token):{}}),runtime);
   let response=await callHealth("/api/admin/health",machine);
@@ -127,6 +129,10 @@ async function machineHealthTests(){
   pass((await callHealth("/api/admin/session",machine)).status===401,"service token cannot become an editor session");
   pass((await callHealth("/api/admin/intakes",machine)).status===401,"service token cannot read editorial queue");
   pass((await callHealth("/api/admin/intakes",machine,env,"POST")).status===401,"service token cannot write editorial queue");
+  response=await handler(request("/api/admin/watchdesk/runs",{method:"POST",body:{dry_run:false},headers:headers(machine)}),env);
+  pass(response.status===401&&watchdeskCalls===0,"service token cannot invoke a writing Watchdesk run");
+  response=await handler(request("/api/admin/watchdesk/runs",{method:"POST",body:{dry_run:true},headers:headers(human)}),env);
+  pass(response.status===200&&watchdeskCalls===1,"signed human editor can invoke a Watchdesk dry run");
   pass((await callHealth("/api/admin/health",machine,env,"POST")).status===401,"machine route accepts GET only");
   pass((await callHealth("/api/admin/unknown",machine)).status===401,"machine identity is not inherited by other routes");
   const wrongAudience=await sign({type:"app",sub:"",common_name:"synthetic.access"},{audience:"other-app"});
