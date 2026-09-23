@@ -4,15 +4,16 @@ export const WATCHDESK_SOURCES = Object.freeze([
     name: "U.S. Government Accountability Office — Recent Reports & Testimonies",
     source_class: "primary_oversight",
     jurisdiction: "United States",
-    discovery_url: "https://www.gao.gov/widgets/reports",
-    adapter: "html_links",
+    discovery_url: "https://www.gao.gov/rss/reports.xml",
+    adapter: "rss_atom",
     enabled: true,
     primary_record: true,
+    official_report_abstract: true,
     allowed_hosts: ["www.gao.gov", "gao.gov"],
     allowed_path_prefixes: ["/products/"],
     require_date: true,
     topic: "federal oversight",
-    notes: "Official GAO report listing; prefer reports, audits, evaluations, and formal recommendations.",
+    notes: "Official GAO reports RSS feed. Its abstract may contain bounded first-party findings; the full report is not thereby reviewed.",
   },
   {
     id: "doj-oig-reports",
@@ -97,6 +98,7 @@ export function validateSourceRegistry(sources = WATCHDESK_SOURCES) {
     if (!Array.isArray(source.allowed_hosts) || !source.allowed_hosts.includes(url.hostname)) throw new Error(`Source ${source.id} must allow its discovery host explicitly.`);
     if (!Array.isArray(source.allowed_path_prefixes) || !source.allowed_path_prefixes.length) throw new Error(`Source ${source.id} must define bounded link paths.`);
     if (typeof source.enabled !== "boolean" || typeof source.primary_record !== "boolean") throw new Error(`Source ${source.id} must declare enabled and primary_record booleans.`);
+    if (source.official_report_abstract != null && (source.official_report_abstract !== true || source.adapter !== "rss_atom" || !source.primary_record)) throw new Error(`Source ${source.id} has invalid official report abstract configuration.`);
     if (source.require_date != null && typeof source.require_date !== "boolean") throw new Error(`Source ${source.id} has an invalid require_date value.`);
     if (source.include_listing_context != null && typeof source.include_listing_context !== "boolean") throw new Error(`Source ${source.id} has an invalid include_listing_context value.`);
   }

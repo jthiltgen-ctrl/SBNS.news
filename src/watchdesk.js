@@ -3,8 +3,10 @@ import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-r
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
 import { findDiscoveryMatches, findMonitoringMatch, storeDiscoveryCandidate } from "./persistence.js";
 
-export const WATCHDESK_VERSION = "1.0";
+export const WATCHDESK_VERSION = "1.1";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
+const REVIEW_STATES = new Set(["NOT REVIEWED", "PARTIALLY REVIEWED", "REVIEWED"]);
+const FACTUAL_SIGNAL = /\b(found|identified|documented|observed|reported|determined|estimated|recommended|required|requires|prohibits|exceeded|failed|missing|incomplete|declined|increased|decreased)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|days)\b/i;
 const TRACKING_PARAMETERS = new Set(["fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid", "ref", "ref_src"]);
 const RECORD_TERMS = /\b(audit|evaluation|investigation|inspection|review|report|finding|recommendation|court|decision|enforcement|financial statement|corrective action)\b/i;
 const GAP_TERMS = /\b(should|needs?|needed|improv|risk|failure|failed|delay|incomplete|concern|problem|over budget|overrun|lack|without|not |hinder|disrupt|declin|gap|misconduct|noncompliance|compliance|controls?|weakness|vacan|untimely|deficien|violation)\b/i;
@@ -95,13 +97,16 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
   const institution = concise(item.institution || titleSubject(item.title, source), 300);
   const primaryUrl = item.primary_source_url ? normalizeDiscoveryUrl(item.primary_source_url) : null;
   const hasPrimary = Boolean(primaryUrl || source.primary_record);
-  const recordSummary = concise(item.record_summary, 1_500) || (source.primary_record
+  const reviewedMaterial = concise(item.reviewed_material, 300);
+  const reviewState = hasPrimary && REVIEW_STATES.has(item.evidence_review_state) && item.evidence_review_state !== "NOT REVIEWED"
+    && reviewedMaterial && concise(item.record_summary) ? item.evidence_review_state : "NOT REVIEWED";
+  const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 1_500)) || (source.primary_record
     ? `${source.name} publicly listed “${concise(item.title, 500)}”${item.published_at ? ` with a release date of ${iso(item.published_at)}` : ""}. The underlying record has not yet been reviewed by Watchdesk.`
     : `${source.name} published “${concise(item.title, 500)}.” This is a discovery signal; the underlying primary record has not yet been established.`);
-  const keySources = [{ url: normalizedUrl, role: source.primary_record ? "discovered primary listing or record" : "discovery signal" }];
+  const keySources = [{ url: normalizedUrl, role: source.primary_record ? "located primary record URL; contents not necessarily reviewed" : "discovery signal" }];
   if (primaryUrl && primaryUrl !== normalizedUrl) keySources.push({ url: primaryUrl, role: "identified primary record" });
   const titleFingerprint = await digest(`${source.id}\n${concise(item.title, 500)?.toLowerCase()}\n${item.document_id || ""}`);
-  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl }));
+  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl, reviewState, reviewedMaterial }));
   return {
     schema_version: WATCHDESK_VERSION,
     discovered_title: concise(item.title, 500),
@@ -113,13 +118,16 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     institution_or_system: institution,
     jurisdiction: concise(item.jurisdiction || source.jurisdiction, 200),
     topic: concise(item.topic || source.topic, 200),
-    why_this_may_belong: concise(item.why_this_may_belong, 1_000) || `The listing combines a documentary record signal with a bounded accountability question in ${source.jurisdiction}. It is a candidate for human review, not a finding by SBNS.`,
-    apparent_job: concise(item.apparent_job, 1_000),
+    why_this_may_belong: concise(item.why_this_may_belong, 1_000) || `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`,
+    apparent_job: reviewState === "NOT REVIEWED" ? null : concise(item.apparent_job, 1_000),
     record_summary: recordSummary,
-    accountability_question: concise(item.accountability_question, 1_000) || (institution ? `What governing requirement applies to ${institution}, what gap does the underlying record document, and what remains unresolved?` : null),
-    primary_record_status: hasPrimary ? "PRIMARY RECORD FOUND" : "SECONDARY SIGNAL — PRIMARY RECORD NEEDED",
+    accountability_question: concise(item.accountability_question, 1_000) || (institution ? `Does the underlying record document an accountability gap involving ${institution}; if so, what requirement and facts support it?` : null),
+    primary_record_url: hasPrimary ? (primaryUrl || normalizedUrl) : null,
+    evidence_review_state: reviewState,
+    reviewed_material: reviewState === "NOT REVIEWED" ? "Listing or discovery metadata only; underlying primary record not reviewed" : reviewedMaterial,
+    primary_record_status: !hasPrimary ? "SECONDARY SIGNAL — PRIMARY RECORD NEEDED" : reviewState === "REVIEWED" ? "PRIMARY RECORD REVIEWED" : reviewState === "PARTIALLY REVIEWED" ? "PRIMARY RECORD PARTIALLY REVIEWED" : "PRIMARY RECORD LOCATED",
     key_sources: keySources,
-    material_qualification: concise(item.material_qualification, 1_000) || "Watchdesk reviewed listing metadata only; the record, scope, and any institutional response require human verification.",
+    material_qualification: concise(item.material_qualification, 1_000) || (reviewState === "REVIEWED" ? "The reviewed record still requires human verification of scope and any institutional response." : reviewState === "PARTIALLY REVIEWED" ? "Only bounded first-party material was examined; the full record and any institutional response require human verification." : "Watchdesk reviewed listing metadata only; the record, scope, and any institutional response require human verification."),
     institutional_response: concise(item.institutional_response, 1_000),
     remains_unproven: concise(item.remains_unproven, 1_000) || "The underlying facts, governing standard, material consequences, and any institutional response have not been independently established by SBNS.",
     research_burden: burdenFor(item, source, hasPrimary),
@@ -139,15 +147,22 @@ export function fitGate(candidate, item) {
   if (!candidate.accountability_question) reasons.push("accountability_question_not_identified");
   if (item.public_relevance === false) reasons.push("public_relevance_not_established");
   if (item.evidence_sufficient === false) reasons.push("insufficient_evidence_to_begin_bounded_research");
-  return { passes: reasons.length === 0, reasons, job_supported: Boolean(candidate.apparent_job) };
+  const researchWorthy = reasons.length === 0;
+  const evidenceText = concise(item.record_summary, 1_500)?.replace(/^The official report feed abstract states:\s*What GAO Found\b/i, "").trim();
+  const substantiveEvidence = candidate.evidence_review_state !== "NOT REVIEWED"
+    && Boolean(concise(item.reviewed_material)) && (evidenceText?.length || 0) >= 45
+    && FACTUAL_SIGNAL.test(evidenceText);
+  if (!substantiveEvidence) reasons.push("candidate_specific_substantive_evidence_not_established");
+  return { passes: reasons.length === 0, reasons, research_worthy: researchWorthy, substantive_evidence: substantiveEvidence, job_supported: Boolean(candidate.apparent_job) };
 }
 
 export function triageCandidate(candidate, item, fit) {
+  if (!fit.passes && fit.research_worthy && !fit.substantive_evidence) return { recommendation: "EXPLORE", rationale: "Discovery lead only: inspect the underlying record for candidate-specific evidence before any Newsroom submission." };
   if (!fit.passes) return { recommendation: "STOP / NO ACTION", rationale: `Lightweight fit gate failed: ${fit.reasons.join(", ")}.` };
   if (item.route === true) return { recommendation: "ROUTE", rationale: "The item has a documentary signal but is better suited to another explicitly identified workflow or destination." };
   if (item.novelty === false) return { recommendation: "STOP / NO ACTION", rationale: "No material novelty or current accountability development is established." };
-  if (candidate.primary_record_status === "PRIMARY RECORD FOUND" && candidate.apparent_job && item.record_summary) return { recommendation: "DEVELOP", rationale: "A primary record, supported governing Job, bounded record summary, and accountability question are present for human development review." };
-  if (candidate.primary_record_status === "PRIMARY RECORD FOUND") return { recommendation: "EXPLORE", rationale: "A primary record signal and bounded accountability question justify limited human inspection before deeper research." };
+  if (candidate.evidence_review_state === "REVIEWED" && candidate.apparent_job && item.record_summary) return { recommendation: "DEVELOP", rationale: "A reviewed primary record, supported governing Job, bounded record summary, and accountability question are present for human development review." };
+  if (candidate.primary_record_url) return { recommendation: "EXPLORE", rationale: "Bounded substantive material warrants human inspection; the full primary record may still need review." };
   return { recommendation: "EXPLORE", rationale: "The secondary signal appears relevant, but a primary record and governing Job still need to be established." };
 }
 
@@ -202,9 +217,11 @@ export async function runWatchdeskScan(env, options = {}) {
   const lookupDiscovery = options.lookupDiscovery || ((candidate) => findDiscoveryMatches(env, candidate.normalized_url, candidate.title_fingerprint));
   const lookupMonitoring = options.lookupMonitoring || ((candidate) => findMonitoringMatch(env, candidate.normalized_url));
   const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy));
-  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
+  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
   const sourceFailures = [];
+  const sourceHealth = [];
   const survivors = [];
+  const discoveryLeads = [];
   const runUrls = new Set();
   const runContent = new Set();
 
@@ -216,7 +233,13 @@ export async function runWatchdeskScan(env, options = {}) {
       if (!Array.isArray(items)) throw new Error("SOURCE_ADAPTER_INVALID_OUTPUT");
       metrics.sources_succeeded += 1;
     }
-    catch (error) { sourceFailures.push({ source_id: source.id, error: concise(error?.message || "SOURCE_FAILED", 120) }); continue; }
+    catch (error) {
+      const reason = concise(error?.message || "SOURCE_FAILED", 120);
+      sourceFailures.push({ source_id: source.id, error: reason });
+      sourceHealth.push({ source_id: source.id, checked_at: iso(clock()), status: "failed", error: reason, items_parsed: 0 });
+      continue;
+    }
+    sourceHealth.push({ source_id: source.id, checked_at: iso(clock()), status: "succeeded", error: null, items_parsed: items.length });
     metrics.items_discovered += items.length;
     for (const item of items) {
       const deterministic = deterministicFilter(item, source);
@@ -232,8 +255,17 @@ export async function runWatchdeskScan(env, options = {}) {
       if (known.related_intake_id) candidate.related_intake_id = known.related_intake_id;
       const monitor = await lookupMonitoring(candidate);
       if (monitor) { metrics.duplicates_known += 1; continue; }
+      metrics.evidence_state_distribution[candidate.primary_record_status] = (metrics.evidence_state_distribution[candidate.primary_record_status] || 0) + 1;
       const fit = fitGate(candidate, item);
-      if (!fit.passes) { metrics.failed_fit_gate += 1; continue; }
+      if (!fit.passes) {
+        metrics.failed_fit_gate += 1;
+        if (fit.research_worthy && !fit.substantive_evidence) {
+          candidate.triage = triageCandidate(candidate, item, fit);
+          discoveryLeads.push(candidate);
+          metrics.discovery_leads += 1;
+        }
+        continue;
+      }
       metrics.fit_gate_survivors += 1;
       candidate.triage = triageCandidate(candidate, item, fit);
       if (candidate.triage.recommendation === "STOP / NO ACTION") { metrics.rabbit_hole_stop += 1; continue; }
@@ -258,9 +290,11 @@ export async function runWatchdeskScan(env, options = {}) {
     dry_run: Boolean(options.dryRun),
     metrics,
     source_failures: sourceFailures,
+    source_health: sourceHealth,
+    discovery_leads: discoveryLeads.slice(0, MAX_SUBMISSIONS_PER_RUN),
     candidates: selected,
     deferred_candidates: deferred.map((candidate) => ({ title: candidate.discovered_title, normalized_url: candidate.normalized_url, source_id: candidate.source.id, triage: candidate.triage.recommendation, content_fingerprint: candidate.content_fingerprint })),
     submitted: submitted.map(({ intake, candidate }) => ({ intake_id: intake.id, title: candidate.discovered_title, triage: candidate.triage.recommendation })),
-    message: selected.length ? (options.dryRun ? `${selected.length} candidate${selected.length === 1 ? "" : "s"} would be submitted to Newsroom.` : `${selected.length} candidate${selected.length === 1 ? "" : "s"} submitted to Newsroom.`) : "No worthwhile SBNS discovery candidates this run.",
+    message: selected.length ? (options.dryRun ? `${selected.length} candidate${selected.length === 1 ? "" : "s"} would be submitted to Newsroom.` : `${selected.length} candidate${selected.length === 1 ? "" : "s"} submitted to Newsroom.`) : discoveryLeads.length ? "No submission-ready candidates; discovery leads require more evidence." : "No worthwhile SBNS discovery candidates this run.",
   };
 }
