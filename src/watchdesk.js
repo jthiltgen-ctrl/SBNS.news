@@ -3,15 +3,18 @@ import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-r
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
 import { findDiscoveryMatches, findMonitoringMatch, storeDiscoveryCandidate } from "./persistence.js";
 
-export const WATCHDESK_VERSION = "1.1";
+export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
 const REVIEW_STATES = new Set(["NOT REVIEWED", "PARTIALLY REVIEWED", "REVIEWED"]);
-const FACTUAL_SIGNAL = /\b(found|identified|documented|observed|reported|determined|estimated|recommended|required|requires|prohibits|exceeded|failed|missing|incomplete|declined|increased|decreased)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|days)\b/i;
+const FACTUAL_SIGNAL = /\b(found|identified|documented|observed|reported|determined|estimated|recommended|required|requires|prohibits|exceeded|failed|missing|incomplete|declined|increased|decreased|did not|has not|have not)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|days)\b/i;
 const TRACKING_PARAMETERS = new Set(["fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid", "ref", "ref_src"]);
 const RECORD_TERMS = /\b(audit|evaluation|investigation|inspection|review|report|finding|recommendation|court|decision|enforcement|financial statement|corrective action)\b/i;
 const GAP_TERMS = /\b(should|needs?|needed|improv|risk|failure|failed|delay|incomplete|concern|problem|over budget|overrun|lack|without|not |hinder|disrupt|declin|gap|misconduct|noncompliance|compliance|controls?|weakness|vacan|untimely|deficien|violation)\b/i;
 const OPINION_TERMS = /\b(opinion|editorial|endorsement|vote for|vote against|campaign strategy|horoscope|sponsored content)\b/i;
 const GENERIC_TOKENS = new Set(["audit", "report", "review", "oversight", "federal", "state", "city", "public", "government", "office", "department", "program", "should", "the", "and", "for", "with", "from", "into"]);
+const ACTOR_NAME = /\b((?:(?:[A-Z][A-Za-z’'-]+|of|the|and|for)\s+){1,7}(?:Administration|Agency|Department|Office|Service|Board|Commission|Authority|Bureau|Corporation))\b(?:\s*\(([A-Z][A-Z0-9]{1,7})\))?/g;
+const RESOLVED_GAP = /\b(?:gap (?:was|has been) resolved|issue (?:was|has been) corrected|recommendation (?:was|has been) implemented|has since (?:completed|implemented|corrected|resolved))\b/i;
+const ACTION_STOPWORDS = new Set(["about", "after", "agency", "before", "could", "federal", "found", "government", "official", "program", "public", "recommended", "required", "responsible", "reported", "report", "should", "stated", "their", "there", "these", "those", "which"]);
 
 function concise(value, max = 1_000) {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -58,6 +61,80 @@ function titleSubject(title, source) {
   return null;
 }
 
+function actorNames(text) {
+  const actors = new Map();
+  for (const match of String(text || "").matchAll(ACTOR_NAME)) {
+    const name = match[1].replace(/^the\s+/i, "").trim();
+    if (!actors.has(name.toLowerCase())) actors.set(name.toLowerCase(), { name, acronym: match[2] || null });
+    else if (match[2]) actors.get(name.toLowerCase()).acronym = match[2];
+  }
+  return [...actors.values()];
+}
+
+function actorReference(actor) {
+  const name = actor.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const acronym = actor.acronym ? `|\\b${actor.acronym}\\b` : "";
+  return `(?:\\b${name}\\b${acronym})`;
+}
+
+function isActorExpectation(sentence, actor) {
+  const reference = actorReference(actor);
+  return new RegExp(`${reference}\\s+(?:(?:is|are|was|were)\\s+(?:required|responsible|expected)\\s+(?:to|for)|must|should)\\b|\\brecommended(?: that)?\\s+${reference}\\s+`, "i").test(sentence);
+}
+
+function isActorUnmetCondition(sentence, actor) {
+  return new RegExp(`${actorReference(actor)}\\s+(?:did not|has not|have not|had not|failed to|lacks?|was not|were not)\\b`, "i").test(sentence);
+}
+
+function actionVerb(sentence, actor, expectation) {
+  const reference = actorReference(actor);
+  const expression = expectation
+    ? new RegExp(`${reference}\\s+(?:(?:(?:is|are|was|were)\\s+(?:required|expected)\\s+to|(?:is|are|was|were)\\s+responsible\\s+for|must|should)\\s+([a-z]+))|\\brecommended(?: that)?\\s+${reference}\\s+([a-z]+)`, "i")
+    : new RegExp(`${reference}\\s+(?:did not|has not|have not|had not|failed to|was not|were not)\\s+([a-z]+)`, "i");
+  const verb = sentence.match(expression)?.slice(1).find(Boolean)?.toLowerCase();
+  return verb?.replace(/(?:ed|ing|s)$/, "").replace(/e$/, "") || null;
+}
+
+function actionTokens(sentence, actor) {
+  let text = sentence.toLowerCase().replace(actor.name.toLowerCase(), " ");
+  if (actor.acronym) text = text.replace(new RegExp(`\\b${actor.acronym}\\b`, "gi"), " ");
+  return new Set((text.match(/[a-z]{5,}/g) || [])
+    .filter((token) => !ACTION_STOPWORDS.has(token))
+    .map((token) => (token.length > 5 && token.endsWith("s") ? token.slice(0, -1) : token).slice(0, 6)));
+}
+
+function accountabilityFromReviewedText(recordSummary, actorHint) {
+  const inspected = String(recordSummary || "").replace(/^The official report feed abstract states:\s*What GAO Found\s+/i, "");
+  const sentences = inspected.split(/(?<=[.!?])\s+(?=[A-Z])/).map((part) => part.trim()).filter((part) => /[.!?]$/.test(part));
+  const actors = actorNames(inspected);
+  const supported = actors.map((actor) => {
+    const expectations = sentences.filter((sentence) => isActorExpectation(sentence, actor));
+    const conditions = sentences.filter((sentence) => isActorUnmetCondition(sentence, actor));
+    const pair = expectations.flatMap((expectation) => conditions.map((condition) => ({ expectation, condition })))
+      .find(({ expectation, condition }) => {
+        if (expectation === condition) return false;
+        const expectedVerb = actionVerb(expectation, actor, true);
+        if (!expectedVerb || expectedVerb !== actionVerb(condition, actor, false)) return false;
+        const expected = actionTokens(expectation, actor);
+        const observed = actionTokens(condition, actor);
+        return [...expected].filter((token) => observed.has(token) && token !== expectedVerb.slice(0, 6)).length >= 2;
+      });
+    return { actor, expectation: pair?.expectation || expectations[0] || null, condition: pair?.condition || conditions[0] || null, pair };
+  });
+  const hinted = actorHint ? supported.find(({ actor }) => actor.name.toLowerCase() === actorHint.toLowerCase()) : null;
+  const matching = supported.filter(({ pair }) => pair);
+  const selected = hinted || (matching.length === 1 ? matching[0] : supported.length === 1 ? supported[0] : null);
+  if (!selected) return { actor: null, expectation: null, condition: null, gap: null, question: null };
+  const { actor, expectation, condition, pair } = selected;
+  return {
+    actor: actor.name,
+    expectation,
+    condition,
+    gap: pair ? `The reviewed material contrasts “${expectation}” with “${condition}”` : null,
+    question: pair ? `What explains the documented difference for ${actor.name} between “${expectation}” and “${condition}”?` : null,
+  };
+}
+
 export function deterministicFilter(item, source) {
   const text = `${item.title || ""} ${item.summary || ""}`;
   if (!item.title || !item.url) return { passes: false, reason: "missing_identity" };
@@ -94,7 +171,6 @@ function burdenFor(item, source, hasPrimary) {
 export async function buildCandidate(item, source, discoveredAt, runId) {
   const originalUrl = new URL(item.url, source.discovery_url).href;
   const normalizedUrl = normalizeDiscoveryUrl(originalUrl);
-  const institution = concise(item.institution || titleSubject(item.title, source), 300);
   const primaryUrl = item.primary_source_url ? normalizeDiscoveryUrl(item.primary_source_url) : null;
   const hasPrimary = Boolean(primaryUrl || source.primary_record);
   const reviewedMaterial = concise(item.reviewed_material, 300);
@@ -103,10 +179,11 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
   const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 1_500)) || (source.primary_record
     ? `${source.name} publicly listed “${concise(item.title, 500)}”${item.published_at ? ` with a release date of ${iso(item.published_at)}` : ""}. The underlying record has not yet been reviewed by Watchdesk.`
     : `${source.name} published “${concise(item.title, 500)}.” This is a discovery signal; the underlying primary record has not yet been established.`);
+  const evidence = reviewState === "NOT REVIEWED" ? null : accountabilityFromReviewedText(recordSummary, concise(item.institution, 300));
   const keySources = [{ url: normalizedUrl, role: source.primary_record ? "located primary record URL; contents not necessarily reviewed" : "discovery signal" }];
   if (primaryUrl && primaryUrl !== normalizedUrl) keySources.push({ url: primaryUrl, role: "identified primary record" });
   const titleFingerprint = await digest(`${source.id}\n${concise(item.title, 500)?.toLowerCase()}\n${item.document_id || ""}`);
-  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl, reviewState, reviewedMaterial }));
+  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl, reviewState, reviewedMaterial, evidence }));
   return {
     schema_version: WATCHDESK_VERSION,
     discovered_title: concise(item.title, 500),
@@ -115,13 +192,16 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     original_url: originalUrl,
     normalized_url: normalizedUrl,
     discovered_at: discoveredAt,
-    institution_or_system: institution,
+    institution_or_system: evidence?.actor || null,
     jurisdiction: concise(item.jurisdiction || source.jurisdiction, 200),
-    topic: concise(item.topic || source.topic, 200),
+    topic: concise(item.topic || titleSubject(item.title, source) || source.topic, 200),
     why_this_may_belong: concise(item.why_this_may_belong, 1_000) || `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`,
-    apparent_job: reviewState === "NOT REVIEWED" ? null : concise(item.apparent_job, 1_000),
+    apparent_job: concise(evidence?.expectation, 1_000),
     record_summary: recordSummary,
-    accountability_question: concise(item.accountability_question, 1_000) || (institution ? `Does the underlying record document an accountability gap involving ${institution}; if so, what requirement and facts support it?` : null),
+    observed_condition: concise(evidence?.condition, 1_000),
+    accountability_gap: concise(evidence?.gap, 1_000),
+    accountability_question: concise(evidence?.question, 1_000),
+    research_prompt: evidence?.question ? null : concise(item.accountability_question, 1_000),
     primary_record_url: hasPrimary ? (primaryUrl || normalizedUrl) : null,
     evidence_review_state: reviewState,
     reviewed_material: reviewState === "NOT REVIEWED" ? "Listing or discovery metadata only; underlying primary record not reviewed" : reviewedMaterial,
@@ -137,14 +217,13 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     published_story_relationship: publishedRelationship(item, normalizedUrl),
     monitoring_relationship: null,
     triage: null,
+    submission_readiness: null,
   };
 }
 
 export function fitGate(candidate, item) {
   const reasons = [];
-  if (!candidate.institution_or_system) reasons.push("institution_or_system_not_identified");
   if (!candidate.record_summary) reasons.push("record_not_identified");
-  if (!candidate.accountability_question) reasons.push("accountability_question_not_identified");
   if (item.public_relevance === false) reasons.push("public_relevance_not_established");
   if (item.evidence_sufficient === false) reasons.push("insufficient_evidence_to_begin_bounded_research");
   const researchWorthy = reasons.length === 0;
@@ -156,12 +235,26 @@ export function fitGate(candidate, item) {
   return { passes: reasons.length === 0, reasons, research_worthy: researchWorthy, substantive_evidence: substantiveEvidence, job_supported: Boolean(candidate.apparent_job) };
 }
 
+export function submissionReadiness(candidate, item, fit) {
+  const reasons = [];
+  if (!fit.passes) reasons.push("substantive_fit_not_established");
+  if (!candidate.institution_or_system) reasons.push("accountable_actor_not_established");
+  if (candidate.evidence_review_state === "NOT REVIEWED") reasons.push("substantive_material_not_reviewed");
+  if (!candidate.apparent_job) reasons.push("job_or_expectation_not_established");
+  if (!candidate.observed_condition) reasons.push("observed_condition_not_established");
+  if (!candidate.accountability_gap) reasons.push("accountability_gap_not_demonstrated");
+  if (!candidate.accountability_question) reasons.push("evidence_derived_question_not_established");
+  if (item.gap_defeated === true || RESOLVED_GAP.test(item.material_qualification || "") || RESOLVED_GAP.test(item.record_summary || "")) reasons.push("material_qualification_defeats_gap");
+  if (!["EXPLORE", "DEVELOP"].includes(candidate.triage?.recommendation)) reasons.push("rabbit_hole_does_not_support_submission");
+  return { ready: reasons.length === 0, reasons };
+}
+
 export function triageCandidate(candidate, item, fit) {
   if (!fit.passes && fit.research_worthy && !fit.substantive_evidence) return { recommendation: "EXPLORE", rationale: "Discovery lead only: inspect the underlying record for candidate-specific evidence before any Newsroom submission." };
   if (!fit.passes) return { recommendation: "STOP / NO ACTION", rationale: `Lightweight fit gate failed: ${fit.reasons.join(", ")}.` };
   if (item.route === true) return { recommendation: "ROUTE", rationale: "The item has a documentary signal but is better suited to another explicitly identified workflow or destination." };
   if (item.novelty === false) return { recommendation: "STOP / NO ACTION", rationale: "No material novelty or current accountability development is established." };
-  if (candidate.evidence_review_state === "REVIEWED" && candidate.apparent_job && item.record_summary) return { recommendation: "DEVELOP", rationale: "A reviewed primary record, supported governing Job, bounded record summary, and accountability question are present for human development review." };
+  if (candidate.evidence_review_state === "REVIEWED" && candidate.accountability_gap) return { recommendation: "DEVELOP", rationale: "A reviewed primary record contains a supported actor, expectation, observed condition, and gap for human development review." };
   if (candidate.primary_record_url) return { recommendation: "EXPLORE", rationale: "Bounded substantive material warrants human inspection; the full primary record may still need review." };
   return { recommendation: "EXPLORE", rationale: "The secondary signal appears relevant, but a primary record and governing Job still need to be established." };
 }
@@ -217,7 +310,7 @@ export async function runWatchdeskScan(env, options = {}) {
   const lookupDiscovery = options.lookupDiscovery || ((candidate) => findDiscoveryMatches(env, candidate.normalized_url, candidate.title_fingerprint));
   const lookupMonitoring = options.lookupMonitoring || ((candidate) => findMonitoringMatch(env, candidate.normalized_url));
   const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy));
-  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
+  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
   const sourceFailures = [];
   const sourceHealth = [];
   const survivors = [];
@@ -261,6 +354,7 @@ export async function runWatchdeskScan(env, options = {}) {
         metrics.failed_fit_gate += 1;
         if (fit.research_worthy && !fit.substantive_evidence) {
           candidate.triage = triageCandidate(candidate, item, fit);
+          candidate.submission_readiness = submissionReadiness(candidate, item, fit);
           discoveryLeads.push(candidate);
           metrics.discovery_leads += 1;
         }
@@ -268,8 +362,11 @@ export async function runWatchdeskScan(env, options = {}) {
       }
       metrics.fit_gate_survivors += 1;
       candidate.triage = triageCandidate(candidate, item, fit);
+      candidate.submission_readiness = submissionReadiness(candidate, item, fit);
       if (candidate.triage.recommendation === "STOP / NO ACTION") { metrics.rabbit_hole_stop += 1; continue; }
       if (candidate.triage.recommendation === "ROUTE") { metrics.routed += 1; continue; }
+      if (!candidate.submission_readiness.ready) { discoveryLeads.push(candidate); metrics.discovery_leads += 1; continue; }
+      metrics.submission_ready += 1;
       survivors.push(candidate);
     }
   }

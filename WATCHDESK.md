@@ -18,9 +18,10 @@ The stages run in this order:
 2. URL and listing normalization;
 3. deterministic filtering;
 4. deterministic deduplication against the run, D1 discovery history, published reporting, and monitoring;
-5. lightweight SBNS-fit gate, including candidate-specific substantive evidence;
-6. Rabbit Hole Triage for qualified candidates and non-submittable discovery leads;
-7. at most five submission-ready `origin=discovery` Newsroom intakes.
+5. lightweight SBNS-fit gate for substantive material actually inspected;
+6. Rabbit Hole Triage and a separate actor/Job/condition/gap submission-readiness gate;
+7. non-persistent discovery leads for research-worthy items that are not submission-ready;
+8. at most five submission-ready `origin=discovery` Newsroom intakes.
 
 No model, vector database, screenshot service, multimodal processor, deep-research chain, or publication automation is part of the routine scan. Zero candidates is a valid successful run. The limit of five is a ceiling, not a quota; additional survivors are reported as deferred rather than discarded.
 
@@ -55,7 +56,7 @@ Disable a source by setting its registry `enabled` value to `false`. A registry 
 
 No schema migration is needed. A submitted candidate reuses `intakes` with `origin=discovery`, `status=submitted`, and `analysis_status=not_started`. Watchdesk does not create or enqueue a formal analysis job. The normalized source URL is stored in `intakes.submitted_url`; the original discovered URL remains in the audit metadata.
 
-The existing `audit_events.metadata_json` stores the full candidate contract (version 1.1); no table or migration changes are needed:
+The existing `audit_events.metadata_json` stores the full candidate contract (version 1.2); no table or migration changes are needed:
 
 - schema version;
 - discovered title;
@@ -63,12 +64,14 @@ The existing `audit_events.metadata_json` stores the full candidate contract (ve
 - publication/release date, when established;
 - original and normalized URL;
 - discovery timestamp;
-- institution or system;
-- jurisdiction and topic;
+- accountable institution or system, or `null` when source material does not support one;
+- jurisdiction and separate topic (which may come from the report title);
 - `Why this may belong at SBNS`;
 - the apparent Job, or `null` when unsupported;
 - what the material actually inspected establishes, attributed to its source;
-- the accountability question;
+- the observed condition, accountability gap, and evidence-derived question, each nullable;
+- a separately labeled research prompt, if present, that cannot establish submission readiness;
+- submission readiness and reasons when withheld;
 - source class (provenance), primary-record URL/location, evidence review state, and inspected material as separate concepts;
 - key sources and their roles;
 - material qualification or counterevidence;
@@ -96,9 +99,13 @@ An exact source already used by published reporting is removed as known. A likel
 
 Deterministic filtering requires a documentary-record signal and an accountability-gap signal. Routine announcements, unsupported outrage, campaign advocacy, and ordinary record churn stop before the fit gate.
 
-The fit gate requires an identifiable institution/system, a bounded record summary, an accountability question, public relevance, and candidate-specific substantive material actually inspected. Generated Job/Record/Gap prompts, an official title, source reputation, and inferred topic do not themselves satisfy that evidentiary threshold. The Job is retained only when inspected material supports it; the system never invents one. A GAO feed abstract may provide bounded first-party evidence, but is explicitly marked partial, not full-report review.
+The substantive-fit gate checks a bounded record summary, public relevance, and candidate-specific material actually inspected. It is **not** the submission gate. An official title, source reputation, inferred topic, numbers, a generic question, or a `What GAO Found` heading do not establish an accountability gap. A GAO feed abstract may provide bounded first-party evidence, but is explicitly marked partial, not full-report review.
 
-A plausibly relevant listing without that evidence can appear as a non-persistent `discovery_lead` with an `EXPLORE` research recommendation. This is research-worthiness, **not** submission-readiness: it cannot enter Newsroom automatically. Leads are bounded in the run response and may be rediscovered later; Watchdesk does not persist them or create a new D1 workflow. `would_submit` and the five-item ceiling apply only after the substantive fit gate and Rabbit Hole Triage.
+The separate submission-readiness gate requires a named accountable actor, reviewed substantive material, an expectation or Job, an observed condition, a defensible gap between them, an evidence-derived question, no defeating material qualification, and an `EXPLORE` or `DEVELOP` recommendation. The deterministic extractor accepts a named actor and a matching expectation/negative-condition pair from the inspected text; ambiguous actors or mismatched actions are withheld. It is intentionally conservative: an abstract that lacks this explicit structure remains a lead even if a human might find a story after reading the full report. Neither misconduct nor specific-harm causation is required.
+
+A plausibly relevant listing **or substantive abstract** that lacks the full readiness structure can appear as a non-persistent `discovery_lead` with an `EXPLORE` recommendation. This is research-worthiness, **not** submission-readiness: it cannot enter Newsroom automatically. Leads are bounded in the run response and may be rediscovered later; Watchdesk does not persist them or create a new D1 workflow. The run distinguishes `fit_gate_survivors`, `discovery_leads`, `submission_ready`, `would_submit`, and `deferred_by_ceiling`. The five-item ceiling applies only to submission-ready candidates. GAO is not penalized for source balance.
+
+The first final-head read-only probe returned zero `STOP` recommendations. That was not a target or quota: routine and weak items were removed before triage, while promising but unready items were `EXPLORE` leads. Explicit novelty failures still `STOP`, and routed items still `ROUTE`; no artificial STOP count is generated.
 
 Allowed recommendations are `STOP / NO ACTION`, `EXPLORE`, `DEVELOP`, and `ROUTE`. These recommendations describe whether limited human attention appears warranted. They never populate `editorial_decisions`, never produce the formal analysis recommendation values `publish`, `hold`, or `reject`, and never trigger publication.
 
@@ -126,7 +133,7 @@ POST /api/admin/watchdesk/runs
 {}
 ```
 
-Use `{"dry_run":true}` to scan and return candidates without writing Newsroom intakes. A successful result reports sources checked, items discovered, deterministic rejects, known duplicates, fit-gate survivors/failures, non-submittable discovery leads, evidence-state distribution, Rabbit Hole stops, routed candidates, deferred candidates, candidates that would be submitted, and candidates actually submitted. Source failures and per-source health are listed separately. Zero submissions, including a run with only discovery leads, is a valid successful result.
+Use `{"dry_run":true}` to scan and return candidates without writing Newsroom intakes. A successful result reports sources checked, items discovered, deterministic rejects, known duplicates, fit-gate survivors/failures, non-submittable discovery leads, submission-ready candidates, evidence-state distribution, Rabbit Hole stops, routed candidates, deferred candidates, candidates that would be submitted, and candidates actually submitted. Source failures and per-source health are listed separately. Zero submissions, including a run with only discovery leads, is a valid successful result.
 
 In the Newsroom queue, filter origin to `discovery`, open a `DISCOVERY CANDIDATE`, and review the retained trigger, source, institution, preliminary Job and Record, accountability question, qualification, missing evidence, triage recommendation, burden, and relationships. Opening a candidate does not launch research.
 
