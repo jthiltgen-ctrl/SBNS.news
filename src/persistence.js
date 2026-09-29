@@ -170,14 +170,36 @@ function auditStatement(env, event) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(event.id, event.actor_type, event.actor_id, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
 }
 
-export async function storeDiscoveryCandidate(env, intake, audit) {
-  return database(env).batch([
-    database(env).prepare(`INSERT OR IGNORE INTO intakes
+export async function storeDiscoveryCandidate(env, intake, audit, runId, checkedAt = null) {
+  const db = database(env);
+  // D1 batch is one SQLite transaction. No lease takeover can interleave with
+  // this conditional insert and its audit/ledger statements.
+  return db.batch([
+    db.prepare(`INSERT OR IGNORE INTO intakes
       (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(intake.id, intake.origin, intake.submitted_url, intake.submitted_at, intake.submitter_note ?? null, intake.status, intake.analysis_status, intake.created_at, intake.updated_at),
-    database(env).prepare(`INSERT OR IGNORE INTO audit_events
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE EXISTS (
+        SELECT 1 FROM watchdesk_run_lock AS lock
+        JOIN watchdesk_runs AS run ON run.id = lock.run_id
+        WHERE lock.name = 'watchdesk' AND lock.run_id = ?
+          AND lock.expires_at > COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+          AND run.status = 'running' AND run.submitted_count < 5
+      )`).bind(intake.id, intake.origin, intake.submitted_url, intake.submitted_at, intake.submitter_note ?? null, intake.status, intake.analysis_status, intake.created_at, intake.updated_at, runId, checkedAt),
+    // changes() is the preceding statement's inserted-row count on this same
+    // transaction connection. An ignored candidate cannot create an audit.
+    db.prepare(`INSERT INTO audit_events
       (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(audit.id, audit.actor_type, audit.actor_id ?? null, audit.action, audit.entity_type, audit.entity_id, audit.metadata_json, audit.created_at),
+      SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(audit.id, audit.actor_type, audit.actor_id ?? null, audit.action, audit.entity_type, audit.entity_id, audit.metadata_json, audit.created_at),
+    // Recheck database time before the final statement. If the lease expired
+    // while the batch ran, the existing count CHECK aborts the whole batch.
+    db.prepare(`UPDATE watchdesk_runs
+      SET submitted_count = CASE WHEN EXISTS (
+          SELECT 1 FROM watchdesk_run_lock
+          WHERE name = 'watchdesk' AND run_id = ?
+            AND expires_at > COALESCE(?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ) THEN submitted_count + 1 ELSE -1 END,
+        submitted_ids_json = json_insert(submitted_ids_json, '$[#]', ?)
+      WHERE id = ? AND changes() = 1`).bind(runId, checkedAt, intake.id, runId),
   ]);
 }
 

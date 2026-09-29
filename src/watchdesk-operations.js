@@ -24,6 +24,13 @@ function publicRun(row) {
     completed_at: row.completed_at,
     status: row.status,
     metrics: row.metrics_json ? JSON.parse(row.metrics_json) : { ...EMPTY_METRICS, submitted_to_newsroom: row.submitted_count },
+    source_health: JSON.parse(row.source_health_json || "[]").map((source) => ({
+      source_id: concise(source.source_id, 80),
+      checked_at: concise(source.checked_at, 40),
+      status: source.status === "succeeded" ? "succeeded" : "failed",
+      items_parsed: Number.isInteger(source.items_parsed) && source.items_parsed >= 0 ? source.items_parsed : 0,
+      error: source.error ? concise(source.error, 120) : null,
+    })),
     source_failure_count: row.source_failure_count,
     submitted_count: row.submitted_count,
     submitted_intake_ids: JSON.parse(row.submitted_ids_json || "[]"),
@@ -89,19 +96,19 @@ export async function runWatchdeskOperation(env, options = {}) {
       .bind(clock(), runId, new Date(startedMs - WATCHDESK_LEASE_MS).toISOString()).run();
 
     const result = await executeScan(env, {
-      ...(options.scanOptions || {}), dryRun, requestedBy, runId,
+      ...(options.scanOptions || {}), dryRun, requestedBy, runId, leaseNow: options.now ? clock : null,
       beforeSubmit: async () => {
         const holder = await db.prepare("SELECT run_id, expires_at FROM watchdesk_run_lock WHERE name = 'watchdesk'").first();
         if (holder?.run_id !== runId || holder.expires_at <= clock()) throw new Error("WATCHDESK_LEASE_LOST");
       },
       onSubmitted: async (intake) => {
+        // The intake, audit, and ledger row have already committed together.
         submittedIds.push(intake.id);
-        const saved = await db.prepare("UPDATE watchdesk_runs SET submitted_count = ?, submitted_ids_json = ? WHERE id = ? AND status = 'running'")
-          .bind(submittedIds.length, JSON.stringify(submittedIds), runId).run();
-        if (saved.meta.changes !== 1) throw new Error("WATCHDESK_RUN_STATE_CONFLICT");
       },
     });
     if (submittedIds.length !== result.metrics.submitted_to_newsroom) throw new Error("WATCHDESK_SUBMISSION_COUNT_MISMATCH");
+    const ledger = await db.prepare("SELECT submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = ?").bind(runId).first();
+    if (ledger?.submitted_count !== submittedIds.length || JSON.stringify(JSON.parse(ledger.submitted_ids_json)) !== JSON.stringify(submittedIds)) throw new Error("WATCHDESK_SUBMISSION_COUNT_MISMATCH");
     const sourceHealth = (result.source_health || []).map((source) => ({
       source_id: source.source_id,
       checked_at: source.checked_at,
@@ -112,8 +119,8 @@ export async function runWatchdeskOperation(env, options = {}) {
     const status = result.status === "partial" ? "partial" : "success";
     const holder = await db.prepare("SELECT run_id, expires_at FROM watchdesk_run_lock WHERE name = 'watchdesk'").first();
     if (holder?.run_id !== runId || holder.expires_at <= clock()) throw new Error("WATCHDESK_LEASE_LOST");
-    const saved = await db.prepare("UPDATE watchdesk_runs SET status = ?, completed_at = ?, metrics_json = ?, source_health_json = ?, source_failure_count = ?, submitted_count = ?, submitted_ids_json = ? WHERE id = ? AND status = 'running'")
-      .bind(status, clock(), JSON.stringify(result.metrics), JSON.stringify(sourceHealth), result.source_failures?.length || 0, submittedIds.length, JSON.stringify(submittedIds), runId).run();
+    const saved = await db.prepare("UPDATE watchdesk_runs SET status = ?, completed_at = ?, metrics_json = ?, source_health_json = ?, source_failure_count = ? WHERE id = ? AND status = 'running'")
+      .bind(status, clock(), JSON.stringify(result.metrics), JSON.stringify(sourceHealth), result.source_failures?.length || 0, runId).run();
     if (saved.meta.changes !== 1) throw new Error("WATCHDESK_RUN_STATE_CONFLICT");
     return { ...result, status, trigger_type: triggerType };
   } catch (error) {
