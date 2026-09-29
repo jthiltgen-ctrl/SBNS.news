@@ -4,6 +4,7 @@
   "main": "src/admin-index.js",
   "compatibility_date": "2026-08-18",
   "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["0 14,23 * * *"] },
   "assets": {
     "binding": "ADMIN_ASSETS",
     "directory": "./public/admin-persistent",

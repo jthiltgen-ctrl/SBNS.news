@@ -1,5 +1,5 @@
 import { verifyAccessRequest, verifyAccessServiceRequest } from "./access-auth.js";
-import { runWatchdeskScan } from "./watchdesk.js";
+import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON } from "./watchdesk-operations.js";
 import {
   createDecisionWithAudit,
   createDraftWithAudit,
@@ -191,12 +191,13 @@ async function createDecision(request, env, actor, intakeId) {
 async function runWatchdesk(request, env, actor, executeWatchdesk) {
   const body = await readJson(request);
   if (Object.keys(body).some((key) => key !== "dry_run") || (body.dry_run != null && typeof body.dry_run !== "boolean")) throw new ApiError(400, "VALIDATION_ERROR", "Watchdesk run accepts only an optional dry_run boolean.");
-  return json(await executeWatchdesk(env, { dryRun: body.dry_run === true, requestedBy: actor.actorId }), 200);
+  return json(await executeWatchdesk(env, { triggerType: "manual", dryRun: body.dry_run === true, requestedBy: actor.actorId }), 200);
 }
 
 async function route(request, env, actor, executeWatchdesk) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/admin/session") return json({ ok: true, actor: { role: "editor", email: actor.email } });
+  if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/status") return json({ ok: true, schedule_configured: true, cron_utc: WATCHDESK_CRON, ...await getWatchdeskStatus(env) });
   if (request.method === "POST" && url.pathname === "/api/admin/watchdesk/runs") return runWatchdesk(request, env, actor, executeWatchdesk);
   if (url.pathname === "/api/admin/intakes" && request.method === "GET") {
     const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50));
@@ -216,7 +217,7 @@ async function route(request, env, actor, executeWatchdesk) {
   throw new ApiError(404, "NOT_FOUND", "Not Found");
 }
 
-export function createAdminHandler({ authenticate = verifyAccessRequest, authenticateMachine = verifyAccessServiceRequest, executeWatchdesk = runWatchdeskScan } = {}) {
+export function createAdminHandler({ authenticate = verifyAccessRequest, authenticateMachine = verifyAccessServiceRequest, executeWatchdesk = runWatchdeskOperation } = {}) {
   return async function handle(request, env) {
     const url = new URL(request.url);
     if (!url.pathname.startsWith("/api/")) return env.ADMIN_ASSETS.fetch(request);
@@ -234,6 +235,11 @@ export function createAdminHandler({ authenticate = verifyAccessRequest, authent
           revision: env.SBNS_ADMIN_BUILD_SHA,
         }), { headers: { ...JSON_HEADERS, "cache-control": "no-store" } });
       }
+      if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/health") {
+        await authenticateMachine(request, env);
+        if (!/^[0-9a-f]{40}$/.test(env?.SBNS_ADMIN_BUILD_SHA ?? "")) throw new ApiError(503, "BUILD_IDENTITY_UNAVAILABLE", "Admin build identity unavailable.");
+        return new Response(JSON.stringify(await getWatchdeskMachineHealth(env)), { headers: { ...JSON_HEADERS, "cache-control": "no-store" } });
+      }
       const actor = await authenticate(request, env);
       return await route(request, env, actor, executeWatchdesk);
     } catch (error) {
@@ -244,4 +250,17 @@ export function createAdminHandler({ authenticate = verifyAccessRequest, authent
 }
 
 const handle = createAdminHandler();
-export default { fetch: handle };
+export function createScheduledHandler({ executeWatchdesk = runWatchdeskOperation } = {}) {
+  return async function scheduled(controller, env) {
+    if (controller.cron !== WATCHDESK_CRON) throw new Error("UNEXPECTED_WATCHDESK_CRON");
+    try {
+      const result = await executeWatchdesk(env, { triggerType: "scheduled", dryRun: false, requestedBy: "system:watchdesk-schedule" });
+      console.log(JSON.stringify({ event: "watchdesk_scheduled_run", run_id: result.run_id, status: result.status, submitted: result.metrics?.submitted_to_newsroom ?? 0 }));
+    } catch (error) {
+      console.error(JSON.stringify({ event: "watchdesk_scheduled_failed", error_class: error?.name || "Error" }));
+      throw error;
+    }
+  };
+}
+
+export default { fetch: handle, scheduled: createScheduledHandler() };

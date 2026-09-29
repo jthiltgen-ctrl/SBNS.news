@@ -296,8 +296,8 @@ async function defaultSubmit(env, candidate, requestedBy) {
     metadata_json: JSON.stringify({ candidate, requested_by: requestedBy || null, authority_note: "Automated Watchdesk triage is not an editorial decision." }),
     created_at: timestamp,
   };
-  await storeDiscoveryCandidate(env, intake, audit);
-  return intake;
+  const writes = await storeDiscoveryCandidate(env, intake, audit);
+  return writes[0]?.meta?.changes === 1 ? intake : null;
 }
 
 export async function runWatchdeskScan(env, options = {}) {
@@ -377,7 +377,13 @@ export async function runWatchdeskScan(env, options = {}) {
   metrics.would_submit = selected.length;
   const submitted = [];
   if (!options.dryRun) {
-    for (const candidate of selected) submitted.push({ intake: await submit(candidate), candidate });
+    for (const candidate of selected) {
+      if (options.beforeSubmit) await options.beforeSubmit(candidate);
+      const intake = await submit(candidate);
+      if (!intake) { metrics.duplicates_known += 1; continue; }
+      submitted.push({ intake, candidate });
+      if (options.onSubmitted) await options.onSubmitted(intake);
+    }
     metrics.submitted_to_newsroom = submitted.length;
   }
   return {

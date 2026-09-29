@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAdminHandler } from "../src/admin-index.js";
+import { createAdminHandler, createScheduledHandler } from "../src/admin-index.js";
 import { fetchRegistrySource, parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
 import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, submissionReadiness, triageCandidate } from "../src/watchdesk.js";
+import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON, WATCHDESK_LEASE_MS } from "../src/watchdesk-operations.js";
 import { SOURCE_CLASSES, WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -39,10 +40,117 @@ async function check() {
     assert.equal(JSON.stringify(entry).match(/token|secret|password/i), null);
   }
   const config = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
-  assert.equal(/\bcrons?\b|scheduled\s*:/i.test(config), false);
+  assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql"]);
-  console.log("Watchdesk check passed: 5 curated sources, 19 synthetic fixture cases, official GAO RSS, no schedule, and no schema migration.");
+  assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql"]);
+  console.log("Watchdesk check passed: 5 curated sources, 19 synthetic fixture cases, official GAO RSS, bounded cron, and run-ledger migration.");
+}
+
+async function localOperationalDb() {
+  const { DatabaseSync } = await import("node:sqlite");
+  const sqlite = new DatabaseSync(":memory:");
+  for (const file of (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort()) sqlite.exec(await readFile(path.join(ROOT, "migrations", file), "utf8"));
+  return {
+    sqlite,
+    env: {
+      SBNS_ADMIN_BUILD_SHA: "a".repeat(40),
+      SBNS_DB: {
+        async batch(statements) {
+          sqlite.exec("BEGIN");
+          try { const results = []; for (const statement of statements) results.push(await statement.run()); sqlite.exec("COMMIT"); return results; }
+          catch (error) { sqlite.exec("ROLLBACK"); throw error; }
+        },
+        prepare(sql) {
+          return {
+            bind(...values) {
+              const statement = sqlite.prepare(sql);
+              return {
+                async run() { const result = statement.run(...values); return { meta: { changes: Number(result.changes) } }; },
+                async first() { return statement.get(...values) ?? null; },
+                async all() { return { results: statement.all(...values) }; },
+              };
+            },
+            async first() { return sqlite.prepare(sql).get() ?? null; },
+            async all() { return { results: sqlite.prepare(sql).all() }; },
+          };
+        },
+      },
+    },
+  };
+}
+
+async function operationalTests(pass, data, strongCase, zeroCase, failureSource) {
+  const { sqlite, env } = await localOperationalDb();
+  try {
+    const zeroOptions = { registry: registryFor(zeroCase.source_id), discoverSource: discovery(zeroCase.item), lookupDiscovery: async () => [], lookupMonitoring: async () => null, submitCandidate: async () => { throw new Error("dry run submitted"); } };
+    const zero = await runWatchdeskOperation(env, { runId: "ops_zero", triggerType: "manual", dryRun: true, requestedBy: "editor@example.com", now: () => FIXED_NOW, scanOptions: zeroOptions });
+    pass(zero.status === "success" && zero.metrics.submitted_to_newsroom === 0, "zero-result dry run must succeed without submission");
+    let status = await getWatchdeskStatus(env);
+    pass(status.latest.run_id === "ops_zero" && status.last_completed.status === "success" && status.latest.metrics.would_submit === 0, "zero-result run must persist in durable ledger");
+    pass(!JSON.stringify(status).includes("synthetic report summary"), "run ledger must not duplicate candidate evidence");
+
+    const realD1Options = { registry: registryFor(strongCase.source_id), discoverSource: discovery(strongCase.item), now: () => FIXED_NOW };
+    const realFirst = await runWatchdeskOperation(env, { runId: "ops_real_d1", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:10.000Z", scanOptions: realD1Options });
+    pass(realFirst.metrics.submitted_to_newsroom === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1, "live path must create exactly one discovery intake using D1");
+    pass(sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs").get().count === 0, "Watchdesk live path must not start formal analysis");
+    const ignoredDuplicate = await runWatchdeskOperation(env, { runId: "ops_ignored_duplicate", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: { ...realD1Options, lookupDiscovery: async () => [] } });
+    pass(ignoredDuplicate.metrics.submitted_to_newsroom === 0 && ignoredDuplicate.metrics.duplicates_known === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1, "ignored duplicate insert must not be reported as an actual submission");
+
+    const partial = await runWatchdeskOperation(env, { runId: "ops_partial", triggerType: "manual", dryRun: true, requestedBy: "editor@example.com", now: () => "2026-09-22T12:01:00.000Z", scanOptions: { registry: [failureSource, ...registryFor(strongCase.source_id)], discoverSource: async (entry) => { if (entry.id === failureSource.id) throw new Error("SYNTHETIC_SOURCE_UNAVAILABLE"); return [strongCase.item]; }, lookupDiscovery: async () => [], lookupMonitoring: async () => null } });
+    status = await getWatchdeskStatus(env);
+    pass(partial.status === "partial" && status.latest.status === "partial" && status.latest.source_failure_count === 1 && status.latest.metrics.would_submit === 1, "partial source failure must persist metrics and failure count");
+    pass(JSON.parse(sqlite.prepare("SELECT source_health_json FROM watchdesk_runs WHERE id = 'ops_partial'").get().source_health_json).length === 2, "ledger must preserve bounded source health");
+
+    let startHeld;
+    const started = new Promise((resolve) => { startHeld = resolve; });
+    let releaseHeld;
+    const held = new Promise((resolve) => { releaseHeld = resolve; });
+    const heldResult = { ok: true, status: "complete", metrics: { ...zero.metrics }, source_failures: [], source_health: [], submitted: [] };
+    const first = runWatchdeskOperation(env, { runId: "ops_held", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:02:00.000Z", executeScan: async () => { startHeld(); await held; return heldResult; } });
+    await started;
+    const overlapping = await runWatchdeskOperation(env, { runId: "ops_overlap", triggerType: "scheduled", requestedBy: "system:watchdesk-schedule", now: () => "2026-09-22T12:02:01.000Z", executeScan: async () => { throw new Error("overlap executed"); } });
+    pass(overlapping.status === "skipped-overlap" && sqlite.prepare("SELECT status FROM watchdesk_runs WHERE id = 'ops_overlap'").get().status === "skipped-overlap", "overlap must be skipped and durably recorded");
+    releaseHeld(); await first;
+
+    sqlite.prepare("INSERT INTO watchdesk_runs (id, trigger_type, dry_run, requested_by, started_at, status) VALUES ('ops_stale', 'scheduled', 0, 'system:watchdesk-schedule', '2026-09-22T11:00:00.000Z', 'running')").run();
+    sqlite.prepare("INSERT INTO watchdesk_run_lock VALUES ('watchdesk', 'ops_stale', '2026-09-22T11:00:00.000Z', '2026-09-22T11:30:00.000Z')").run();
+    await runWatchdeskOperation(env, { runId: "ops_recovered", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:03:00.000Z", executeScan: async () => heldResult });
+    pass(sqlite.prepare("SELECT status, error_class FROM watchdesk_runs WHERE id = 'ops_stale'").get().error_class === "STALE_LOCK_RECOVERED", "stale lock must recover and mark crashed run failed");
+    pass(sqlite.prepare("SELECT COUNT(*) AS count FROM watchdesk_run_lock").get().count === 0, "completed run must release lock");
+
+    let submitted = 0;
+    const stored = [];
+    const liveOptions = { registry: registryFor(strongCase.source_id), discoverSource: discovery(strongCase.item), lookupDiscovery: async (candidate) => stored.filter((row) => row.submitted_url === candidate.normalized_url), lookupMonitoring: async () => null, submitCandidate: async (candidate) => { const intake = { id: `synthetic-${++submitted}`, submitted_url: candidate.normalized_url }; stored.push(intake); return intake; } };
+    const scheduled = createScheduledHandler({ executeWatchdesk: (runtime, opts) => runWatchdeskOperation(runtime, { ...opts, runId: "ops_scheduled", now: () => "2026-09-22T12:04:00.000Z", scanOptions: liveOptions }) });
+    await scheduled({ cron: WATCHDESK_CRON }, env);
+    const scheduledRow = sqlite.prepare("SELECT trigger_type, dry_run, requested_by, metrics_json FROM watchdesk_runs WHERE id = 'ops_scheduled'").get();
+    pass(scheduledRow.trigger_type === "scheduled" && scheduledRow.dry_run === 0 && scheduledRow.requested_by === "system:watchdesk-schedule" && submitted === 1, "scheduled handler must use live bounded pipeline and nonhuman provenance");
+    pass(JSON.parse(scheduledRow.metrics_json).submitted_to_newsroom === 1, "scheduled submission count must reconcile with ledger");
+    const scheduledIds = sqlite.prepare("SELECT submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = 'ops_scheduled'").get();
+    pass(scheduledIds.submitted_count === 1 && JSON.parse(scheduledIds.submitted_ids_json)[0] === "synthetic-1", "ledger must retain only submitted intake IDs and count for reconciliation");
+    const manualRepeat = await runWatchdeskOperation(env, { runId: "ops_manual_repeat", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:05:00.000Z", scanOptions: liveOptions });
+    pass(manualRepeat.metrics.duplicates_known === 1 && manualRepeat.metrics.submitted_to_newsroom === 0 && submitted === 1, "manual and scheduled runs must share the same discovery dedupe");
+    const many = Array.from({ length: 7 }, (_, index) => ({ ...strongCase.item, title: `Synthetic Grant ${index}: Audit Found Controls Failed and Costs Overran Plan`, url: `https://www.gao.gov/products/gao-26-operational-cap-${index}` }));
+    const capped = await runWatchdeskOperation(env, { runId: "ops_capped", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:06:00.000Z", scanOptions: { ...liveOptions, discoverSource: async () => many, lookupDiscovery: async () => [] } });
+    pass(capped.metrics.submission_ready === 7 && capped.metrics.submitted_to_newsroom === 5 && capped.metrics.deferred_by_ceiling === 2, "live operational run must submit no more than five candidates");
+    pass(sqlite.prepare("SELECT submitted_count FROM watchdesk_runs WHERE id = 'ops_capped'").get().submitted_count === 5, "ledger must retain exact five-intake ceiling");
+    const aggregate = await getWatchdeskMachineHealth(env);
+    pass(aggregate.submitted_count === 5 && !JSON.stringify(aggregate).includes("synthetic-"), "machine health may expose the count but not submitted intake IDs");
+    let attempted = 0;
+    await assert.rejects(() => runWatchdeskOperation(env, { runId: "ops_partial_write", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:06:30.000Z", scanOptions: { ...liveOptions, discoverSource: async () => many.slice(0, 2), lookupDiscovery: async () => [], submitCandidate: async () => { if (++attempted === 2) throw new Error("SYNTHETIC_SECOND_SUBMISSION_FAILURE"); return { id: "synthetic-first" }; } } }), /SYNTHETIC_SECOND_SUBMISSION_FAILURE/);
+    const partialWrite = sqlite.prepare("SELECT status, submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = 'ops_partial_write'").get();
+    pass(partialWrite.status === "failed" && partialWrite.submitted_count === 1 && JSON.parse(partialWrite.submitted_ids_json)[0] === "synthetic-first", "failed run must retain actual prior intake write for reconciliation");
+    await assert.rejects(() => runWatchdeskOperation(env, { runId: "ops_failed", triggerType: "scheduled", now: () => "2026-09-22T12:07:00.000Z", executeScan: async () => { throw new Error("SYNTHETIC_PIPELINE_FAILURE"); } }), /SYNTHETIC_PIPELINE_FAILURE/);
+    pass(sqlite.prepare("SELECT status, error_message FROM watchdesk_runs WHERE id = 'ops_failed'").get().status === "failed", "pipeline failure must be durably recorded");
+    pass(sqlite.prepare("SELECT COUNT(*) AS count FROM watchdesk_run_lock").get().count === 0, "failed run must release lock");
+    await assert.rejects(() => runWatchdeskOperation(env, { runId: "ops_lost_lease", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:08:00.000Z", executeScan: async (_runtime, options) => { sqlite.prepare("UPDATE watchdesk_run_lock SET run_id = 'synthetic_other_holder'").run(); await options.beforeSubmit(); } }), /WATCHDESK_LEASE_LOST/);
+    pass(sqlite.prepare("SELECT status FROM watchdesk_runs WHERE id = 'ops_lost_lease'").get().status === "failed", "lost lease must stop before a candidate write and record failure");
+    sqlite.prepare("DELETE FROM watchdesk_run_lock WHERE run_id = 'synthetic_other_holder'").run();
+    const health = await getWatchdeskMachineHealth(env);
+    pass(health.worker === "sbns-admin" && health.cron_utc === WATCHDESK_CRON && health.latest_run_id === "ops_lost_lease" && health.latest_run_status === "failed", "machine health must expose only aggregate run state");
+    pass(!JSON.stringify(health).includes("editor@example.com") && !JSON.stringify(health).includes("synthetic-1"), "machine health must not reveal editor identity or intake ID");
+    pass(WATCHDESK_LEASE_MS === 30 * 60 * 1000, "overlap lease must remain bounded at thirty minutes");
+  } finally { sqlite.close(); }
 }
 
 async function test() {
@@ -217,10 +325,12 @@ async function test() {
   pass(["Evidence review state", "Primary-record location", "Topic", "Accountable institution", "Job / expectation", "Observed condition", "Accountability gap", "Submission readiness", "accountableInstitution(candidate)"].every((label) => adminUi.includes(label)), "admin candidate view must expose evidence, actor, Job, observed condition, gap, and readiness separately");
   pass(adminUi.includes('candidate.schema_version==="1.2"') && adminUi.includes("Unverified (legacy candidate)"), "legacy topic-like institution metadata must not be relabeled as a verified accountable actor");
   const adminConfig = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
-  pass(!/\bcrons?\b|scheduled\s*:/i.test(adminConfig), "Watchdesk must not activate a production schedule");
+  pass(JSON.parse(adminConfig).triggers.crons[0] === WATCHDESK_CRON, "Watchdesk schedule must match the bounded twice-daily cadence");
   pass(first.submitted.every((entry) => entry.intake_id.startsWith("synthetic-")), "test suite must use synthetic in-memory queue records only");
 
-  console.log(`Watchdesk tests passed: ${count} deterministic scenarios covering adapters, dates, normalization, fit, triage, dedupe, idempotency, queue context, limits, failures, and safety.`);
+  await operationalTests(pass, data, strongCase, zeroCase, failureSource);
+
+  console.log(`Watchdesk tests passed: ${count} deterministic scenarios covering adapters, dates, normalization, fit, triage, dedupe, run ledger, overlap, schedule, limits, failures, and safety.`);
 }
 
 async function dryRun() {

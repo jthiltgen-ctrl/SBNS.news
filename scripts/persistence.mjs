@@ -12,8 +12,8 @@ const MIGRATIONS = path.join(ROOT, "migrations");
 const DATABASE = "SBNS_DB";
 const WRANGLER = path.join(ROOT, "node_modules", "wrangler", "bin", "wrangler.js");
 const COMMANDS = new Set(["check", "test"]);
-const TABLES = ["analyses", "analysis_jobs", "audit_events", "claim_sources", "claims", "editorial_decisions", "editorial_drafts", "idempotency_records", "intakes", "monitoring_events", "publication_attempts", "sbns_meta", "sources"];
-const INDEXES = ["idx_analyses_intake_created", "idx_analysis_jobs_active_intake", "idx_analysis_jobs_intake_created", "idx_analysis_jobs_state_updated", "idx_audit_events_entity_created", "idx_claims_analysis", "idx_claims_intake", "idx_editorial_decisions_intake_decided", "idx_editorial_drafts_intake_revision", "idx_idempotency_actor_created", "idx_intakes_origin_submitted", "idx_intakes_status_updated", "idx_monitoring_events_status_checked", "idx_monitoring_events_story_checked", "idx_publication_attempts_intake_started", "idx_sources_intake", "idx_sources_normalized_url"];
+const TABLES = ["analyses", "analysis_jobs", "audit_events", "claim_sources", "claims", "editorial_decisions", "editorial_drafts", "idempotency_records", "intakes", "monitoring_events", "publication_attempts", "sbns_meta", "sources", "watchdesk_run_lock", "watchdesk_runs"];
+const INDEXES = ["idx_analyses_intake_created", "idx_analysis_jobs_active_intake", "idx_analysis_jobs_intake_created", "idx_analysis_jobs_state_updated", "idx_audit_events_entity_created", "idx_claims_analysis", "idx_claims_intake", "idx_editorial_decisions_intake_decided", "idx_editorial_drafts_intake_revision", "idx_idempotency_actor_created", "idx_intakes_origin_submitted", "idx_intakes_status_updated", "idx_monitoring_events_status_checked", "idx_monitoring_events_story_checked", "idx_publication_attempts_intake_started", "idx_sources_intake", "idx_sources_normalized_url", "idx_watchdesk_runs_started"];
 
 function fail(message) { throw new Error(message); }
 
@@ -62,7 +62,7 @@ async function schemaState(persist) {
 
 async function check() {
   const files = (await readdir(MIGRATIONS)).filter((file) => file.endsWith(".sql")).sort();
-  expect(same(files, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql"]), "Migration directory must contain 0001, 0002, and 0003");
+  expect(same(files, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql"]), "Migration directory must contain 0001 through 0004");
   const migration = await readFile(path.join(MIGRATIONS, files[0]), "utf8");
   expect(migration.includes("PRAGMA foreign_keys = ON;"), "Migration must enable foreign keys");
   expect(!migration.includes("submission_contacts"), "Phase 1 must not create submission_contacts");
@@ -70,9 +70,9 @@ async function check() {
     const state = await schemaState(persist);
     expect(same(state.tables, TABLES), `Unexpected tables: ${state.tables.join(", ")}`);
     expect(same(state.indexes, INDEXES), `Unexpected indexes: ${state.indexes.join(", ")}`);
-    expect(state.version === "3", "schema_version must be 3");
+    expect(state.version === "4", "schema_version must be 4");
   });
-  console.log(`Persistence schema valid: 3 migrations, ${TABLES.length} tables, ${INDEXES.length} indexes, schema_version 3.`);
+  console.log(`Persistence schema valid: 4 migrations, ${TABLES.length} tables, ${INDEXES.length} indexes, schema_version 4.`);
 }
 
 async function test() {
@@ -82,7 +82,7 @@ async function test() {
     const now = "2026-08-19T21:30:00.000Z";
 
     const version = await execute(persist, "SELECT value FROM sbns_meta WHERE key='schema_version'");
-    pass(version[0]?.value === "3", "schema_version test failed");
+    pass(version[0]?.value === "4", "schema_version test failed");
 
     await execute(persist, `INSERT INTO intakes VALUES ('intake-1','editor','https://example.com/source','${now}',NULL,'submitted','not_started','${now}','${now}')`);
     const intake = await execute(persist, "SELECT * FROM intakes WHERE id='intake-1'");
@@ -197,7 +197,22 @@ async function test() {
     const watchdeskJobs = await execute(persist, "SELECT COUNT(*) AS count FROM analysis_jobs WHERE intake_id='intake-watchdesk'");
     pass(watchdeskState[0]?.burden === "MODERATE" && watchdeskJobs[0]?.count === 0, "Watchdesk metadata must persist without a formal analysis job");
 
-    expect(count === 36, `Expected 36 persistence scenarios, got ${count}`);
+    await execute(persist, `INSERT INTO watchdesk_runs (id,trigger_type,dry_run,requested_by,started_at,completed_at,status,metrics_json) VALUES ('run-zero','scheduled',0,'system:watchdesk-schedule','${now}','${now}','success','{"submitted_to_newsroom":0}')`);
+    const zeroRun = await execute(persist, "SELECT status, json_extract(metrics_json, '$.submitted_to_newsroom') AS submitted FROM watchdesk_runs WHERE id='run-zero'");
+    pass(zeroRun[0]?.status === "success" && zeroRun[0]?.submitted === 0, "zero-result Watchdesk run must persist without an intake");
+    await expectSqlFailure("invalid Watchdesk status", persist, `INSERT INTO watchdesk_runs (id,trigger_type,dry_run,requested_by,started_at,status) VALUES ('run-bad','scheduled',0,'system:watchdesk-schedule','${now}','published')`);
+    count += 1;
+    await expectSqlFailure("Watchdesk submission ceiling", persist, `INSERT INTO watchdesk_runs (id,trigger_type,dry_run,requested_by,started_at,status,submitted_count) VALUES ('run-too-many','scheduled',0,'system:watchdesk-schedule','${now}','success',6)`);
+    count += 1;
+    await execute(persist, `INSERT INTO watchdesk_run_lock VALUES ('watchdesk','run-zero','${now}','2026-08-19T22:00:00.000Z')`);
+    await expectSqlFailure("duplicate Watchdesk lock", persist, `INSERT INTO watchdesk_run_lock VALUES ('watchdesk','run-other','${now}','2026-08-19T22:00:00.000Z')`);
+    count += 1;
+    await execute(persist, "INSERT INTO watchdesk_run_lock VALUES ('watchdesk','run-other','2026-08-19T21:45:00.000Z','2026-08-19T22:15:00.000Z') ON CONFLICT(name) DO UPDATE SET run_id=excluded.run_id, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE watchdesk_run_lock.expires_at <= excluded.acquired_at");
+    pass((await execute(persist, "SELECT run_id FROM watchdesk_run_lock"))[0]?.run_id === "run-zero", "active Watchdesk lease must refuse takeover");
+    await execute(persist, "INSERT INTO watchdesk_run_lock VALUES ('watchdesk','run-other','2026-08-19T22:01:00.000Z','2026-08-19T22:31:00.000Z') ON CONFLICT(name) DO UPDATE SET run_id=excluded.run_id, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE watchdesk_run_lock.expires_at <= excluded.acquired_at");
+    pass((await execute(persist, "SELECT run_id FROM watchdesk_run_lock"))[0]?.run_id === "run-other", "expired Watchdesk lease must permit bounded recovery");
+
+    expect(count === 42, `Expected 42 persistence scenarios, got ${count}`);
     console.log(`Persistence tests passed: ${count} local D1 scenarios, including constraints, relationships, immutable revisions, and audit safety.`);
   });
 }
