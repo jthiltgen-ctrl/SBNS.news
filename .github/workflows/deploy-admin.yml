@@ -9,6 +9,7 @@ on:
       - package.json
       - package-lock.json
       - wrangler.admin.jsonc
+      - migrations/**
       - src/**
       - public/admin-persistent/**
       - public/stories.json
@@ -66,7 +67,11 @@ jobs:
           for source in src/watchdesk.js src/watchdesk-adapters.js watchdesk/source-registry.js; do
             if [[ -f "$source" ]]; then node --check "$source"; fi
           done
+          node --check src/watchdesk-operations.js
           npx wrangler deploy --config wrangler.admin.jsonc --dry-run --keep-vars --var "SBNS_ADMIN_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Apply Watchdesk run-ledger migration
+        run: npx wrangler d1 migrations apply SBNS_DB --config wrangler.admin.jsonc --remote
 
       - name: Deploy admin Worker
         run: npx wrangler deploy --config wrangler.admin.jsonc --keep-vars --var "SBNS_ADMIN_BUILD_SHA:${GITHUB_SHA}"
@@ -143,4 +148,31 @@ jobs:
               process.exit(1);
             }
             console.log("Verified machine session denied: HTTP 401 AUTH_REQUIRED.");
+          '
+
+      - name: Verify protected Watchdesk operational health
+        shell: bash
+        env:
+          CLOUDFLARE_ACCESS_CLIENT_ID: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_ID }}
+          CLOUDFLARE_ACCESS_CLIENT_SECRET: ${{ secrets.CLOUDFLARE_ACCESS_CLIENT_SECRET }}
+        run: |
+          node --input-type=module -e '
+            const response = await fetch("https://sbns-admin.sbns-news.workers.dev/api/admin/watchdesk/health", {
+              signal: AbortSignal.timeout(15000),
+              headers: {
+                "CF-Access-Client-Id": process.env.CLOUDFLARE_ACCESS_CLIENT_ID,
+                "CF-Access-Client-Secret": process.env.CLOUDFLARE_ACCESS_CLIENT_SECRET,
+                "Cache-Control": "no-cache",
+              },
+            });
+            const health = await response.json();
+            const fields = ["ok", "worker", "revision", "schedule_configured", "cron_utc", "latest_run_id", "latest_run_time", "latest_run_status", "source_failure_count", "submitted_count"];
+            if (response.status !== 200 || health.ok !== true || health.worker !== "sbns-admin" ||
+                health.revision !== process.env.GITHUB_SHA || health.schedule_configured !== true ||
+                health.cron_utc !== "0 14,23 * * *" ||
+                JSON.stringify(Object.keys(health)) !== JSON.stringify(fields)) {
+              console.error("Protected Watchdesk operational health mismatch.");
+              process.exit(1);
+            }
+            console.log(`Verified protected Watchdesk health at revision ${health.revision}.`);
           '

@@ -273,7 +273,7 @@ function existingDisposition(candidate, rows) {
   return { duplicate: false, reason: null, related_intake_id: null };
 }
 
-async function defaultSubmit(env, candidate, requestedBy) {
+async function defaultSubmit(env, candidate, requestedBy, runId, leaseNow) {
   const timestamp = candidate.discovered_at;
   const intake = {
     id: `intake_discovery_${candidate.content_fingerprint.slice(0, 32)}`,
@@ -296,8 +296,18 @@ async function defaultSubmit(env, candidate, requestedBy) {
     metadata_json: JSON.stringify({ candidate, requested_by: requestedBy || null, authority_note: "Automated Watchdesk triage is not an editorial decision." }),
     created_at: timestamp,
   };
-  await storeDiscoveryCandidate(env, intake, audit);
-  return intake;
+  const checkedAt = leaseNow ? leaseNow() : null;
+  const writes = await storeDiscoveryCandidate(env, intake, audit, runId, checkedAt);
+  if (writes[0]?.meta?.changes === 1) {
+    if (writes[1]?.meta?.changes !== 1 || writes[2]?.meta?.changes !== 1) throw new Error("WATCHDESK_SUBMISSION_STATE_CONFLICT");
+    return intake;
+  }
+  const holder = await env.SBNS_DB.prepare(`SELECT lock.run_id, lock.expires_at, run.status, run.submitted_count
+    FROM watchdesk_run_lock AS lock JOIN watchdesk_runs AS run ON run.id = lock.run_id
+    WHERE lock.name = 'watchdesk'`).first();
+  if (holder?.run_id !== runId || holder.expires_at <= (leaseNow ? leaseNow() : new Date().toISOString()) || holder.status !== "running") throw new Error("WATCHDESK_LEASE_LOST");
+  if (holder.submitted_count >= MAX_SUBMISSIONS_PER_RUN) throw new Error("WATCHDESK_SUBMISSION_LIMIT");
+  return null;
 }
 
 export async function runWatchdeskScan(env, options = {}) {
@@ -309,7 +319,7 @@ export async function runWatchdeskScan(env, options = {}) {
   const discover = options.discoverSource || ((source) => fetchRegistrySource(source, options.fetchImpl || fetch));
   const lookupDiscovery = options.lookupDiscovery || ((candidate) => findDiscoveryMatches(env, candidate.normalized_url, candidate.title_fingerprint));
   const lookupMonitoring = options.lookupMonitoring || ((candidate) => findMonitoringMatch(env, candidate.normalized_url));
-  const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy));
+  const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy, runId, options.leaseNow));
   const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
   const sourceFailures = [];
   const sourceHealth = [];
@@ -377,7 +387,13 @@ export async function runWatchdeskScan(env, options = {}) {
   metrics.would_submit = selected.length;
   const submitted = [];
   if (!options.dryRun) {
-    for (const candidate of selected) submitted.push({ intake: await submit(candidate), candidate });
+    for (const candidate of selected) {
+      if (options.beforeSubmit) await options.beforeSubmit(candidate);
+      const intake = await submit(candidate);
+      if (!intake) { metrics.duplicates_known += 1; continue; }
+      submitted.push({ intake, candidate });
+      if (options.onSubmitted) await options.onSubmitted(intake);
+    }
     metrics.submitted_to_newsroom = submitted.length;
   }
   return {
@@ -392,6 +408,6 @@ export async function runWatchdeskScan(env, options = {}) {
     candidates: selected,
     deferred_candidates: deferred.map((candidate) => ({ title: candidate.discovered_title, normalized_url: candidate.normalized_url, source_id: candidate.source.id, triage: candidate.triage.recommendation, content_fingerprint: candidate.content_fingerprint })),
     submitted: submitted.map(({ intake, candidate }) => ({ intake_id: intake.id, title: candidate.discovered_title, triage: candidate.triage.recommendation })),
-    message: selected.length ? (options.dryRun ? `${selected.length} candidate${selected.length === 1 ? "" : "s"} would be submitted to Newsroom.` : `${selected.length} candidate${selected.length === 1 ? "" : "s"} submitted to Newsroom.`) : discoveryLeads.length ? "No submission-ready candidates; discovery leads require more evidence." : "No worthwhile SBNS discovery candidates this run.",
+    message: options.dryRun && selected.length ? `${selected.length} candidate${selected.length === 1 ? "" : "s"} would be submitted to Newsroom.` : submitted.length ? `${submitted.length} candidate${submitted.length === 1 ? "" : "s"} submitted to Newsroom.` : selected.length ? "No new discovery intakes; selected candidates were already known." : discoveryLeads.length ? "No submission-ready candidates; discovery leads require more evidence." : "No worthwhile SBNS discovery candidates this run.",
   };
 }

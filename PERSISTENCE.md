@@ -8,13 +8,13 @@ Cloudflare D1 stores editorial workflow state. Git remains the published-story s
 
 A D1 approval record does not prove that a repository PR was opened, merged, deployed, or verified.
 
-## Staging database
+## Editorial database (historical staging name)
 
 - Database: `sbns-editorial-staging`
 - Worker binding: `SBNS_DB`
 - Worker access: `env.SBNS_DB`
 - Migration directory: `migrations/`
-- Production database: none
+- Production use: the admin Worker currently binds this historically named database
 - Preview database: none
 
 ## Local and remote rule
@@ -30,14 +30,16 @@ npm run persistence:test
 
 The persistence scripts create isolated temporary local state with `--local --persist-to` and remove it after each run.
 
-Remote staging migration is an explicit post-merge rollout action only:
+Remote migrations are not part of ordinary validation. For an approved admin
+deployment, `.github/workflows/deploy-admin.yml` applies pending migrations
+before deploying the Worker; a migration failure stops that deployment. To
+inspect pending migrations without changing remote state:
 
 ```sh
 npx wrangler d1 migrations list SBNS_DB --remote
-npx wrangler d1 migrations apply SBNS_DB --remote
 ```
 
-Do not run the remote apply command during PR development or from `npm run check`.
+Do not run remote apply during PR development or from `npm run check`.
 
 ## Schema overview
 
@@ -61,14 +63,17 @@ No `submission_contacts` table exists in Phase 1.
 
 ## Watchdesk discovery reuse
 
-Watchdesk requires no new table or migration. Submitted candidates reuse
+Watchdesk candidate evidence still reuses
 `intakes.origin = 'discovery'`; the normalized public source URL is the intake
 URL, and the complete structured candidate is stored in the existing
 `audit_events.metadata_json` record with action
 `watchdesk.candidate_submitted`. Deterministic content fingerprints and
 `INSERT OR IGNORE` make repeated unchanged submissions idempotent. Watchdesk
 does not create an `analysis_jobs` row, an editorial decision, a publication
-attempt, or a monitoring event.
+attempt, or a monitoring event. Migration `0004_watchdesk_runs.sql` creates
+`watchdesk_runs` and `watchdesk_run_lock` for operational history and bounded
+no-overlap control. It advances `schema_version` to 4; it does not duplicate
+candidate evidence or alter existing editorial records.
 
 See [WATCHDESK.md](WATCHDESK.md) for the candidate contract and operating
 boundary.

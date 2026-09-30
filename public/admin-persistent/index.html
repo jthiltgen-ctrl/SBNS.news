@@ -12,6 +12,15 @@
   <header><p class="eyebrow">SBNS EDITORIAL DESK</p><h1>Persistent Queue</h1><p id="actor">Authenticating…</p></header>
   <main>
     <section id="queue-view">
+      <section class="panel" aria-labelledby="watchdesk-heading">
+        <h2 id="watchdesk-heading">Watchdesk</h2>
+        <p>Scheduled public-source discovery: 14:00 and 23:00 UTC daily (approximately morning and late afternoon/evening Central).</p>
+        <div id="watchdesk-status" role="status">Loading Watchdesk status…</div>
+        <div id="watchdesk-latest"></div>
+        <div class="watchdesk-controls"><button id="watchdesk-dry" type="button">Run dry Watchdesk</button><button id="watchdesk-live" type="button">Run live Watchdesk</button></div>
+        <div id="watchdesk-result" role="status"></div>
+        <details><summary>Recent run history</summary><div id="watchdesk-history"></div></details>
+      </section>
       <div class="toolbar"><select id="status-filter" aria-label="Filter by workflow status"><option value="">All statuses</option><option>submitted</option><option>queued</option><option>analyzing</option><option>review_ready</option><option>failed</option><option>held</option><option>rejected</option><option>approved</option></select><select id="origin-filter" aria-label="Filter by intake origin"><option value="">All origins</option><option>editor</option><option>visitor</option><option>monitor</option><option>discovery</option></select><button id="new-intake">New Intake</button></div>
       <div id="queue-status" role="status"></div><div id="queue"></div>
     </section>

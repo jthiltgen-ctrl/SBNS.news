@@ -101,7 +101,7 @@ async function machineHealthTests(){
   const jwk=await exportJWK(publicKey);jwk.kid="health-test";jwk.alg="RS256";
   const local=createLocalJWKSet({keys:[jwk]});
   const verifier=(token,_remote,config)=>jwtVerify(token,local,config);
-  const env={ACCESS_TEAM_DOMAIN:"https://team.cloudflareaccess.com",ACCESS_AUD:"admin-audience",SBNS_ADMIN_BUILD_SHA:"a".repeat(40)};
+  const env={ACCESS_TEAM_DOMAIN:"https://team.cloudflareaccess.com",ACCESS_AUD:"admin-audience",SBNS_ADMIN_BUILD_SHA:"a".repeat(40),SBNS_DB:{prepare:()=>({first:async()=>null,all:async()=>({results:[]})})}};
   const sign=(claims,options={})=>new SignJWT(claims).setProtectedHeader({alg:"RS256",kid:"health-test"})
     .setIssuer(options.issuer??env.ACCESS_TEAM_DOMAIN).setAudience(options.audience??env.ACCESS_AUD)
     .setIssuedAt().setExpirationTime(options.exp??"5m").sign(privateKey);
@@ -124,11 +124,21 @@ async function machineHealthTests(){
   response=await handler(request("/api/admin/health",{headers:{"CF-Access-Client-Id":"synthetic.access","CF-Access-Client-Secret":"untrusted"}}),env);
   pass(response.status===401,"caller-supplied service headers do not authorize health");
   pass((await callHealth("/api/admin/health",human)).status===401,"human JWT does not use machine health");
+  response=await callHealth("/api/admin/watchdesk/health",machine);
+  const watchdeskHealth=await response.json();
+  pass(response.status===200&&response.headers.get("cache-control")==="no-store"&&watchdeskHealth.cron_utc==="0 14,23 * * *"&&watchdeskHealth.latest_run_id===null,"machine token sees only aggregate Watchdesk health");
+  pass(!("actor" in watchdeskHealth)&&!("intakes" in watchdeskHealth)&&!("candidates" in watchdeskHealth),"machine health excludes editorial identities and candidate details");
+  pass((await callHealth("/api/admin/watchdesk/health",human)).status===401,"human JWT does not use machine Watchdesk health");
+  pass((await callHealth("/api/admin/watchdesk/health",null)).status===401,"Watchdesk machine health rejects missing Access JWT");
+  pass((await callHealth("/api/admin/watchdesk/health",machine,env,"POST")).status===401,"Watchdesk machine health is GET only");
   response=await callHealth("/api/admin/session",human);
   pass(response.status===200&&(await response.json()).actor.email==="editor@example.com","human session remains available");
   pass((await callHealth("/api/admin/session",machine)).status===401,"service token cannot become an editor session");
   pass((await callHealth("/api/admin/intakes",machine)).status===401,"service token cannot read editorial queue");
   pass((await callHealth("/api/admin/intakes",machine,env,"POST")).status===401,"service token cannot write editorial queue");
+  pass((await callHealth("/api/admin/watchdesk/status",machine)).status===401,"service token cannot read the human Watchdesk status route");
+  response=await callHealth("/api/admin/watchdesk/status",human);
+  pass(response.status===200&&(await response.json()).latest===null,"human editor can read Watchdesk status without private queue enumeration");
   response=await handler(request("/api/admin/watchdesk/runs",{method:"POST",body:{dry_run:false},headers:headers(machine)}),env);
   pass(response.status===401&&watchdeskCalls===0,"service token cannot invoke a writing Watchdesk run");
   response=await handler(request("/api/admin/watchdesk/runs",{method:"POST",body:{dry_run:true},headers:headers(human)}),env);
