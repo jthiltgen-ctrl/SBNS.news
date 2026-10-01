@@ -15,18 +15,18 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const command = process.argv[2] || "check";
 
 async function check() {
-  const migration = await readFile(path.join(ROOT, "migrations/0007_storyqueue_email_intake.sql"), "utf8");
   const relay = await readFile(path.join(ROOT, "integrations/storyqueue/greengeeks-pipe.php"), "utf8");
   const wrapper = await readFile(path.join(ROOT, "src/admin-entry.js"), "utf8");
+  const persistence = await readFile(path.join(ROOT, "src/storyqueue-persistence.js"), "utf8");
   const wrangler = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
-  assert.match(migration, /CREATE TABLE storyqueue_messages/);
-  assert.match(migration, /schema_version' AND value = '6'/);
   assert.match(relay, /No raw MIME or attachment bytes leave the mail host/);
   assert.match(relay, /MAX_URLS = 10/);
   assert.match(wrapper, /\/api\/internal\/storyqueue\/email/);
   assert.match(wrapper, /SENDER_NOT_AUTHORIZED/);
+  assert.match(persistence, /storyqueue\.email_received/);
+  assert.match(persistence, /entity_type = 'storyqueue_message'/);
   assert.match(wrangler, /src\/admin-entry\.js/);
-  console.log("Story Queue check passed: bounded email bridge, migration, relay, and admin wrapper present.");
+  console.log("Story Queue check passed: bounded email bridge, audit-ledger provenance, relay, and admin wrapper present.");
 }
 
 async function test() {
