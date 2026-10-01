@@ -14,11 +14,11 @@
     "recommendation": "reject",
     "recommendation_confidence": "high",
     "recommendation_reasons": [
-      "The available account describes only isolated individual conduct."
+      "The available account describes only isolated individual conduct and establishes no broader public-accountability condition."
     ],
     "hold_reasons": [],
     "reject_reasons": [
-      "Isolated individual conduct without broader accountability relevance."
+      "Isolated individual conduct without broader institutional or public-accountability relevance."
     ],
     "category": "Local",
     "category_confidence": "medium",
@@ -37,7 +37,9 @@
         "source_type": "other",
         "authority": "Synthetic test fixture with no real-world subject",
         "recency": "Synthetic current-date fixture",
-        "claims_supported": ["claim-isolated-rudeness"]
+        "claims_supported": [
+          "claim-isolated-rudeness"
+        ]
       }
     ],
     "claims": [
@@ -46,7 +48,9 @@
         "claim_text": "In a synthetic scenario, one public employee behaved rudely during one isolated interaction.",
         "material": true,
         "verification_status": "verified",
-        "source_refs": ["synthetic-incident-account"],
+        "source_refs": [
+          "synthetic-incident-account"
+        ],
         "qualification": "No policy, repeated practice, supervisory failure, institutional consequence, or systemic issue is demonstrated.",
         "conflict": false
       }
@@ -67,7 +71,7 @@
     "severity_rationale": null,
     "kicker_target": null,
     "kicker_safety": "not_applicable",
-    "why_sbns": "The isolated conduct does not establish an institutional or systemic failure and therefore does not fit SBNS.",
+    "why_sbns": "The isolated conduct does not establish a broader institutional nexus, recurring pattern, displaced burden, public-resource issue, accountability gap, or other consequential SBNS accountability condition.",
     "do_not_claim": [
       "Do not generalize one employee’s synthetic isolated conduct into a policy, practice, or supervisory failure."
     ],
