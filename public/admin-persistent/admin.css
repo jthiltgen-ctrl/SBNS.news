@@ -249,3 +249,10 @@ textarea { min-height: 8rem; resize: vertical; }
 }
 
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+.source-learning-card { border-top: 1px solid #71685e; padding: .7rem 0; display: grid; gap: .35rem; }
+.source-learning-card p { margin: 0; color: #d2c7b9; font: .82rem/1.4 'Barlow Condensed', Arial, sans-serif; }
+.source-learning-card > strong { font: 700 .95rem 'Barlow Condensed', Arial, sans-serif; overflow-wrap: anywhere; }
+.source-learning-card button { width: 100%; border: 1px solid #8f8274; background: #f2ede3; color: #201c19; padding: .45rem .55rem; font: 700 .82rem 'Barlow Condensed', Arial, sans-serif; text-align: left; }
+.semantics-panel { border-top: 5px solid var(--wire); }
+.semantics-panel .warning { border-left-color: var(--wire); }
