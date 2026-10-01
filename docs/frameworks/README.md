@@ -118,6 +118,7 @@ A future roadmap item does not authorize deployment.
 - docs/CURRENT-STATE.md — living project, website, deployment-evidence, content-inventory, risk, and operating-transition baseline.
 - docs/AUDIENCE-OPTION-VALIDATION.md — current business/audience/growth operating plan for the October–December 2026 validation phase.
 - docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md — bounded post-build editorial-production sprint brief.
+- docs/SEMANTICS-CONTROL.md — active control preventing drift between research meaning, editorial claims, and search/discovery language.
 
 ### Historical design contracts with continuing principles
 
