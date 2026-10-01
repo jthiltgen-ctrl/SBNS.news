@@ -17,8 +17,29 @@ function auditStatement(env, event) {
     .bind(event.id, event.actor_type, event.actor_id ?? null, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
 }
 
+function parseMessageRow(row) {
+  if (!row) return null;
+  let metadata = {};
+  try { metadata = JSON.parse(row.metadata_json || "{}"); } catch { metadata = {}; }
+  return {
+    id: row.id,
+    message_key: row.entity_id,
+    message_id: metadata.message_id ?? null,
+    sender_email: metadata.sender_email ?? null,
+    recipient_email: metadata.recipient_email ?? null,
+    subject: metadata.subject ?? null,
+    received_at: metadata.received_at ?? row.created_at,
+    url_count: Number(metadata.url_count || 0),
+    intake_ids_json: JSON.stringify(metadata.intake_ids || []),
+    created_at: row.created_at,
+  };
+}
+
 export async function getStoryqueueMessageByKey(env, messageKey) {
-  return database(env).prepare("SELECT * FROM storyqueue_messages WHERE message_key = ?").bind(messageKey).first();
+  const row = await database(env).prepare(`SELECT * FROM audit_events
+    WHERE entity_type = 'storyqueue_message' AND entity_id = ? AND action = 'storyqueue.email_received'
+    ORDER BY created_at DESC, id DESC LIMIT 1`).bind(messageKey).first();
+  return parseMessageRow(row);
 }
 
 export async function findLatestIntakeBySubmittedUrl(env, submittedUrl) {
@@ -27,13 +48,25 @@ export async function findLatestIntakeBySubmittedUrl(env, submittedUrl) {
 
 export async function storeStoryqueueEmailBatch(env, { message, newRecords }) {
   const db = database(env);
-  const statements = [
-    db.prepare(`INSERT INTO storyqueue_messages
-      (id, message_key, message_id, sender_email, recipient_email, subject, received_at, note_excerpt, url_count, intake_ids_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(message.id, message.message_key, message.message_id ?? null, message.sender_email, message.recipient_email, message.subject ?? null,
-        message.received_at, message.note_excerpt ?? null, message.url_count, JSON.stringify(message.intake_ids), message.created_at),
-  ];
+  const statements = [auditStatement(env, {
+    id: message.id,
+    actor_type: "system",
+    actor_id: "storyqueue-email-bridge",
+    action: "storyqueue.email_received",
+    entity_type: "storyqueue_message",
+    entity_id: message.message_key,
+    metadata_json: JSON.stringify({
+      message_id: message.message_id ?? null,
+      sender_email: message.sender_email,
+      recipient_email: message.recipient_email,
+      subject: message.subject ?? null,
+      received_at: message.received_at,
+      note_excerpt: message.note_excerpt ?? null,
+      url_count: message.url_count,
+      intake_ids: message.intake_ids,
+    }),
+    created_at: message.created_at,
+  })];
   for (const record of newRecords) {
     statements.push(
       db.prepare(`INSERT INTO intakes
@@ -49,17 +82,19 @@ export async function storeStoryqueueEmailBatch(env, { message, newRecords }) {
 }
 
 export async function listRecentStoryqueueMessages(env, limit = 20) {
-  const result = await database(env).prepare(`SELECT id, message_key, message_id, sender_email, recipient_email, subject, received_at,
-    url_count, intake_ids_json, created_at FROM storyqueue_messages ORDER BY received_at DESC, id DESC LIMIT ?`).bind(limit).all();
-  return result.results;
+  const result = await database(env).prepare(`SELECT * FROM audit_events
+    WHERE entity_type = 'storyqueue_message' AND action = 'storyqueue.email_received'
+    ORDER BY created_at DESC, id DESC LIMIT ?`).bind(limit).all();
+  return result.results.map(parseMessageRow);
 }
 
 export async function storyqueueCounts(env) {
   const row = await database(env).prepare(`SELECT
     COUNT(*) AS message_count,
-    COALESCE(SUM(url_count), 0) AS url_count,
-    MAX(received_at) AS last_received_at
-    FROM storyqueue_messages`).first();
+    COALESCE(SUM(CAST(json_extract(metadata_json, '$.url_count') AS INTEGER)), 0) AS url_count,
+    MAX(COALESCE(json_extract(metadata_json, '$.received_at'), created_at)) AS last_received_at
+    FROM audit_events
+    WHERE entity_type = 'storyqueue_message' AND action = 'storyqueue.email_received'`).first();
   return {
     message_count: Number(row?.message_count || 0),
     url_count: Number(row?.url_count || 0),
