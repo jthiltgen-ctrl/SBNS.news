@@ -7,6 +7,15 @@ async function run(env, sql, values) {
   return database(env).prepare(sql).bind(...values).run();
 }
 
+function sourceHostname(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return null;
+  }
+}
+
 export async function createIntake(env, intake) {
   return run(env, `INSERT INTO intakes
     (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
@@ -275,6 +284,8 @@ export async function markAnalysisFailed(env, jobId, intakeId, timestamp, code, 
 }
 
 export async function completeAnalysis(env, { intakeId, jobId, source, analysisRow, claims, links, timestamp }) {
+  const hostname = sourceHostname(source.normalized_url || source.url);
+  const qualifiesForSourceLearning = analysisRow.recommendation !== "reject" && source.verification_status !== "unverified";
   const statements = [
     database(env).prepare(`INSERT INTO sources
       (id,intake_id,url,normalized_url,name,source_type,verification_status,fetched_at,content_hash,source_title,published_at,updated_at,extracted_text,extraction_format,created_at)
@@ -283,6 +294,29 @@ export async function completeAnalysis(env, { intakeId, jobId, source, analysisR
       (id,intake_id,schema_version,recommendation,recommendation_confidence,category,severity,systemic_failure,raw_analysis_json,created_at,superseded_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,NULL)`).bind(analysisRow.id, intakeId, analysisRow.schema_version, analysisRow.recommendation, analysisRow.recommendation_confidence, analysisRow.category, analysisRow.severity, analysisRow.systemic_failure ? 1 : 0, analysisRow.raw_analysis_json, timestamp),
   ];
+  if (hostname) statements.push(database(env).prepare(`
+    INSERT INTO watchdesk_source_candidates
+      (hostname, representative_url, first_intake_id, first_origin, first_seen_at,
+       last_intake_id, last_origin, last_seen_at, observation_count, qualifying_intake_count, status)
+    SELECT ?, ?, intakes.id, intakes.origin, ?, intakes.id, intakes.origin, ?, 1, ?, ?
+    FROM intakes WHERE intakes.id = ?
+    ON CONFLICT(hostname) DO UPDATE SET
+      representative_url = excluded.representative_url,
+      last_intake_id = excluded.last_intake_id,
+      last_origin = excluded.last_origin,
+      last_seen_at = excluded.last_seen_at,
+      observation_count = watchdesk_source_candidates.observation_count + 1,
+      qualifying_intake_count = watchdesk_source_candidates.qualifying_intake_count + ?,
+      status = CASE
+        WHEN watchdesk_source_candidates.status IN ('approved', 'rejected') THEN watchdesk_source_candidates.status
+        WHEN watchdesk_source_candidates.qualifying_intake_count + ? > 0 THEN 'eligible'
+        ELSE watchdesk_source_candidates.status
+      END
+  `).bind(
+    hostname, source.normalized_url || source.url, timestamp, timestamp,
+    qualifiesForSourceLearning ? 1 : 0, qualifiesForSourceLearning ? "eligible" : "observed",
+    intakeId, qualifiesForSourceLearning ? 1 : 0, qualifiesForSourceLearning ? 1 : 0
+  ));
   for (const claim of claims) statements.push(database(env).prepare("INSERT INTO claims (id,intake_id,analysis_id,claim_text,material,verification_status,qualification,created_at) VALUES (?,?,?,?,?,?,?,?)").bind(claim.id, intakeId, analysisRow.id, claim.claim_text, claim.material ? 1 : 0, claim.verification_status, claim.qualification, timestamp));
   for (const link of links) statements.push(database(env).prepare("INSERT INTO claim_sources (claim_id,source_id,intake_id) VALUES (?,?,?)").bind(link.claim_id, source.id, intakeId));
   statements.push(
@@ -311,4 +345,66 @@ export async function createDecisionWithAudit(env, decision, status, audit, idem
     database(env).prepare("UPDATE intakes SET status = ?, updated_at = ? WHERE id = ?").bind(status, decision.decided_at, decision.intake_id),
     auditStatement(env, audit), idempotencyStatement(env, idempotency),
   ]);
+}
+
+export async function listWatchdeskSourceCandidates(env, limit = 100) {
+  const result = await database(env).prepare(`
+    SELECT * FROM watchdesk_source_candidates
+    ORDER BY CASE status WHEN 'eligible' THEN 0 WHEN 'approved' THEN 1 WHEN 'observed' THEN 2 ELSE 3 END,
+      qualifying_intake_count DESC, last_seen_at DESC, hostname ASC
+    LIMIT ?
+  `).bind(limit).all();
+  return result.results;
+}
+
+export async function getWatchdeskSourceCandidate(env, hostname) {
+  return database(env).prepare("SELECT * FROM watchdesk_source_candidates WHERE hostname = ?").bind(hostname).first();
+}
+
+export async function decideWatchdeskSourceCandidate(env, candidate, auditEvent) {
+  return database(env).batch([
+    database(env).prepare(`
+      UPDATE watchdesk_source_candidates
+      SET status = ?, source_id = ?, source_name = ?, source_class = ?, jurisdiction = ?,
+          discovery_url = ?, adapter = ?, allowed_hosts_json = ?, allowed_path_prefixes_json = ?,
+          primary_record = ?, enabled = ?, decision_note = ?, decided_by = ?, decided_at = ?
+      WHERE hostname = ?
+    `).bind(
+      candidate.status, candidate.source_id ?? null, candidate.source_name ?? null,
+      candidate.source_class ?? null, candidate.jurisdiction ?? null,
+      candidate.discovery_url ?? null, candidate.adapter ?? null,
+      candidate.allowed_hosts_json ?? null, candidate.allowed_path_prefixes_json ?? null,
+      candidate.primary_record == null ? null : Number(candidate.primary_record),
+      candidate.enabled ? 1 : 0, candidate.decision_note ?? null,
+      candidate.decided_by, candidate.decided_at, candidate.hostname
+    ),
+    auditStatement(env, auditEvent),
+  ]);
+}
+
+export async function listApprovedDynamicWatchdeskSources(env) {
+  const result = await database(env).prepare(`
+    SELECT source_id, source_name, source_class, jurisdiction, discovery_url, adapter,
+      allowed_hosts_json, allowed_path_prefixes_json, primary_record, decision_note
+    FROM watchdesk_source_candidates
+    WHERE status = 'approved' AND enabled = 1
+    ORDER BY source_id ASC
+  `).all();
+  return result.results.map((row) => ({
+    id: row.source_id,
+    name: row.source_name,
+    source_class: row.source_class,
+    jurisdiction: row.jurisdiction,
+    discovery_url: row.discovery_url,
+    adapter: row.adapter,
+    enabled: true,
+    primary_record: row.primary_record === 1,
+    allowed_hosts: JSON.parse(row.allowed_hosts_json),
+    allowed_path_prefixes: JSON.parse(row.allowed_path_prefixes_json),
+    require_date: false,
+    include_listing_context: row.adapter === "html_links",
+    topic: "learned editorial source",
+    notes: row.decision_note || "Editor-approved source learned from prior editorial intake.",
+    dynamic: true,
+  }));
 }
