@@ -193,13 +193,15 @@ function generateFeed(stories) {
 }
 
 function escapeXml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&apos;",
-  })[character]);
+  return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu, "")
+    .replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&apos;",
+    })[character]);
 }
 
 function generateRss(reporting) {
@@ -950,6 +952,7 @@ async function test() {
   assert(artifacts.rss.includes(`<guid isPermaLink="true">${canonicalStoryUrl(unsafe.id)}</guid>`), "RSS lacks a stable story GUID");
   assert(artifacts.rss.includes(`<atom:link href="${RSS_URL}" rel="self" type="application/rss+xml" />`), "RSS lacks a canonical self link");
   assert(artifacts.rss.includes("&lt;script&gt;") && artifacts.rss.includes("&amp;"), "RSS does not escape story text");
+  assert(escapeXml("a\u0001<\uD800😀&") === "a&lt;😀&amp;", "RSS escaping does not remove XML-forbidden characters");
   assert(artifacts.rss.includes("Sun, 20 Sep 2026 12:00:00 GMT"), "RSS publication date is not RFC 822 formatted");
   const parsedFeed = JSON.parse(artifacts.feed);
   assert(parsedFeed.length === 3, "Published stories were not preserved in the public feed");

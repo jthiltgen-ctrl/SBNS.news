@@ -280,10 +280,6 @@ footer a:focus-visible {
   font-size: 0.72rem;
 }
 
-.follow-status:empty {
-  display: none;
-}
-
 .eyebrow,
 .section-label {
   margin: 0 0 0.45rem;
