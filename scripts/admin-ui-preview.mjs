@@ -20,7 +20,7 @@ const candidate = {
   key_sources: [{ role: "Primary record", url: "https://example.test/record" }]
 };
 const items = [
-  { id: "intake-synthetic-1", origin: "discovery", status: "review_ready", submitted_url: candidate.normalized_url, updated_at: now, latest_analysis_job_state: "complete", latest_recommendation: "hold", latest_decision: null, latest_discovery_metadata_json: JSON.stringify({ candidate }) },
+  { id: "intake-synthetic-1", origin: "discovery", status: "review_ready", submitted_url: candidate.normalized_url, updated_at: now, latest_analysis_job_state: "complete", latest_recommendation: "hold", latest_decision: "hold", latest_discovery_metadata_json: JSON.stringify({ candidate }) },
   { id: "intake-synthetic-2", origin: "editor", status: "queued", submitted_url: "https://example.test/editor-report", updated_at: now, latest_analysis_job_state: "queued", latest_recommendation: null, latest_decision: null },
   { id: "intake-synthetic-3", origin: "editor", status: "approved", submitted_url: "https://example.test/approved-report", updated_at: now, latest_analysis_job_state: "complete", latest_recommendation: "publish", latest_decision: "approve" },
   { id: "intake-synthetic-4", origin: "editor", status: "failed", submitted_url: "https://example.test/retry", updated_at: now, latest_analysis_job_state: "failed", latest_recommendation: null, latest_decision: null }
@@ -58,8 +58,11 @@ createServer((request, response) => {
     ok: true, intake: { ...items[0], submitted_at: now, submitter_note: "Synthetic intake for visual review", analysis_status: "complete" },
     analysis_jobs: [{ state: "complete" }], analyses: [{ raw_analysis_json: JSON.stringify(analysis) }],
     sources: [{ source_title: "Synthetic primary record", url: "https://example.test/record", verification_status: "verified", extraction_format: "html", extracted_text: "Synthetic evidence only. No real source or confidential material." }],
-    drafts: [{ id: "draft-1", revision: 1, story_id: "synthetic-story", headline: "Synthetic oversight record", summary: analysis.proposed_summary, fml_kicker: "The paperwork got here first.", category: "National", severity: 3, topic_tags_json: JSON.stringify(["oversight", "procurement"]) }],
-    decisions: [{ decision: "hold", decided_at: now, draft_id: null }],
+    drafts: [
+      { id: "draft-1", revision: 1, story_id: "synthetic-story", headline: "Synthetic oversight record", summary: analysis.proposed_summary, fml_kicker: "The paperwork got here first.", category: "National", severity: 3, topic_tags_json: JSON.stringify(["oversight", "procurement"]) },
+      { id: "draft-2", revision: 2, story_id: "synthetic-story", headline: "Synthetic oversight record needs a qualification", summary: "An updated synthetic draft preserves the unanswered accountability question.", fml_kicker: "The paperwork got here first.", category: "National", severity: 3, topic_tags_json: JSON.stringify(["oversight", "procurement"]) }
+    ],
+    decisions: [{ decision: "approve", decided_at: now, draft_id: "draft-1" }, { decision: "hold", decided_at: now, draft_id: null }],
     audit: [{ created_at: now, actor_type: "system", action: "watchdesk.candidate_submitted", metadata_json: JSON.stringify({ candidate }) }, { created_at: now, actor_id: "synthetic-editor@example.test", action: "decision.hold" }]
   });
   const local = path === "/" ? "index.html" : decodeURIComponent(path.slice(1));

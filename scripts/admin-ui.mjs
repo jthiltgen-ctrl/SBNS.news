@@ -29,6 +29,12 @@ for (const id of ["queue-search", "status-filter", "origin-filter", "new-intake"
 }
 for (const label of ["Intake", "Discovery", "Analysis", "Evidence", "Drafts", "Decision", "Audit"]) assert.match(js, new RegExp('"' + label + '"'));
 assert.match(js, /AI proposal — not saved \/ not approved/);
+assert.match(js, /LAST APPROVED/);
+assert.match(js, /Human decision: /);
+assert.match(js, /AI read: /);
+assert.match(js, /Readiness: /);
+assert.match(html, /Watchdesk submitted/);
+assert.doesNotMatch(html, /desk-last-run|Last scan/);
 assert.match(js, /observed condition is not attributable failure/i);
 assert.match(js, /window\.confirm\(/);
 assert.match(js, /dry_run: dryRun/);
@@ -37,7 +43,7 @@ assert.match(js, /textContent/);
 assert.doesNotMatch(js, /\.innerHTML\s*=/);
 assert.match(css, /:focus-visible/);
 assert.match(css, /prefers-reduced-motion/);
-assert.match(css, /max-width: 980px/);
+assert.match(css, /max-width: 1160px/);
 assert.match(css, /max-width: 760px/);
 assert.match(css, /max-width: 520px/);
 console.log("Admin UI state, governance, structure, and responsive checks passed.");

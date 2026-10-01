@@ -117,13 +117,15 @@ function assignmentCard(item) {
   const title = el("strong", candidate?.discovered_title || item.submitted_url, "card-title");
   const meta = el("span", null, "card-meta");
   if (candidate) {
-    [accountableInstitution(candidate), candidate.topic, "Readiness: " + readiness(candidate), "Rabbit Hole: " + text(candidate.triage?.recommendation), "Burden: " + text(candidate.research_burden)].forEach((value) => meta.append(el("span", value)));
+    [accountableInstitution(candidate), candidate.topic].forEach((value) => meta.append(el("span", value)));
   } else {
-    ["Analysis: " + (jobLabels[item.latest_analysis_job_state] || text(item.analysis_status)), "Recommendation: " + text(item.latest_recommendation)].forEach((value) => meta.append(el("span", value)));
+    ["AI read: " + text(item.latest_recommendation)].forEach((value) => meta.append(el("span", value)));
   }
   const bottom = el("span", null, "card-bottom");
-  bottom.append(el("span", "Human decision: " + text(item.latest_decision)), el("span", "Last activity: " + date(item.updated_at)));
-  open.append(top, title, meta, bottom);
+  bottom.append(el("span", "Analysis: " + (jobLabels[item.latest_analysis_job_state] || text(item.analysis_status))), el("span", "Human decision: " + text(item.latest_decision)), el("span", "Last activity: " + date(item.updated_at)));
+  open.append(top, title, meta);
+  if (candidate) open.append(el("span", "Readiness: " + readiness(candidate) + " · Rabbit Hole: " + text(candidate.triage?.recommendation) + " · Burden: " + text(candidate.research_burden), "card-secondary"));
+  open.append(bottom);
   open.addEventListener("click", () => loadDetail(item.id).catch((error) => { queueStatus.textContent = error.message; }));
   card.append(open);
   return card;
@@ -288,10 +290,11 @@ function draftForm(intakeId, latest, proposal) {
 function renderDrafts(data, analysis) {
   const node = panel("story-drafts", "Editorial drafts");
   const latest = data.drafts.at(-1);
+  const lastApprovedDraftId = data.decisions.filter((item) => item.decision === "approve").at(-1)?.draft_id;
   if (!data.drafts.length) node.append(el("p", "No saved draft revision. AI proposals do not count as saved copy."));
   data.drafts.forEach((draft, index) => {
     const card = el("article", null, "draft-card" + (index === data.drafts.length - 1 ? " latest" : ""));
-    card.append(el("p", "SAVED REVISION " + draft.revision + (index === data.drafts.length - 1 ? " / LATEST" : " / PRIOR"), "revision-label"));
+    card.append(el("p", "SAVED REVISION " + draft.revision + (index === data.drafts.length - 1 ? " / LATEST" : " / PRIOR") + (draft.id === lastApprovedDraftId ? " / LAST APPROVED" : ""), "revision-label"));
     card.append(el("h3", draft.headline), el("p", draft.summary), el("p", draft.fml_kicker, "kicker"));
     card.append(fieldGrid([["Story ID", draft.story_id], ["Category", draft.category], ["Severity", draft.severity], ["Tags", safeJson(draft.topic_tags_json, []).join(", ")]]));
     node.append(card);
@@ -394,7 +397,6 @@ function renderWatchdeskRun(run, target) {
 function updateWatchdeskStrip(latest, run) {
   const metrics = run?.metrics || {};
   document.querySelector("#desk-watchdesk").textContent = latest?.status || "No runs";
-  document.querySelector("#desk-last-run").textContent = date(run?.completed_at);
   document.querySelector("#desk-failures").textContent = run ? String(run.source_failure_count ?? 0) : "—";
   document.querySelector("#desk-submitted").textContent = run ? String(run.submitted_count ?? metrics.submitted_to_newsroom ?? 0) : "—";
 }
