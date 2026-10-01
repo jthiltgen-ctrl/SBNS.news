@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /admin-persistent/
+Disallow: /api/
+
+Sitemap: https://shockedbutnotsurprised.news/sitemap.xml
