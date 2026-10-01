@@ -120,6 +120,8 @@ A future roadmap item does not authorize deployment.
 - docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md — bounded post-build editorial-production sprint brief.
 - docs/SEMANTICS-CONTROL.md — active control preventing drift between research meaning, editorial claims, and search/discovery language.
 - docs/WATCHDESK-SOURCE-PORTFOLIO.md — source admission, discovery-authority, public-whistleblower, and portfolio-balance governance.
+- docs/NEWSROOM-CONTROL-PLANE.md — living relationship among discovery, semantics, source learning, intake surfaces, analysis, and human editorial authority.
+- docs/STORYQUEUE-EMAIL-INTAKE.md — ordinary-email Story Queue governance and post-merge activation contract; explicitly separate from Secure Source.
 
 ### Historical design contracts with continuing principles
 
@@ -131,8 +133,8 @@ A future roadmap item does not authorize deployment.
 - intake/schemas and intake/fixtures;
 - monitoring/schemas and monitoring/fixtures;
 - publication schemas and fixtures;
-- migrations/0001 through 0003;
-- scripts for content, intake, monitoring, publication, persistence, admin API, and analysis;
+- migrations/0001 through 0006;
+- scripts for content, intake, monitoring, publication, persistence, admin API, analysis, Watchdesk, and Story Queue;
 - npm run check and Worker dry runs.
 
 Fixtures are test assets. They are not editorial precedent merely because a synthetic example passes a test.
