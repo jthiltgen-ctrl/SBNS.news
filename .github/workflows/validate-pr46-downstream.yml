@@ -33,6 +33,6 @@ jobs:
       - run: node --check src/storyqueue.js
       - run: node --check src/storyqueue-persistence.js
       - run: node --check public/admin-persistent/storyqueue-ui.js
-      - run: wrangler deploy --config wrangler.admin.jsonc --dry-run
+      - run: npx wrangler deploy --config wrangler.admin.jsonc --dry-run
       - run: php -l integrations/storyqueue/greengeeks-pipe.php
       - run: node scripts/watchdesk.mjs probe
