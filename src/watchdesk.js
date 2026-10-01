@@ -337,7 +337,7 @@ async function defaultSubmit(env, candidate, requestedBy, runId, leaseNow) {
 }
 
 export async function runWatchdeskScan(env, options = {}) {
-  const dynamicSources = options.registry ? [] : await listApprovedDynamicWatchdeskSources(env);
+  const dynamicSources = options.registry || !env?.SBNS_DB ? [] : await listApprovedDynamicWatchdeskSources(env);
   const registry = validateSourceRegistry([...(options.registry || WATCHDESK_SOURCES), ...dynamicSources]).filter((source) => source.enabled);
   const clock = options.now || (() => new Date().toISOString());
   const discoveredAt = iso(clock());
