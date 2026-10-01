@@ -89,7 +89,7 @@ async function test() {
   // The Wrangler-backed portion ensures this test always starts by applying
   // the actual six migrations locally, never by using a remote binding.
   await withLocalD1(async (query) => {
-    assert.equal((await query("SELECT value FROM sbns_meta WHERE key='schema_version'"))[0]?.value, "5");
+    assert.equal((await query("SELECT value FROM sbns_meta WHERE key='schema_version'"))[0]?.value, "6");
     await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
       VALUES ('d1-intake','editor','https://example.test/d1','${AT}','review_ready','complete','${AT}','${AT}')`);
     await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
