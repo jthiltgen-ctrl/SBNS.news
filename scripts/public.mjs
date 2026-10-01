@@ -38,6 +38,8 @@ const [
   sourceMark,
   publicMark,
   favicon,
+  robotsTxt,
+  adminPersistentHtml,
 ] =
   await Promise.all([
     readFile(new URL("../public/index.html", import.meta.url), "utf8"),
@@ -53,6 +55,8 @@ const [
     readFile(new URL("../assets/brand/sbns-mark.svg", import.meta.url)),
     readFile(new URL("../public/brand/sbns-mark.svg", import.meta.url)),
     readFile(new URL("../public/favicon.svg", import.meta.url)),
+    readFile(new URL("../public/robots.txt", import.meta.url), "utf8"),
+    readFile(new URL("../public/admin-persistent/index.html", import.meta.url), "utf8"),
   ]);
 
 for (const color of ["#0b0b0d", "#4b4f56", "#9aa0a6", "#f8f7f4", "#c8102e", "#d9d9d6"]) {
@@ -73,6 +77,38 @@ assert(!readerSurface.includes("fonts.googleapis.com"), "Reader still depends on
 assert(!readerSurface.includes("fonts.gstatic.com"), "Reader still depends on a remote font host");
 assert(homepageHtml.includes('<meta name="theme-color" content="#0B0B0D" />'), "Homepage theme color is not canonical");
 assert(storyHtml.includes('<meta name="theme-color" content="#0B0B0D" />'), "Story theme color is not canonical");
+assert(
+  homepageHtml.includes('<link rel="canonical" href="https://shockedbutnotsurprised.news/" />'),
+  "Homepage canonical URL is missing",
+);
+assert(
+  homepageHtml.includes('<meta property="og:url" content="https://shockedbutnotsurprised.news/" />') &&
+    homepageHtml.includes('<meta property="og:site_name" content="Shocked But Not Surprised" />'),
+  "Homepage Open Graph identity is incomplete",
+);
+const homepageJsonLd = JSON.parse(
+  homepageHtml.match(/<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/)?.[1] || "null",
+);
+assert(
+  homepageJsonLd?.["@type"] === "WebSite" &&
+    homepageJsonLd.url === "https://shockedbutnotsurprised.news/" &&
+    homepageJsonLd.name === "Shocked But Not Surprised" &&
+    homepageJsonLd.alternateName === "SBNS",
+  "Homepage WebSite structured data is incomplete",
+);
+assert(robotsTxt.includes("User-agent: *"), "robots.txt is missing the default crawler group");
+assert(robotsTxt.includes("Allow: /"), "robots.txt does not explicitly allow the public reader");
+assert(robotsTxt.includes("Disallow: /admin/"), "robots.txt does not exclude the archived admin surface");
+assert(robotsTxt.includes("Disallow: /admin-persistent/"), "robots.txt does not exclude the protected newsroom assets");
+assert(robotsTxt.includes("Disallow: /api/"), "robots.txt does not exclude API routes");
+assert(
+  robotsTxt.includes("Sitemap: https://shockedbutnotsurprised.news/sitemap.xml"),
+  "robots.txt does not advertise the canonical sitemap",
+);
+assert(
+  adminPersistentHtml.includes('<meta name="robots" content="noindex, nofollow">'),
+  "Protected newsroom HTML does not carry a noindex directive",
+);
 for (const html of [homepageHtml, storyHtml]) {
   assert(html.includes('<link rel="icon" href="/favicon.svg" type="image/svg+xml" />'), "Canonical favicon is missing");
   assert(html.includes('src="/brand/sbns-mark.svg"'), "Canonical reader mark is missing");
