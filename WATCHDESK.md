@@ -31,17 +31,22 @@ Each source is fetched independently with a ten-second timeout, a 768 KiB respon
 
 `watchdesk/source-registry.js` is the only initial source registry. It contains no secrets and records source name, class, jurisdiction, discovery URL, adapter, enabled state, allowed hosts and paths, primary/secondary status, topic, and operating notes.
 
-The current bounded set is:
+The active bounded set is:
 
 - U.S. Government Accountability Office reports — primary oversight, using GAO's official reports RSS feed;
 - U.S. Department of Justice OIG reports — primary oversight;
 - Iowa Auditor of State audit reports — primary oversight and regional;
 - City of Dubuque public notices — local/regional official institutional signal;
 - ProPublica reporting archive — secondary investigative-reporting signal;
-- Iowa Capital Dispatch Government + Politics — independent Iowa/state-government reporting signal;
 - KCRG i9 Investigations — Eastern Iowa investigative-reporting signal;
-- Investigate Midwest — regional investigative-reporting signal;
 - U.S. Office of Special Counsel public releases — official public whistleblower/accountability signal.
+
+Two additional vetted sources are registered but disabled rather than forced through unsuitable adapters:
+
+- Iowa Capital Dispatch — category HTML returned 403 to ordinary server-side retrieval and the ordinary feed exceeded the existing source-size ceiling;
+- Investigate Midwest — ordinary retrieval succeeded, but the generic HTML-list adapter produced no eligible items.
+
+Those outcomes are treated as adapter/access facts, not reasons to weaken safeguards. Both can be reconsidered if a stable bounded public feed or justified source-specific adapter becomes available.
 
 This mix intentionally separates discovery breadth from evidentiary authority. See `docs/WATCHDESK-SOURCE-PORTFOLIO.md` for admission, source-authority, whistleblower, and portfolio-monitoring rules.
 
