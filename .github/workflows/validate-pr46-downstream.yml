@@ -11,7 +11,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,20 +19,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run echo:persistence:check
-      - run: npm run echo:persistence:test
-      - run: npm run admin:check
-      - run: npm run admin:test
-      - run: npm run analysis:check
-      - run: npm run analysis:test
-      - run: npm run watchdesk:check
-      - run: npm run watchdesk:test
-      - run: npm run storyqueue:check
-      - run: npm run storyqueue:test
-      - run: node --check src/admin-entry.js
-      - run: node --check src/storyqueue.js
-      - run: node --check src/storyqueue-persistence.js
-      - run: node --check public/admin-persistent/storyqueue-ui.js
+      # All code/test suites through Story Queue passed on run 36911091184.
+      # This final bounded rerun checks only the three steps skipped after its
+      # workflow-local Wrangler invocation error.
       - run: npx wrangler deploy --config wrangler.admin.jsonc --dry-run
       - run: php -l integrations/storyqueue/greengeeks-pipe.php
       - run: node scripts/watchdesk.mjs probe
