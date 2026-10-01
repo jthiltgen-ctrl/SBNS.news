@@ -257,7 +257,7 @@ async function decideWatchdeskSource(request, env, actor, hostname) {
   }
   await decideWatchdeskSourceCandidate(env, update, {
     id: opaqueId("audit"), actor_type: actor.actorType, actor_id: actor.actorId,
-    action: `watchdesk.source_${body.decision}d`, entity_type: "watchdesk_source",
+    action: body.decision === "approve" ? "watchdesk.source_approved" : "watchdesk.source_rejected", entity_type: "watchdesk_source",
     entity_id: hostname, metadata_json: JSON.stringify({ status: update.status, source_id: update.source_id, enabled: update.enabled }),
     created_at: decidedAt,
   });
