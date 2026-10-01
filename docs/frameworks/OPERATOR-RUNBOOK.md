@@ -48,6 +48,8 @@ The initial question is not “How do we write this?”
 
 The initial question is “What does the evidence actually establish?”
 
+Do not reduce that question to “Can we prove a failure?” A candidate may be accountability-relevant because of repeated poor performance, foreseeable risk, waste, displaced burden, inequitable outcomes, contradictory incentives, inadequate recourse, or a consequential system working as designed.
+
 ## 4. Analysis-state check
 
 Expected path:
@@ -112,7 +114,7 @@ Do not approve immediately.
 
 Confirm:
 
-- meaningful institutional or systemic failure;
+- meaningful documented public-accountability condition or tension;
 - all core material claims verified or verified with qualification;
 - causation phrased within evidence;
 - no unresolved material source conflict;
@@ -151,7 +153,7 @@ Confirm that the rejection reason is substantive.
 
 Common valid reasons:
 
-- no meaningful institutional failure;
+- no meaningful public-accountability relevance after applying the full editorial-aperture check;
 - isolated misconduct without broader accountability relevance;
 - unsupported speculation;
 - duplicate without new information;
