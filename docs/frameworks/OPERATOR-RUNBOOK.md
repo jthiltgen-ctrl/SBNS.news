@@ -174,7 +174,7 @@ Review and edit:
 
 - headline;
 - summary;
-- FML kicker;
+- SBNS Kicker;
 - category;
 - severity;
 - topic tags;
@@ -508,7 +508,45 @@ Obtain separate action-time approval for each mutable DNS phase.
 
 Maintain a rollback path.
 
-## 24. Weekly maintenance
+## 24. Low-burden operating review
+
+Use the operating review to reduce decision burden, not create work.
+
+Classify the day as one of:
+
+- Maintenance;
+- Normal;
+- Active Story;
+- Surge;
+- Recovery;
+- Build;
+- Dormant.
+
+If evidence is insufficient, default to Normal.
+
+Evaluate work in this order:
+
+1. protect editorial quality, site health, reader trust, or an active high-value story;
+2. complete Audience & Option Validation measurement and founder-burden work;
+3. strengthen owned audience and durable discovery;
+4. run only bounded growth experiments with hypothesis, measurement, cap, and stopping rule;
+5. reduce recurring founder labor through documentation or automation;
+6. defer revenue, paid acquisition, advanced tooling, or expansion until evidence justifies them.
+
+In Normal mode, prefer one 15–45 minute action. Never exceed three recommendations merely to fill a list.
+
+"No action required today" is a valid result.
+
+Do not infer analytics, subscriber counts, Search Console data, conversion, or founder-burden values that are unavailable.
+
+Publication has no cadence requirement. Measurement may have a cadence.
+
+Technical work is freeze-by-default during the October 2026 editorial-production sprint. A technical task becomes eligible when real story production exposes a repeatable quality risk, operational failure, or burden worth removing.
+
+See `docs/AUDIENCE-OPTION-VALIDATION.md` and
+`docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md`.
+
+## 25. Weekly maintenance
 
 Review:
 
@@ -522,7 +560,7 @@ Review:
 
 Close or defer work that no longer has a meaningful next action.
 
-## 25. Monthly framework review
+## 26. Monthly framework review
 
 Ask:
 
@@ -536,7 +574,7 @@ Ask:
 
 Update the framework registry rather than letting undocumented practice become the new standard.
 
-## 26. Change record
+## 27. Change record
 
 For consequential changes, record:
 
