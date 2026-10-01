@@ -9,7 +9,8 @@ const REVIEW_STATES = new Set(["NOT REVIEWED", "PARTIALLY REVIEWED", "REVIEWED"]
 const FACTUAL_SIGNAL = /\b(found|identified|documented|observed|reported|determined|estimated|recommended|required|requires|prohibits|exceeded|failed|missing|incomplete|declined|increased|decreased|did not|has not|have not)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|days)\b/i;
 const TRACKING_PARAMETERS = new Set(["fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid", "ref", "ref_src"]);
 const RECORD_TERMS = /\b(audit|evaluation|investigation|inspection|review|report|finding|recommendation|court|decision|enforcement|financial statement|corrective action)\b/i;
-const GAP_TERMS = /\b(should|needs?|needed|improv|risk|failure|failed|delay|incomplete|concern|problem|over budget|overrun|lack|without|not |hinder|disrupt|declin|gap|misconduct|noncompliance|compliance|controls?|weakness|vacan|untimely|deficien|violation)\b/i;
+const GAP_TERMS = /\b(should|needs?|needed|improv|risk|failure|failed|delay|incomplete|concern|problem|over budget|overrun|lack|without|not |hinder|disrupt|declin|gap|misconduct|noncompliance|compliance|controls?|weakness|vacan|untimely|deficien|violation|waste|wasteful|burden|backlog|shortage|inefficien|duplicat|disparit|inequit|barrier|exclude|denied|recurr|repeat|foresee|avoidable|externaliz|workaround|wait|cost)\b/i;
+const ACCOUNTABILITY_APERTURE_TERMS = /\b(waste|wasteful|burden|backlog|shortage|inefficien|duplicat|disparit|inequit|barrier|exclude|denied|recurr|repeat|foresee|avoidable|externaliz|workaround|delay|risk|cost|overrun|over budget|underperform|weakness|gap|lack|without|failed|failure|incomplete|declin|untimely|deficien|violation|noncompliance)\b/i;
 const OPINION_TERMS = /\b(opinion|editorial|endorsement|vote for|vote against|campaign strategy|horoscope|sponsored content)\b/i;
 const GENERIC_TOKENS = new Set(["audit", "report", "review", "oversight", "federal", "state", "city", "public", "government", "office", "department", "program", "should", "the", "and", "for", "with", "from", "into"]);
 const ACTOR_NAME = /\b((?:(?:[A-Z][A-Za-z’'-]+|of|the|and|for)\s+){1,7}(?:Administration|Agency|Department|Office|Service|Board|Commission|Authority|Bureau|Corporation))\b(?:\s*\(([A-Z][A-Z0-9]{1,7})\))?/g;
@@ -136,7 +137,7 @@ function accountabilityFromReviewedText(recordSummary, actorHint) {
 }
 
 export function deterministicFilter(item, source) {
-  const text = `${item.title || ""} ${item.summary || ""}`;
+  const text = `${item.title || ""} ${item.summary || ""} ${item.record_summary || ""}`;
   if (!item.title || !item.url) return { passes: false, reason: "missing_identity" };
   if (OPINION_TERMS.test(text) || item.content_kind === "opinion") return { passes: false, reason: "opinion_or_partisan_commentary" };
   if (!RECORD_TERMS.test(text) && !item.record_summary && !item.primary_source_url) return { passes: false, reason: "no_documentary_record_signal" };
@@ -231,22 +232,43 @@ export function fitGate(candidate, item) {
   const substantiveEvidence = candidate.evidence_review_state !== "NOT REVIEWED"
     && Boolean(concise(item.reviewed_material)) && (evidenceText?.length || 0) >= 45
     && FACTUAL_SIGNAL.test(evidenceText);
+  const accountabilitySignal = Boolean(substantiveEvidence && ACCOUNTABILITY_APERTURE_TERMS.test(evidenceText || ""));
   if (!substantiveEvidence) reasons.push("candidate_specific_substantive_evidence_not_established");
-  return { passes: reasons.length === 0, reasons, research_worthy: researchWorthy, substantive_evidence: substantiveEvidence, job_supported: Boolean(candidate.apparent_job) };
+  return {
+    passes: reasons.length === 0,
+    reasons,
+    research_worthy: researchWorthy,
+    substantive_evidence: substantiveEvidence,
+    accountability_signal: accountabilitySignal,
+    job_supported: Boolean(candidate.apparent_job),
+  };
 }
 
 export function submissionReadiness(candidate, item, fit) {
-  const reasons = [];
-  if (!fit.passes) reasons.push("substantive_fit_not_established");
-  if (!candidate.institution_or_system) reasons.push("accountable_actor_not_established");
-  if (candidate.evidence_review_state === "NOT REVIEWED") reasons.push("substantive_material_not_reviewed");
-  if (!candidate.apparent_job) reasons.push("job_or_expectation_not_established");
-  if (!candidate.observed_condition) reasons.push("observed_condition_not_established");
-  if (!candidate.accountability_gap) reasons.push("accountability_gap_not_demonstrated");
-  if (!candidate.accountability_question) reasons.push("evidence_derived_question_not_established");
-  if (item.gap_defeated === true || RESOLVED_GAP.test(item.material_qualification || "") || RESOLVED_GAP.test(item.record_summary || "")) reasons.push("material_qualification_defeats_gap");
-  if (!["EXPLORE", "DEVELOP"].includes(candidate.triage?.recommendation)) reasons.push("rabbit_hole_does_not_support_submission");
-  return { ready: reasons.length === 0, reasons };
+  const blockers = [];
+  if (!fit.passes) blockers.push("substantive_fit_not_established");
+  if (!candidate.institution_or_system) blockers.push("accountable_actor_not_established");
+  if (candidate.evidence_review_state === "NOT REVIEWED") blockers.push("substantive_material_not_reviewed");
+  if (item.gap_defeated === true || RESOLVED_GAP.test(item.material_qualification || "") || RESOLVED_GAP.test(item.record_summary || "")) blockers.push("material_qualification_defeats_gap");
+  if (!["EXPLORE", "DEVELOP"].includes(candidate.triage?.recommendation)) blockers.push("rabbit_hole_does_not_support_submission");
+
+  const developmentGaps = [];
+  if (!candidate.apparent_job) developmentGaps.push("job_or_expectation_not_established");
+  if (!candidate.observed_condition) developmentGaps.push("observed_condition_not_established");
+  if (!candidate.accountability_gap) developmentGaps.push("accountability_gap_not_demonstrated");
+  if (!candidate.accountability_question) developmentGaps.push("evidence_derived_question_not_established");
+
+  const gapReady = blockers.length === 0 && developmentGaps.length === 0;
+  const apertureReady = blockers.length === 0 && fit.accountability_signal === true;
+  const ready = gapReady || apertureReady;
+  return {
+    ready,
+    mode: gapReady ? "gap" : apertureReady ? "editorial_aperture" : null,
+    reasons: ready ? [] : [...blockers, ...developmentGaps],
+    development_gaps: developmentGaps,
+    gap_ready: gapReady,
+    aperture_ready: apertureReady,
+  };
 }
 
 export function triageCandidate(candidate, item, fit) {
@@ -255,6 +277,7 @@ export function triageCandidate(candidate, item, fit) {
   if (item.route === true) return { recommendation: "ROUTE", rationale: "The item has a documentary signal but is better suited to another explicitly identified workflow or destination." };
   if (item.novelty === false) return { recommendation: "STOP / NO ACTION", rationale: "No material novelty or current accountability development is established." };
   if (candidate.evidence_review_state === "REVIEWED" && candidate.accountability_gap) return { recommendation: "DEVELOP", rationale: "A reviewed primary record contains a supported actor, expectation, observed condition, and gap for human development review." };
+  if (fit.accountability_signal && candidate.institution_or_system) return { recommendation: "EXPLORE", rationale: "Reviewed substantive material contains an accountability-aperture signal tied to an institution or system. Human editorial review should determine the supported frame; a discrete failure is not required." };
   if (candidate.primary_record_url) return { recommendation: "EXPLORE", rationale: "Bounded substantive material warrants human inspection; the full primary record may still need review." };
   return { recommendation: "EXPLORE", rationale: "The secondary signal appears relevant, but a primary record and governing Job still need to be established." };
 }
@@ -320,7 +343,7 @@ export async function runWatchdeskScan(env, options = {}) {
   const lookupDiscovery = options.lookupDiscovery || ((candidate) => findDiscoveryMatches(env, candidate.normalized_url, candidate.title_fingerprint));
   const lookupMonitoring = options.lookupMonitoring || ((candidate) => findMonitoringMatch(env, candidate.normalized_url));
   const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy, runId, options.leaseNow));
-  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
+  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0, submission_ready_gap: 0, submission_ready_aperture: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
   const sourceFailures = [];
   const sourceHealth = [];
   const survivors = [];
@@ -377,10 +400,16 @@ export async function runWatchdeskScan(env, options = {}) {
       if (candidate.triage.recommendation === "ROUTE") { metrics.routed += 1; continue; }
       if (!candidate.submission_readiness.ready) { discoveryLeads.push(candidate); metrics.discovery_leads += 1; continue; }
       metrics.submission_ready += 1;
+      if (candidate.submission_readiness.mode === "gap") metrics.submission_ready_gap += 1;
+      if (candidate.submission_readiness.mode === "editorial_aperture") metrics.submission_ready_aperture += 1;
       survivors.push(candidate);
     }
   }
 
+  survivors.sort((left, right) => {
+    const priority = (candidate) => candidate.submission_readiness?.mode === "gap" ? 0 : 1;
+    return priority(left) - priority(right);
+  });
   const selected = survivors.slice(0, MAX_SUBMISSIONS_PER_RUN);
   const deferred = survivors.slice(MAX_SUBMISSIONS_PER_RUN);
   metrics.deferred_by_ceiling = Math.max(0, survivors.length - selected.length);
