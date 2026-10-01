@@ -1,0 +1,38 @@
+name: Validate PR46 downstream integration
+
+on:
+  push:
+    branches:
+      - docs/2026-10-01-state-editorial-sprint
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run echo:persistence:check
+      - run: npm run echo:persistence:test
+      - run: npm run admin:check
+      - run: npm run admin:test
+      - run: npm run analysis:check
+      - run: npm run analysis:test
+      - run: npm run watchdesk:check
+      - run: npm run watchdesk:test
+      - run: npm run storyqueue:check
+      - run: npm run storyqueue:test
+      - run: node --check src/admin-entry.js
+      - run: node --check src/storyqueue.js
+      - run: node --check src/storyqueue-persistence.js
+      - run: node --check public/admin-persistent/storyqueue-ui.js
+      - run: wrangler deploy --config wrangler.admin.jsonc --dry-run
+      - run: php -l integrations/storyqueue/greengeeks-pipe.php
+      - run: node scripts/watchdesk.mjs probe
