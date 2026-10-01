@@ -12,6 +12,9 @@ links are present in the initial homepage HTML, while JavaScript provides
 progressive filtering, Prototype archive access, and refresh behavior. See
 [READER-ACCOUNTABILITY.md](READER-ACCOUNTABILITY.md) for the reader,
 transparency, attribution, AI-use, and voice boundaries.
+Published reporting also has an open RSS feed at
+`https://shockedbutnotsurprised.news/feed.xml` and a native Follow SBNS control
+on the homepage and permanent story pages.
 [PUBLIC-EDITORIAL-GRAMMAR.md](PUBLIC-EDITORIAL-GRAMMAR.md) defines the optional,
 source-grounded Receipt, Number, and Timeline infrastructure used by future
 approved stories.
