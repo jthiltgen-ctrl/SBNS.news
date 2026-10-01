@@ -24,7 +24,7 @@ function noKnown() { return []; }
 async function check() {
   validateSourceRegistry();
   const data = await fixtureData();
-  const expected = ["strong-gao-style-candidate", "duplicate-known-url", "existing-published-story-development", "generic-press-release-weak-fit", "partisan-opinion-no-primary-evidence", "secondary-with-primary-record", "secondary-primary-needed", "local-accountability-candidate", "unchanged-repeated-scan", "official-listing-only", "partially-reviewed-primary", "boilerplate-only", "telecom-compliance-without-gap", "tribal-water-explicit-gap", "gsa-accessibility-explicit-gap", "property-disposal-progress-only", "global-aging-implications-only", "source-fetch-failure", "zero-qualifying-candidates"];
+  const expected = ["strong-gao-style-candidate", "duplicate-known-url", "existing-published-story-development", "generic-press-release-weak-fit", "partisan-opinion-no-primary-evidence", "secondary-with-primary-record", "secondary-primary-needed", "local-accountability-candidate", "unchanged-repeated-scan", "official-listing-only", "partially-reviewed-primary", "boilerplate-only", "telecom-compliance-without-gap", "tribal-water-explicit-gap", "gsa-accessibility-explicit-gap", "property-disposal-progress-only", "global-aging-implications-only", "aperture-waste-without-discrete-failure", "aperture-recurring-burden-development", "source-fetch-failure", "zero-qualifying-candidates"];
   assert.equal(data.notice.startsWith("SYNTHETIC-ONLY"), true);
   assert.deepEqual(data.cases.map((entry) => entry.id), expected);
   assert.equal(WATCHDESK_SOURCES.length, 5);
@@ -44,7 +44,7 @@ async function check() {
   assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
   assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"]);
-  console.log("Watchdesk check passed: 5 curated sources, 19 synthetic fixture cases, official GAO RSS, bounded cron, and run-ledger migration.");
+  console.log("Watchdesk check passed: 5 curated sources, 21 synthetic fixture cases, official GAO RSS, bounded cron, and run-ledger migration.");
 }
 
 async function localOperationalDb() {
@@ -347,6 +347,15 @@ async function test() {
   pass(disposal.fit.passes && !disposal.candidate.submission_readiness.ready && !disposal.candidate.apparent_job, "quantified disposal progress without an applicable target must stay a lead");
   const aging = await assess(fixture(data, "global-aging-implications-only"));
   pass(aging.fit.passes && aging.candidate.institution_or_system === null && !aging.candidate.submission_readiness.ready, "broad policy implications without an accountable actor or gap must not auto-submit");
+  const apertureWaste = await assess(fixture(data, "aperture-waste-without-discrete-failure"));
+  pass(apertureWaste.fit.passes && apertureWaste.fit.accountability_signal, "documented waste or repeated administrative burden may satisfy the broader accountability aperture without a discrete failure");
+  pass(apertureWaste.candidate.submission_readiness.ready && apertureWaste.candidate.submission_readiness.mode === "editorial_aperture", "reviewed aperture candidate may persist to Newsroom without a fabricated Job or gap");
+  pass(apertureWaste.candidate.triage.recommendation === "EXPLORE" && apertureWaste.candidate.apparent_job === null && apertureWaste.candidate.accountability_gap === null, "aperture intake must remain exploratory and preserve missing classic gap elements");
+
+  const apertureRecurring = await assess(fixture(data, "aperture-recurring-burden-development"));
+  pass(apertureRecurring.fit.passes && apertureRecurring.fit.accountability_signal, "recurring delay and stakeholder burden may remain accountability-relevant even without a mandatory deadline");
+  pass(apertureRecurring.candidate.submission_readiness.ready && apertureRecurring.candidate.submission_readiness.mode === "editorial_aperture", "recurrence after warning may reach Newsroom for human editorial judgment without being mislabeled as proven failure");
+
   const genericQuestion = await assess(fixture(data, "global-aging-implications-only"), { ...fixture(data, "global-aging-implications-only").item, accountability_question: "What accountability issue does this report raise?" });
   pass(genericQuestion.candidate.accountability_question === null && Boolean(genericQuestion.candidate.research_prompt) && !genericQuestion.candidate.submission_readiness.ready, "generic research prompt cannot serve as evidence-derived accountability question or satisfy readiness");
   const ambiguous = await assess(fixture(data, "strong-gao-style-candidate"), { ...strongCase.item, institution: undefined, record_summary: "The Synthetic Water Authority was required to document quarterly controls. The Synthetic Water Authority did not document quarterly controls. The Synthetic Power Authority was required to document annual controls. The Synthetic Power Authority did not document annual controls." });
@@ -423,7 +432,7 @@ async function test() {
   const implementation = await readFile(path.join(ROOT, "src", "watchdesk.js"), "utf8");
   pass(!/ANALYSIS_QUEUE|insertPublicationAttempt|sendEmail|mailto:|content\/stories/.test(implementation), "Watchdesk must not queue formal analysis, publish, contact subjects, or write story source files");
   const adminUi = await readFile(path.join(ROOT, "public", "admin-persistent", "admin.js"), "utf8");
-  pass(["Evidence review state", "Primary-record location", "Topic", "Accountable institution", "Job / expectation", "Observed condition", "Accountability gap", "Submission readiness", "accountableInstitution(candidate)"].every((label) => adminUi.includes(label)), "admin candidate view must expose evidence, actor, Job, observed condition, gap, and readiness separately");
+  pass(["Evidence review state", "Primary-record location", "Topic", "Accountable institution", "Job / expectation", "Observed condition", "Accountability gap", "Submission readiness", "Accountability pathway", "accountableInstitution(candidate)"].every((label) => adminUi.includes(label)), "admin candidate view must expose evidence, actor, optional classic-gap elements, readiness, and accountability pathway separately");
   pass(adminUi.includes('candidate.schema_version==="1.2"') && adminUi.includes("Unverified (legacy candidate)"), "legacy topic-like institution metadata must not be relabeled as a verified accountable actor");
   const adminConfig = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
   pass(JSON.parse(adminConfig).triggers.crons[0] === WATCHDESK_CRON, "Watchdesk schedule must match the bounded twice-daily cadence");
