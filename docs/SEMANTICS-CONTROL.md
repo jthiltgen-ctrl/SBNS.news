@@ -20,6 +20,8 @@ The controlling direction is:
 
 Search optimization may broaden discovery. It may not broaden the factual claim.
 
+The inverse risk matters too: the editorial vocabulary must not become so narrow that only a discrete, provable institutional failure can survive. The control therefore watches for both overstatement and under-recognition of accountability relevance.
+
 ## 1. Research semantics
 
 Research language must preserve the scope and authority of the underlying material.
@@ -228,7 +230,39 @@ If Search Console later shows readers using terminology different from SBNS's ap
 
 Traffic is not authority.
 
-## 9. Change threshold
+## 9. Editorial aperture and anti-throttling
+
+The word "failure" is one accountability frame, not a universal gate.
+
+A candidate may remain SBNS-relevant when the evidence supports, for example:
+
+- persistent or repeated poor performance;
+- a foreseeable or previously identified failure mode;
+- institutional tolerance of known risk;
+- waste, duplication, delay, or avoidable public cost;
+- displacement of time, money, risk, administrative burden, or responsibility onto stakeholders;
+- inequitable distribution of benefits, burdens, access, service, or recourse;
+- a documented rights, fairness, or justice concern;
+- contradictory or perverse incentives;
+- formal compliance paired with materially poor real-world performance;
+- inadequate transparency, accountability, or recourse;
+- a consequential problem produced by a system functioning as designed.
+
+This is an aperture check, not a lower evidence threshold. The record still must support the characterization actually used.
+
+During the sprint, sample candidates that stop at fit, readiness, HOLD, REJECT, or NO ACTION and ask:
+
+1. Did the candidate truly lack meaningful accountability relevance?
+2. Or did the gate fail to recognize a supported frame other than discrete "failure"?
+3. Did research semantics prematurely demand proof of misconduct, intent, or specific-harm causation?
+4. Did an expectation or institutional-job requirement become too literal when public purpose, policy, resource purpose, recurring burden, or documented stakeholder impact supplied the more relevant comparison?
+5. Did repeated weak discovery results cause later screening to become more restrictive than the framework requires?
+
+Do not set a target pass rate, publication rate, or rejection rate. A high rejection rate may mean the discovery stream is noisy; it may also reveal an over-narrow gate. The rate alone proves neither.
+
+The control succeeds when it distinguishes quality filtering from semantic throttling.
+
+## 10. Change threshold
 
 Do not create a new schema, service, model pass, or automated semantic checker merely because this control exists.
 
@@ -236,7 +270,7 @@ A technical semantic-control feature becomes eligible only when real production 
 
 Until then, this document plus lightweight story-level notes are the control.
 
-## 10. Governing relationships
+## 11. Governing relationships
 
 This control is subordinate to the SBNS Editorial Framework and complements:
 
