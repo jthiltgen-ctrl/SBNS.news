@@ -27,14 +27,16 @@ approved stories.
   structured analysis
 - `sbns-editorial-staging`: staging D1 editorial database
 
-The authenticated admin Worker also exposes the bounded, manually invoked
-Watchdesk discovery run contract. See [WATCHDESK.md](WATCHDESK.md) for its
-curated sources, deterministic pipeline, no-quota ceiling, operator guide, and
-human-authority boundary.
+The authenticated admin Worker also exposes the bounded Watchdesk discovery
+run contract, governed source-learning controls, semantics/editorial-aperture
+diagnostics, and the prepared Story Queue email bridge. See
+[WATCHDESK.md](WATCHDESK.md) for public-source discovery boundaries and
+[docs/NEWSROOM-CONTROL-PLANE.md](docs/NEWSROOM-CONTROL-PLANE.md) for the
+relationship among intake, discovery, semantics, source learning, and human
+editorial authority.
 
 See [V1.5-ARCHITECTURE-SPEC.md](V1.5-ARCHITECTURE-SPEC.md) for the complete
 trust boundaries and rollout sequence.
-
 
 ## Editorial and technical frameworks
 
@@ -51,6 +53,8 @@ the publication's standards.
 - [docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md](docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md) — next editorial-production sprint and technical freeze-by-default boundary.
 - [docs/SEMANTICS-CONTROL.md](docs/SEMANTICS-CONTROL.md) — control for research, editorial, and search-language drift.
 - [docs/WATCHDESK-SOURCE-PORTFOLIO.md](docs/WATCHDESK-SOURCE-PORTFOLIO.md) — discovery-source balance, authority boundaries, and public-whistleblower source governance.
+- [docs/NEWSROOM-CONTROL-PLANE.md](docs/NEWSROOM-CONTROL-PLANE.md) — living Newsroom intake, semantics, source-learning, and human-authority control plane.
+- [docs/STORYQUEUE-EMAIL-INTAKE.md](docs/STORYQUEUE-EMAIL-INTAKE.md) — prepared ordinary-email Story Queue integration and post-merge GreenGeeks activation contract.
 
 ## Local development
 
@@ -70,10 +74,10 @@ npm run check
 ```
 
 The check suite validates source-controlled stories, intake and monitoring
-contracts, Watchdesk discovery, human-gated publication preparation, D1
-persistence, authenticated admin APIs, live-analysis safety boundaries, and
-all three Worker builds. It uses isolated local D1 state and does not deploy or
-apply remote migrations.
+contracts, Watchdesk discovery, Story Queue normalization, human-gated
+publication preparation, D1 persistence, authenticated admin APIs,
+live-analysis safety boundaries, and all three Worker builds. It uses isolated
+local D1 state and does not deploy or apply remote migrations.
 
 ## Editorial content
 
@@ -116,15 +120,16 @@ without the field remain unchanged.
 ## Deployment boundary
 
 Deployment, remote migrations, production DNS, nameservers, public visitor
-submissions, and automated repository publication require separate
-authorization. Qualifying pushes or merges to `main` automatically start
-the scoped public and/or admin Worker deployment workflows. The public
-`sbns-news` Worker uses `.github/workflows/deploy.yml` and `wrangler.jsonc`;
-the protected `sbns-admin` Worker uses `.github/workflows/deploy-admin.yml`
-and `wrangler.admin.jsonc`. Both use the existing `staging` GitHub environment
-for credential management, not as a statement of production identity. See
-[ADMIN-DEPLOYMENT.md](ADMIN-DEPLOYMENT.md) for trigger paths, validation,
-machine-health authorization, and post-deployment verification. The root-level
-legacy GreenGeeks `deploy.yml` remains a historical reference and is not
-invoked by GitHub Actions. Inspect both workflows before future merge
-authorization; a merge may deploy either Worker or both.
+submissions, Story Queue mail-host activation, and automated repository
+publication require separate authorization. Qualifying pushes or merges to
+`main` automatically start the scoped public and/or admin Worker deployment
+workflows. The public `sbns-news` Worker uses `.github/workflows/deploy.yml` and
+`wrangler.jsonc`; the protected `sbns-admin` Worker uses
+`.github/workflows/deploy-admin.yml` and `wrangler.admin.jsonc`. Both use the
+existing `staging` GitHub environment for credential management, not as a
+statement of production identity. See [ADMIN-DEPLOYMENT.md](ADMIN-DEPLOYMENT.md)
+for trigger paths, validation, machine-health authorization, and post-deployment
+verification. The root-level legacy GreenGeeks `deploy.yml` remains a
+historical reference and is not invoked by GitHub Actions. Inspect both
+workflows before future merge authorization; a merge may deploy either Worker
+or both.
