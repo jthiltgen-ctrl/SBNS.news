@@ -5,7 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import {
   BRIEF_SCHEMA, EchoInputError, canonicalJson, canonicalBrief, evidenceSnapshotHash,
-  normalizeEchoSource, sourceSetHash, canonicalCandidate, evaluateEchoGate,
+  normalizeEchoSource, sourceSetHash, canonicalCandidate, candidatePackageHash, evaluateEchoGate,
   orderEchoCandidates, noEchoReason, orchestrateSyntheticEcho,
 } from "../src/echo-orchestration.js";
 import { AT, TEST_HASH, SECOND_HASH, syntheticBrief, syntheticCandidate, syntheticInput, scenarios } from "../fixtures/echo/synthetic-fixtures.mjs";
@@ -57,6 +57,14 @@ function auditMetadata(db, action, entityId) {
   return db.sqlite.prepare("SELECT metadata_json FROM audit_events WHERE action=? AND entity_id=? ORDER BY id")
     .all(action, entityId).map((row) => JSON.parse(row.metadata_json));
 }
+function candidatePackageWriteCounts(db, packetId) {
+  return ["echo_candidates", "echo_candidate_assessments", "echo_candidate_sources", "echo_rights_assessments"]
+    .map((table) => count(db, table, `packet_id='${packetId}'`)).concat([
+      count(db, "audit_events", `action='echo.candidate_evaluated' AND entity_id IN
+        (SELECT id FROM echo_candidates WHERE packet_id='${packetId}')`),
+      count(db, "audit_events", `action='echo.candidate_package_bound' AND entity_id='${packetId}'`),
+    ]);
+}
 
 async function check() {
   eq(BRIEF_SCHEMA, "echo-brief-v1");
@@ -99,6 +107,53 @@ async function test() {
   ok(await sourceSetHash(source) !== await sourceSetHash(changedRole));
   const rightsOnlyChange = structuredClone(source); rightsOnlyChange[2].contentHash = SECOND_HASH;
   eq(await sourceSetHash(source), await sourceSetHash(rightsOnlyChange));
+  const packageCandidates = [syntheticCandidate(1), syntheticCandidate(2)];
+  const packageDigest = await candidatePackageHash(packageCandidates);
+  eq(packageDigest, await candidatePackageHash(packageCandidates.toReversed()));
+  const unicodeCandidates = [syntheticCandidate(1), syntheticCandidate(2)];
+  unicodeCandidates[0].canonicalArtifactId = "synthetic:work:é";
+  unicodeCandidates[1].canonicalArtifactId = "synthetic:work:e\u0301";
+  eq(unicodeCandidates[0].canonicalArtifactId.localeCompare(unicodeCandidates[1].canonicalArtifactId), 0);
+  eq(await candidatePackageHash(unicodeCandidates), await candidatePackageHash(unicodeCandidates.toReversed()));
+  const reorderedPackageSources = structuredClone(packageCandidates);
+  reorderedPackageSources[0].sources.reverse();
+  eq(packageDigest, await candidatePackageHash(reorderedPackageSources));
+  const unicodeSources = syntheticCandidate();
+  const contextSource = unicodeSources.sources[0];
+  unicodeSources.sources.push(
+    { ...contextSource, canonicalIdentifier: "synthetic:archive:é", url: null, title: "Composed synthetic source" },
+    { ...contextSource, canonicalIdentifier: "synthetic:archive:e\u0301", url: null, title: "Decomposed synthetic source" },
+  );
+  const reversedUnicodeSources = structuredClone(unicodeSources);
+  reversedUnicodeSources.sources.reverse();
+  eq(await candidatePackageHash([unicodeSources]), await candidatePackageHash([reversedUnicodeSources]));
+  ok(packageDigest !== await candidatePackageHash(packageCandidates.slice(0, 1)));
+  ok(packageDigest !== await candidatePackageHash([...packageCandidates, syntheticCandidate(3)]));
+  const changedPackageSource = structuredClone(packageCandidates);
+  changedPackageSource[0].sources[2].url = "https://example.test/fictional-rights/rechecked";
+  changedPackageSource[0].rights[0].rightsSource = changedPackageSource[0].sources[2];
+  ok(packageDigest !== await candidatePackageHash(changedPackageSource));
+  const changedPackageMetadata = structuredClone(packageCandidates);
+  changedPackageMetadata[0].sources[0].authorityRationale = "A different synthetic catalog basis";
+  ok(packageDigest !== await candidatePackageHash(changedPackageMetadata));
+  const changedPackageRights = structuredClone(packageCandidates);
+  changedPackageRights[0].rights[0].basis = "A revised synthetic rights basis";
+  ok(packageDigest !== await candidatePackageHash(changedPackageRights));
+  const changedPackageAssessment = structuredClone(packageCandidates);
+  changedPackageAssessment[0].assessment.whatEchoes += " A distinct synthetic interpretation.";
+  ok(packageDigest !== await candidatePackageHash(changedPackageAssessment));
+  const changedPackageGate = structuredClone(packageCandidates);
+  changedPackageGate[0].gate.mechanismMatch = "qualified";
+  ok(packageDigest !== await candidatePackageHash(changedPackageGate));
+  const changedPackageAuthority = structuredClone(packageCandidates);
+  changedPackageAuthority[0].gate.contextAuthority = "limited";
+  ok(packageDigest !== await candidatePackageHash(changedPackageAuthority));
+  const changedPackagePriorUse = structuredClone(packageCandidates);
+  changedPackagePriorUse[0].priorUse = { status: "recently_featured", justification: "Synthetic re-use rationale" };
+  ok(packageDigest !== await candidatePackageHash(changedPackagePriorUse));
+  const changedPackageJustification = structuredClone(changedPackagePriorUse);
+  changedPackageJustification[0].priorUse.justification = "A different synthetic rationale";
+  ok(await candidatePackageHash(changedPackagePriorUse) !== await candidatePackageHash(changedPackageJustification));
   eq(normalizeEchoSource({ ...source[0], url: "https://EXAMPLE.test:443/fictional-archive/1#fragment" }).url,
     "https://example.test/fictional-archive/1");
   throws(() => canonicalJson({ a: [undefined] }), "INVALID_JSON");
@@ -278,6 +333,10 @@ async function test() {
         stage === "researching" ? 0 : stage === "verifying" ? 2 : 3);
       eq(count(db, "echo_rights_assessments", `packet_id='${packet.id}'`),
         ["researching", "verifying"].includes(stage) ? 0 : 1);
+      const packageBinding = auditMetadata(db, "echo.candidate_package_bound", packet.id);
+      eq(packageBinding.length, 1);
+      eq(packageBinding[0].candidate_package_digest, await candidatePackageHash(input.candidates));
+      eq(packageBinding[0].candidate_count, 1);
       input.runKey = "retry-2";
       const retried = await orchestrateSyntheticEcho(env, input);
       eq(retried.status, "READY");
@@ -287,7 +346,108 @@ async function test() {
       eq(count(db, "echo_rights_assessments", `packet_id='${packet.id}'`), 1);
       eq(count(db, "audit_events", `action='echo.candidate_evaluated' AND entity_id=(SELECT id FROM echo_candidates WHERE packet_id='${packet.id}')`), 1);
       eq(count(db, "audit_events", `action='echo.packet_ready' AND entity_id='${packet.id}'`), 1);
+      eq(auditMetadata(db, "echo.candidate_package_bound", packet.id), packageBinding);
     }
+    const reorderedRetryInput = syntheticInput("package-order", [syntheticCandidate(1), syntheticCandidate(2)]);
+    await rejects(() => orchestrateSyntheticEcho(env, reorderedRetryInput, { onStep: async (point) => {
+      if (point === "during_verification") throw new Error("Synthetic package-order interruption");
+    } }), /package-order interruption/);
+    const orderPacket = db.sqlite.prepare("SELECT id FROM echo_packets WHERE issue_key=?").get(reorderedRetryInput.brief.issueKey);
+    const orderCounts = candidatePackageWriteCounts(db, orderPacket.id);
+    const reorderedRetry = structuredClone(reorderedRetryInput);
+    reorderedRetry.runKey = "retry-2";
+    reorderedRetry.candidates.reverse();
+    reorderedRetry.candidates[1].sources.reverse();
+    eq(await candidatePackageHash(reorderedRetryInput.candidates), await candidatePackageHash(reorderedRetry.candidates));
+    eq((await orchestrateSyntheticEcho(env, reorderedRetry)).status, "READY");
+    eq(count(db, "echo_candidates", `packet_id='${orderPacket.id}'`), 2);
+    eq(count(db, "audit_events", `action='echo.candidate_package_bound' AND entity_id='${orderPacket.id}'`), 1);
+    eq(candidatePackageWriteCounts(db, orderPacket.id)[0], orderCounts[0]);
+
+    async function assertChangedPackageRejected(suffix, mutate) {
+      const original = syntheticInput(`package-${suffix}`);
+      await rejects(() => orchestrateSyntheticEcho(env, original, { onStep: async (point) => {
+        if (point === "during_rights") throw new Error("Synthetic package interruption");
+      } }), /package interruption/);
+      const packet = db.sqlite.prepare("SELECT id,state FROM echo_packets WHERE issue_key=?").get(original.brief.issueKey);
+      const before = candidatePackageWriteCounts(db, packet.id);
+      const jobsBefore = count(db, "echo_jobs", `packet_id='${packet.id}'`);
+      const binding = auditMetadata(db, "echo.candidate_package_bound", packet.id);
+      eq(binding.length, 1);
+      eq(binding[0].candidate_package_digest, await candidatePackageHash(original.candidates));
+      const changed = structuredClone(original);
+      changed.runKey = "changed-package-retry";
+      mutate(changed);
+      ok(await candidatePackageHash(changed.candidates) !== binding[0].candidate_package_digest);
+      await rejects(() => orchestrateSyntheticEcho(env, changed), (error) => error.code === "RETRY_INPUT_MISMATCH");
+      eq(candidatePackageWriteCounts(db, packet.id), before);
+      eq(count(db, "echo_jobs", `packet_id='${packet.id}'`), jobsBefore);
+      eq(auditMetadata(db, "echo.candidate_package_bound", packet.id), binding);
+      eq(db.sqlite.prepare("SELECT state FROM echo_packets WHERE id=?").get(packet.id).state, "open");
+    }
+    await assertChangedPackageRejected("rights-citation", (input) => {
+      input.candidates[0].sources[2].url = "https://example.test/fictional-rights/new-citation";
+      input.candidates[0].rights[0].rightsSource = input.candidates[0].sources[2];
+    });
+    await assertChangedPackageRejected("rights-review", (input) => {
+      input.candidates[0].rights[0].status = "unknown";
+      input.candidates[0].rights[0].basis = "A newly discovered synthetic restriction";
+    });
+    await assertChangedPackageRejected("source-metadata", (input) => {
+      input.candidates[0].sources[0].authorityRationale = "Different invented archive authority";
+    });
+    await assertChangedPackageRejected("added-candidate", (input) => {
+      input.candidates.push(syntheticCandidate(2));
+    });
+    await assertChangedPackageRejected("analogy", (input) => {
+      input.candidates[0].assessment.whatEchoes += " A materially different invented comparison.";
+    });
+    await assertChangedPackageRejected("gate", (input) => {
+      input.candidates[0].gate.mechanismMatch = "topic_only";
+    });
+    await assertChangedPackageRejected("context-authority", (input) => {
+      input.candidates[0].gate.contextAuthority = "limited";
+    });
+    await assertChangedPackageRejected("prior-use", (input) => {
+      input.candidates[0].priorUse = { status: "recently_featured", justification: "Synthetic prior-use explanation" };
+    });
+    const omittedInput = syntheticInput("package-omitted", [syntheticCandidate(1), syntheticCandidate(2)]);
+    for (const candidate of omittedInput.candidates) candidate.gate.mechanismMatch = "topic_only";
+    await rejects(() => orchestrateSyntheticEcho(env, omittedInput, { onStep: async (point) => {
+      if (point === "before_completion") throw new Error("Synthetic omitted-candidate interruption");
+    } }), /omitted-candidate interruption/);
+    const omittedPacket = db.sqlite.prepare("SELECT id,state FROM echo_packets WHERE issue_key=?").get(omittedInput.brief.issueKey);
+    eq(count(db, "echo_candidates", `packet_id='${omittedPacket.id}'`), 2);
+    const omittedCounts = candidatePackageWriteCounts(db, omittedPacket.id);
+    const omittedJobs = count(db, "echo_jobs", `packet_id='${omittedPacket.id}'`);
+    const fewerCandidates = structuredClone(omittedInput);
+    fewerCandidates.runKey = "omitted-retry";
+    fewerCandidates.candidates = fewerCandidates.candidates.slice(0, 1);
+    await rejects(() => orchestrateSyntheticEcho(env, fewerCandidates), (error) => error.code === "RETRY_INPUT_MISMATCH");
+    eq(candidatePackageWriteCounts(db, omittedPacket.id), omittedCounts);
+    eq(count(db, "echo_jobs", `packet_id='${omittedPacket.id}'`), omittedJobs);
+    eq(db.sqlite.prepare("SELECT state FROM echo_packets WHERE id=?").get(omittedPacket.id).state, "open");
+    eq(count(db, "audit_events", `action='echo.no_echo_warranted' AND entity_id='${omittedPacket.id}'`), 0);
+    const emptyCandidates = structuredClone(omittedInput);
+    emptyCandidates.runKey = "empty-retry";
+    emptyCandidates.candidates = [];
+    await rejects(() => orchestrateSyntheticEcho(env, emptyCandidates), (error) => error.code === "RETRY_INPUT_MISMATCH");
+    eq(candidatePackageWriteCounts(db, omittedPacket.id), omittedCounts);
+    eq(count(db, "echo_jobs", `packet_id='${omittedPacket.id}'`), omittedJobs);
+    omittedInput.runKey = "exact-omitted-retry";
+    eq((await orchestrateSyntheticEcho(env, omittedInput)).status, "NO_CULTURAL_ECHO_WARRANTED");
+    eq(count(db, "echo_candidates", `packet_id='${omittedPacket.id}'`), 2);
+    const preBindingInput = syntheticInput("package-before-binding", []);
+    await rejects(() => orchestrateSyntheticEcho(env, preBindingInput, { onStep: async (point) => {
+      if (point === "researching") throw new Error("Synthetic pre-binding interruption");
+    } }), /pre-binding interruption/);
+    const preBindingPacket = db.sqlite.prepare("SELECT id,state FROM echo_packets WHERE issue_key=?").get(preBindingInput.brief.issueKey);
+    eq(auditMetadata(db, "echo.candidate_package_bound", preBindingPacket.id), []);
+    eq(count(db, "echo_candidates", `packet_id='${preBindingPacket.id}'`), 0);
+    preBindingInput.runKey = "new-package-after-pre-binding-failure";
+    preBindingInput.candidates = [syntheticCandidate(1)];
+    eq((await orchestrateSyntheticEcho(env, preBindingInput)).status, "READY");
+    eq(auditMetadata(db, "echo.candidate_package_bound", preBindingPacket.id).length, 1);
     const frozenEvaluation = syntheticInput("evaluation-conflict");
     await rejects(() => orchestrateSyntheticEcho(env, frozenEvaluation, { onStep: async (point) => {
       if (point === "during_candidate") throw new Error("Synthetic post-evaluation interruption");
@@ -298,7 +458,7 @@ async function test() {
     const changedEvaluation = structuredClone(frozenEvaluation);
     changedEvaluation.runKey = "changed-evaluation";
     changedEvaluation.candidates[0].gate.contextAuthority = "limited";
-    await rejects(() => orchestrateSyntheticEcho(env, changedEvaluation), /evaluation conflicts with durable audit/);
+    await rejects(() => orchestrateSyntheticEcho(env, changedEvaluation), (error) => error.code === "RETRY_INPUT_MISMATCH");
     eq(auditMetadata(db, "echo.candidate_evaluated", frozenCandidateId).length, 1);
     eq(db.sqlite.prepare("SELECT state FROM echo_packets WHERE id=?").get(frozenPacket.id).state, "open");
     frozenEvaluation.runKey = "matching-retry";

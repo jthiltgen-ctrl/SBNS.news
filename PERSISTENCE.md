@@ -185,6 +185,18 @@ stale. No raw model reasoning or complete copyrighted work is audited.
 PR B adds one bounded `echo.candidate_evaluated` audit per packet/candidate,
 keyed independently of job attempts. It records the deterministic selection
 plan, not completed readiness; conflicting replay metadata is rejected.
+
+PR B also binds one normalized candidate package to an open packet through a
+deterministically identified `echo.candidate_package_bound` audit, storing a
+SHA-256 digest and bounded count/version metadata rather than candidate content.
+An exact-package new-key retry may reuse partial rows; a changed package is
+rejected before further candidate-package writes. A failure before binding and
+before any such rows leaves the first binding available to a later attempt.
+This packet-level retry guard is distinct from the contemporary
+`evidence_snapshot_hash` and the assessment's non-rights `source_set_hash`.
+Reassessing culture without changed contemporary evidence remains a separately
+designed future revision path, not an implicit retry.
+
 Later runtime stages may add context-verification events such as
 `echo.context_verified`; PR A does not pretend those operations have occurred.
 

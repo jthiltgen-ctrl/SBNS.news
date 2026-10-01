@@ -5,10 +5,12 @@ import {
   createEchoAssessment, createEchoSource, createEchoRightsAssessment,
   markEchoCandidateReady, rejectEchoCandidateByGate, completeEchoPacket,
   getEchoPacket, getEchoIssueSnapshot, getEchoPacketProgress, recordEchoCandidateEvaluation,
+  getEchoCandidatePackageBinding, bindEchoCandidatePackage,
 } from "./echo-persistence.js";
 
 export const BRIEF_SCHEMA = "echo-brief-v1";
 export const CANDIDATE_SCHEMA = "echo-candidate-v1";
+export const CANDIDATE_PACKAGE_SCHEMA = "echo-candidate-package-v1";
 export const PROCESSOR_VERSION = "echo-synthetic-v1";
 const HEX = /^[0-9a-f]{64}$/;
 const ROLES = new Set(["primary", "supporting"]);
@@ -63,6 +65,11 @@ function unique(items, key, label) {
   return items;
 }
 const ordered = (values, selector) => values.toSorted((a, b) => selector(a).localeCompare(selector(b)));
+const ordinalOrdered = (values, selector) => values.toSorted((a, b) => {
+  const left = selector(a);
+  const right = selector(b);
+  return left < right ? -1 : left > right ? 1 : 0;
+});
 
 // Canonical JSON omits absent object fields, rejects absent array positions and
 // non-JSON numbers, and preserves all array order unless a contract explicitly
@@ -229,6 +236,22 @@ export function canonicalCandidate(raw) {
     priorUse: { status: choice(priorUse.status, PRIOR_USE, "prior use"), justification: string(priorUse.justification, "prior-use justification", false) } };
 }
 
+function canonicalCandidateList(rawCandidates) {
+  const candidates = unique(boundedList(rawCandidates, "candidates", 24).map(canonicalCandidate),
+    (entry) => entry.canonicalArtifactId, "candidate artifacts");
+  return ordinalOrdered(candidates, (entry) => entry.canonicalArtifactId);
+}
+
+// This whole-package digest is separate from the contemporary evidence hash
+// and each selected assessment's frozen, non-rights source-set hash.
+export async function candidatePackageHash(rawCandidates) {
+  const candidates = canonicalCandidateList(rawCandidates).map((candidate) => ({ ...candidate,
+    sources: ordinalOrdered(candidate.sources, canonicalJson),
+    rights: ordinalOrdered(candidate.rights, canonicalJson),
+  }));
+  return sha256({ schema: CANDIDATE_PACKAGE_SCHEMA, candidates });
+}
+
 export function evaluateEchoGate(candidate) {
   const sourceRoles = new Set(candidate.sources.map((source) => source.sourceRole));
   if (candidate.gate.context === "insufficient" || !(sourceRoles.has("original_work") || sourceRoles.has("historical_context"))) return "ORIGINAL_CONTEXT_INSUFFICIENT";
@@ -305,6 +328,21 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
   }
   if (packet.superseded_at) fail("STALE_PACKET", "This evidence snapshot has been superseded");
   if (packet.state !== "open") return { status: "ALREADY_PROCESSED", packetId, packetRevision: packet.revision, packetState: packet.state, evidenceSnapshotHash: hash };
+  const bindingId = await stableId("echo_package_binding", packetId, CANDIDATE_PACKAGE_SCHEMA);
+  const bindingMetadata = (digest, count) => ({ packet_id: packetId, processor_version: PROCESSOR_VERSION,
+    candidate_package_schema: CANDIDATE_PACKAGE_SCHEMA, candidate_package_digest: digest, candidate_count: count });
+  const bindingMatches = (row, metadata) => row?.action === "echo.candidate_package_bound" &&
+    row.entity_type === "echo_packet" && row.entity_id === packetId &&
+    row.metadata_json === JSON.stringify(metadata);
+  let candidates;
+  let packageDigest;
+  const existingBinding = await getEchoCandidatePackageBinding(env, bindingId);
+  if (existingBinding) {
+    candidates = canonicalCandidateList(input.candidates);
+    packageDigest = await candidatePackageHash(candidates);
+    if (!bindingMatches(existingBinding, bindingMetadata(packageDigest, candidates.length)))
+      fail("RETRY_INPUT_MISMATCH", "Retry candidate package differs from the bound packet package");
+  }
   let progress = await getEchoPacketProgress(env, packetId);
   const idempotencyKey = `${PROCESSOR_VERSION}:${runKey}`;
   const existingJob = progress.jobs.find((entry) => entry.idempotency_key === idempotencyKey);
@@ -325,12 +363,19 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
     await step("after_packet_creation");
     job = await transitionEchoJob(env, { jobId, from: "pending", to: "researching", actorId: requestedBy, at });
     await step("researching");
-    const candidates = unique(boundedList(input.candidates, "candidates", 24).map(canonicalCandidate),
-      (entry) => entry.canonicalArtifactId, "candidate artifacts");
+    if (!candidates) {
+      candidates = canonicalCandidateList(input.candidates);
+      packageDigest = await candidatePackageHash(candidates);
+    }
     for (const candidate of candidates) for (const source of candidate.sources) if (source.intakeSourceId &&
         !brief.evidenceSources.some((entry) => entry.id === source.intakeSourceId && entry.intakeId === source.sourceIntakeId)) {
       fail("SOURCE_INTAKE_MISMATCH", "Candidate contemporary source must belong to the issue evidence snapshot");
     }
+    const boundPackage = await bindEchoCandidatePackage(env, { id: bindingId, packetId,
+      metadata: bindingMetadata(packageDigest, candidates.length), actorId: requestedBy, at });
+    if (!boundPackage) fail("STALE_PACKET", "Packet was completed or superseded before candidate binding");
+    if (!bindingMatches(boundPackage, bindingMetadata(packageDigest, candidates.length)))
+      fail("RETRY_INPUT_MISMATCH", "Retry candidate package differs from the bound packet package");
     const evaluated = candidates.map((candidate) => ({ candidate, reason: evaluateEchoGate(candidate) }));
     const chosen = orderEchoCandidates(evaluated.filter((entry) => !entry.reason).map((entry) => entry.candidate)).slice(0, 3);
     const chosenSlots = new Map(chosen.map((candidate, index) => [candidate.canonicalArtifactId, index + 1]));

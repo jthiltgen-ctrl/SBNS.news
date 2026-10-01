@@ -73,6 +73,26 @@ export async function getEchoPacketProgress(env, packetId) {
   };
 }
 
+// One content-free candidate-package receipt per packet. A deterministic ID
+// lets an interrupted attempt and its retry share the same durable binding.
+export async function getEchoCandidatePackageBinding(env, id) {
+  return database(env).prepare("SELECT action, entity_type, entity_id, metadata_json FROM audit_events WHERE id = ?")
+    .bind(id).first();
+}
+
+export async function bindEchoCandidatePackage(env, { id, packetId, metadata, actorId, at }) {
+  const db = database(env);
+  const encoded = JSON.stringify(metadata);
+  if (!encoded || encoded.length > 500) throw new Error("Echo candidate package audit metadata is too large");
+  await db.prepare(`INSERT OR IGNORE INTO audit_events
+    (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
+    SELECT ?, 'system', ?, 'echo.candidate_package_bound', 'echo_packet', ?, ?, ?
+    WHERE EXISTS (SELECT 1 FROM echo_packets
+      WHERE id = ? AND state = 'open' AND superseded_at IS NULL)`)
+    .bind(id, actorId ?? null, packetId, encoded, timestamp(at), packetId).run();
+  return getEchoCandidatePackageBinding(env, id);
+}
+
 export async function createEchoJob(env, { id, packetId, idempotencyKey, triggerType, requestedBy, processorVersion, createdAt }) {
   const db = database(env);
   const at = timestamp(createdAt);
