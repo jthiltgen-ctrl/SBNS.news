@@ -1,0 +1,44 @@
+name: Disable unprobeable POGO Watchdesk adapter
+
+on:
+  push:
+    branches:
+      - docs/2026-10-01-state-editorial-sprint
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: docs/2026-10-01-state-editorial-sprint
+      - name: Preserve POGO as vetted but disabled source
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('watchdesk/source-registry.js')
+          s=p.read_text()
+          old='''    id: "pogo-investigates",\n    name: "POGO Investigates",\n    source_class: "secondary_reporting_signal",\n    jurisdiction: "United States",\n    discovery_url: "https://www.pogo.org/investigates",\n    adapter: "html_links",\n    enabled: true,'''
+          new='''    id: "pogo-investigates",\n    name: "POGO Investigates",\n    source_class: "secondary_reporting_signal",\n    jurisdiction: "United States",\n    discovery_url: "https://www.pogo.org/investigates",\n    adapter: "html_links",\n    enabled: false,'''
+          if old not in s: raise SystemExit('POGO source block not found')
+          s=s.replace(old,new)
+          s=s.replace('notes: "Independent nonprofit investigative newsroom focused on federal systems, public money, oversight, corruption, and abuse of power. Reporting is a discovery signal; claim authority remains source-specific.",','notes: "Vetted national investigative source candidate. Disabled after bounded probe returned HTTP 403. Do not bypass access controls; reconsider only with a stable public feed or bounded compatible adapter.",')
+          p.write_text(s)
+
+          p=Path('scripts/watchdesk.mjs')
+          s=p.read_text()
+          s=s.replace('WATCHDESK_SOURCES.filter((entry) => entry.enabled).length, 10','WATCHDESK_SOURCES.filter((entry) => entry.enabled).length, 9')
+          s=s.replace('12 governed sources (10 active)','12 governed sources (9 active)')
+          p.write_text(s)
+          PY
+      - name: Commit source-health reconciliation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watchdesk/source-registry.js scripts/watchdesk.mjs
+          git commit -m "Disable unprobeable POGO source adapter"
+          git push origin HEAD:docs/2026-10-01-state-editorial-sprint
