@@ -64,7 +64,17 @@ Before research expands, establish:
 
 STOP / NO ACTION, ROUTE, HOLD, and REJECT are successful outcomes.
 
-## Workstream 2 — Evidence packet quality
+## Workstream 2 — Accountability aperture
+
+Do not require every viable SBNS candidate to prove a discrete institutional failure.
+
+Before a candidate stops solely because "failure" is not established, test whether the record supports another consequential accountability frame: persistent poor performance, foreseeable or accepted risk, waste, displaced stakeholder burden, inequitable outcomes, rights or justice concerns, contradictory incentives, formal-compliance-versus-reality tension, inadequate recourse, or a consequential problem produced by the system's design.
+
+This does not lower the evidence standard. It broadens the set of evidence-supported accountability questions SBNS is willing to examine.
+
+During the sprint, sample stopped candidates to distinguish legitimate quality filtering from semantic throttling. Do not establish a target publication, pass, hold, or rejection rate.
+
+## Workstream 3 — Evidence packet quality
 
 For a candidate that survives triage, build the minimum decision-quality packet.
 
@@ -81,7 +91,7 @@ Prioritize:
 
 Stop research when additional work is repetitive or when a named future dependency becomes the real blocker.
 
-## Workstream 3 — Distinctive SBNS story form
+## Workstream 4 — Distinctive SBNS story form
 
 Use the first genuinely worthy story to test what makes SBNS more useful than a conventional summary.
 
@@ -99,7 +109,7 @@ Do not add a component merely because the schema supports it.
 
 The desired distinction is evidence clarity plus accountability framing, not visual decoration.
 
-## Workstream 4 — Editorial transformation
+## Workstream 5 — Editorial transformation
 
 Evaluate the step between evidence packet and published copy.
 
@@ -116,7 +126,7 @@ For each serious candidate, ask:
 
 AI assistance may accelerate organization, comparison, drafting, and revision. It may not replace source authority or human editorial judgment.
 
-## Workstream 5 — Production ergonomics
+## Workstream 6 — Production ergonomics
 
 Track friction during real work instead of inventing hypothetical workflow needs.
 
@@ -133,7 +143,7 @@ Record approximately:
 
 A technical change becomes sprint-eligible only when the same friction is meaningful enough that fixing it would reduce recurring burden or protect quality.
 
-## Workstream 6 — Editorial, search & research semantics
+## Workstream 7 — Editorial, search & research semantics
 
 Monitor semantic drift across discovery, evidence review, drafting, and search presentation.
 
@@ -147,7 +157,7 @@ Search terms may generate research questions. They do not establish editorial cl
 
 Keep the control lightweight during the sprint. Record consequential drift and repeated friction; do not build a semantic-automation subsystem unless real production demonstrates a recurring quality or burden problem.
 
-## Workstream 7 — Publication acceptance
+## Workstream 8 — Publication acceptance
 
 For a story approved for publication:
 
@@ -161,7 +171,7 @@ For a story approved for publication:
 
 Treat this as the normal completion checklist, not a separate product sprint.
 
-## Workstream 8 — Measurement and learning
+## Workstream 9 — Measurement and learning
 
 Keep measurement light.
 
