@@ -490,6 +490,22 @@ button:focus-visible {
   grid-column: 1 / -1;
 }
 
+.editorial-email-help {
+  margin-top: 0.65rem;
+  color: var(--sbns-newsprint-gray);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+
+.editorial-email-help summary {
+  cursor: pointer;
+}
+
+.transparency-grid a {
+  color: var(--sbns-signal-red);
+  text-underline-offset: 0.12em;
+}
+
 .transparency-pending {
   padding-left: 0.8rem;
   border-left: 3px solid var(--sbns-rule-gray);
