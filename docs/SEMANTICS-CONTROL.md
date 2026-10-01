@@ -262,6 +262,24 @@ Do not set a target pass rate, publication rate, or rejection rate. A high rejec
 
 The control succeeds when it distinguishes quality filtering from semantic throttling.
 
+### Recurrence and normalization
+
+"Expected" or unsurprising failure is not automatically stale.
+
+A recurring condition may become more accountability-relevant when new evidence shows:
+
+- repetition after warning or prior notice;
+- failed or incomplete remediation;
+- growing scale, duration, cost, or stakeholder burden;
+- a supposedly temporary condition becoming normalized;
+- repeated reliance on the same workaround;
+- an institution treating a known failure mode as ordinary operating cost;
+- a new population, jurisdiction, program, or consequence affected by the same pattern.
+
+Do not republish the same facts merely because the pattern continues. Require a meaningful new development, evidence increment, accountability implication, or cumulative-burden insight.
+
+For SBNS, "not surprising" can be part of the accountability significance; it is not a substitute for novelty, but neither is it a reason to suppress a documented recurring problem.
+
 ## 10. Change threshold
 
 Do not create a new schema, service, model pass, or automated semantic checker merely because this control exists.
