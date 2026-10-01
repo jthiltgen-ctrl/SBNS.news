@@ -78,6 +78,98 @@ candidate evidence or alter existing editorial records.
 See [WATCHDESK.md](WATCHDESK.md) for the candidate contract and operating
 boundary.
 
+## Echo Desk durable contracts (migration 0005)
+
+`0005_echo_durable_contracts.sql` advances `sbns_meta.schema_version` from 4
+to 5 without changing reporting rows. It adds eight Echo-only tables:
+
+| Table | Durable purpose |
+| --- | --- |
+| `echo_packets` | One immutable structured issue-brief/evidence snapshot per `issue_key` revision; mutable result is `open`, `ready`, `no_echo`, or operational `failed`. |
+| `echo_packet_intakes` | Immutable many-to-many links to existing Newsroom intakes, with one primary and optional supporting intakes per packet created through the persistence API. |
+| `echo_jobs` | Pending/researching/verifying/rights-check/assembling lifecycle and terminal ready/no-echo/failed states for later orchestration; no Queue is configured here. |
+| `echo_candidates` | Artifact identity and process/gate state, separate from human decisions. |
+| `echo_candidate_assessments` | Append-only, explicit revisions of the seven-part Analogy Truth Test, research burden, source-set hash, and generator provenance. |
+| `echo_candidate_sources` | Append-only claim-specific cultural, historical, contemporary, or rights citations; contemporary evidence may reference an existing intake-scoped `sources` row. |
+| `echo_rights_assessments` | Append-only, asset- and proposed-use-specific rights revisions. A status is a recorded assessment, not publication permission. |
+| `echo_decisions` | Append-only human `feature`, `hold`, or `reject` decisions pinned to an exact packet, candidate, and assessment revision. |
+
+### Identity, revisions, and relational guardrails
+
+An `issue_key` is a stable editorial issue identity, not a date or an artifact.
+`createEchoPacket` atomically assigns `MAX(revision) + 1` for that key. The
+database uniquely constrains `(issue_key, revision)` and
+`(issue_key, evidence_snapshot_hash)`: an unchanged evidence snapshot cannot
+create a duplicate revision, while changed evidence creates a new revision and
+marks older packets superseded. New jobs and decisions through the persistence
+API refuse superseded packets. The old brief, hash, links, and assessments
+remain available. Brief content and packet/intake links cannot be updated or
+deleted in place. The initial brief is structured JSON; the future caller must
+validate its domain-specific fields before invoking this persistence API.
+
+Assessment rows keep original context, creator-intent status, what echoes,
+where the analogy breaks, uncertainty, tempted overclaim, present-day evidence,
+and editorial value as separate columns. No raw model-output field is the
+canonical assessment. Source rows identify the exact assessment component they
+support. An existing SBNS source can only be referenced if its intake is linked
+to that packet; independent Echo sources need no intake and store metadata,
+not a complete copyrighted work. Source links freeze when a candidate becomes
+editor-ready. Subsequent materially changed evidence needs a new packet
+revision rather than silently changing a reviewed candidate.
+
+`echo_candidates.editor_ready_slot` is database-constrained to slots 1–3,
+unique per packet, and non-null exactly when state is `editor_ready`. Thus a
+fourth editor-ready candidate is impossible even if two later writers race;
+the persistence function also requires an assessment before assigning a slot.
+Human FEATURE/HOLD/REJECT is stored only in `echo_decisions`, never in the
+candidate's process state. A decision requires a nonblank human actor and
+rationale, and composite foreign keys anchor it to the exact candidate and
+assessment revision the editor saw. FEATURE does not update reporting
+`editorial_decisions` and creates no publication state.
+
+`no_echo` is a successful packet/job terminal result, possible with zero
+candidates and requiring a bounded reason code. It is distinct from `failed`,
+which denotes an operational error. No search result or daily cultural feature
+is required. Rights statuses are constrained per asset/proposed use; revisions
+supersede only the prior revision of that same asset/use and preserve the old
+assessment. `unknown` and `do_not_reproduce` are valid. This schema makes no
+fair-use or reproduction authorization decision.
+
+### Audit and retention
+
+Echo persistence reuses the generic `audit_events` table with `echo_packet` or
+`echo_candidate` entity types. Packet creation, job creation/transitions,
+candidate discovery/gate rejection, assessment creation, source linking,
+rights assessment, candidate readiness, packet ready/no-echo, and human decisions write concise
+audit metadata in the same transactional D1 batch as their consequential
+state. Conditional transitions abort the whole batch if the expected state is
+stale. No raw model reasoning or complete copyrighted work is audited.
+Later runtime stages may add context-verification events such as
+`echo.context_verified`; PR A does not pretend those operations have occurred.
+
+Reviewed packet revisions, assessments, decisions, linked citations, relevant
+rights records, and audits are durable editorial history. Failed-job details
+and unreviewed discovery-stage data may receive bounded retention later, after
+a separate retention policy and cleanup design. PR A implements no deletion
+service, no public copy, no `echo_publications`, and no Cultural Memory
+Registry. It implements no external cultural discovery, Echo automation,
+Newsroom UI, or public WE WERE WARNED feature.
+
+### Local validation and deployment boundary
+
+`npm run echo:persistence:check` validates the eight tables, eleven named
+indexes, schema v5, and foreign-key integrity in a freshly migrated isolated
+**local D1** database. `npm run echo:persistence:test` repeats local migration
+and D1 constraints, then exercises the JavaScript persistence API against the
+same migration SQL in isolated SQLite memory. Both commands are included in
+`npm run check`; neither contacts remote D1.
+
+Opening a draft PR does not apply migration 0005 remotely. A later merge to
+`main` **would** trigger `.github/workflows/deploy-admin.yml`, which applies
+pending remote D1 migrations before deploying `sbns-admin`. Merge therefore
+requires separate production migration authorization. Recovery is a reviewed
+forward repair, never an automatic destructive down migration.
+
 ## Recovery
 
 Migrations move forward; there is no automatic destructive down migration. A failing D1 migration is rolled back while earlier successful migrations remain applied.

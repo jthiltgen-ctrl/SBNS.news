@@ -43,7 +43,7 @@ async function check() {
   const config = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
   assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
-  assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql"]);
+  assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"]);
   console.log("Watchdesk check passed: 5 curated sources, 19 synthetic fixture cases, official GAO RSS, bounded cron, and run-ledger migration.");
 }
 
