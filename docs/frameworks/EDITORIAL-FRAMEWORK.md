@@ -379,6 +379,16 @@ Likewise, do not let repeated REJECT, HOLD, or NO ACTION outcomes pressure the s
 
 A high rejection rate may mean the discovery stream is noisy. It may also mean the gate is overfitted to one conception of institutional failure. The rate alone proves neither.
 
+### Recurrence is not automatically staleness
+
+SBNS should not confuse "expected" with "unnewsworthy."
+
+A recurring or unsurprising condition may gain accountability significance when new evidence shows repeated failure after warning, failed remediation, expanding scale or duration, cumulative waste or burden, normalization of a supposedly temporary condition, repeated workarounds, or institutional acceptance of a known failure mode.
+
+Do not publish repetition for repetition's sake. A recurring story still needs a meaningful new development, evidence increment, accountability implication, or cumulative-burden insight.
+
+The site's premise permits a documented pattern to matter precisely because people have reason not to be surprised by it.
+
 ### Justice, equity, and burden language
 
 Words such as `unjust`, `inequitable`, `discriminatory`, or `unfair` can carry legal, ethical, empirical, or normative meanings.
