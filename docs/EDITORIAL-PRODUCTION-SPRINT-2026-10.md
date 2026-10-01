@@ -133,7 +133,21 @@ Record approximately:
 
 A technical change becomes sprint-eligible only when the same friction is meaningful enough that fixing it would reduce recurring burden or protect quality.
 
-## Workstream 6 — Publication acceptance
+## Workstream 6 — Editorial, search & research semantics
+
+Monitor semantic drift across discovery, evidence review, drafting, and search presentation.
+
+Use [SEMANTICS-CONTROL.md](SEMANTICS-CONTROL.md) when terminology can materially change attribution, causation, scope, evidence state, technical/legal meaning, or certainty.
+
+The key rule is:
+
+`source meaning -> supported editorial meaning -> faithful search/discovery language`
+
+Search terms may generate research questions. They do not establish editorial claims.
+
+Keep the control lightweight during the sprint. Record consequential drift and repeated friction; do not build a semantic-automation subsystem unless real production demonstrates a recurring quality or burden problem.
+
+## Workstream 7 — Publication acceptance
 
 For a story approved for publication:
 
@@ -147,7 +161,7 @@ For a story approved for publication:
 
 Treat this as the normal completion checklist, not a separate product sprint.
 
-## Workstream 7 — Measurement and learning
+## Workstream 8 — Measurement and learning
 
 Keep measurement light.
 
