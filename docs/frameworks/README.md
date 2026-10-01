@@ -3,6 +3,7 @@
 Status: Proposed canonical synthesis
 Prepared: September 18, 2026 Central / September 19, 2026 UTC repository window
 Scope: Editorial governance, technical governance, historical provenance, and operator practice
+Last reconciled: October 1, 2026
 
 ## Purpose
 
@@ -114,6 +115,9 @@ A future roadmap item does not authorize deployment.
 - READER-ACCOUNTABILITY.md — current static-first reader, public attribution, transparency, AI-use, voice, and deployment-trigger contract.
 - DNS-CUTOVER-RUNBOOK.md — completed cutover procedure retained for chronology, safeguards, and rollback; the baselines provide proof of the executed results.
 - README.md and PROJECT.md — current product and repository map.
+- docs/CURRENT-STATE.md — living project, website, deployment-evidence, content-inventory, risk, and operating-transition baseline.
+- docs/AUDIENCE-OPTION-VALIDATION.md — current business/audience/growth operating plan for the October–December 2026 validation phase.
+- docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md — bounded post-build editorial-production sprint brief.
 
 ### Historical design contracts with continuing principles
 
