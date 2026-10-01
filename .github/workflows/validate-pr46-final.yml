@@ -1,0 +1,32 @@
+name: Validate PR46 final integration
+
+on:
+  push:
+    branches:
+      - docs/2026-10-01-state-editorial-sprint
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run watchdesk:check
+      - run: npm run watchdesk:test
+      - run: npm run admin:check
+      - run: npm run admin:test
+      - run: npm run persistence:check
+      - run: npm run persistence:test
+      - run: node --check src/watchdesk.js
+      - run: node --check src/persistence.js
+      - run: node --check src/admin-index.js
+      - run: node --check public/admin-persistent/admin.js
+      - run: node scripts/watchdesk.mjs probe
