@@ -54,6 +54,45 @@ export async function getEchoPacket(env, packetId) {
   return database(env).prepare("SELECT * FROM echo_packets WHERE id = ?").bind(packetId).first();
 }
 
+// Read-only views for the synthetic orchestrator. Writes still pass through the
+// existing audited persistence functions and database constraints.
+export async function getEchoIssueSnapshot(env, issueKey, evidenceSnapshotHash) {
+  return database(env).prepare("SELECT * FROM echo_packets WHERE issue_key = ? AND evidence_snapshot_hash = ?")
+    .bind(issueKey, evidenceSnapshotHash).first();
+}
+
+export async function getEchoPacketProgress(env, packetId) {
+  const db = database(env);
+  const read = async (sql) => (await db.prepare(sql).bind(packetId).all()).results;
+  return {
+    jobs: await read("SELECT * FROM echo_jobs WHERE packet_id = ? ORDER BY created_at, id"),
+    candidates: await read("SELECT * FROM echo_candidates WHERE packet_id = ? ORDER BY id"),
+    assessments: await read("SELECT * FROM echo_candidate_assessments WHERE packet_id = ? ORDER BY id"),
+    sources: await read("SELECT * FROM echo_candidate_sources WHERE packet_id = ? ORDER BY id"),
+    rights: await read("SELECT * FROM echo_rights_assessments WHERE packet_id = ? ORDER BY id"),
+  };
+}
+
+// One content-free candidate-package receipt per packet. A deterministic ID
+// lets an interrupted attempt and its retry share the same durable binding.
+export async function getEchoCandidatePackageBinding(env, id) {
+  return database(env).prepare("SELECT action, entity_type, entity_id, metadata_json FROM audit_events WHERE id = ?")
+    .bind(id).first();
+}
+
+export async function bindEchoCandidatePackage(env, { id, packetId, metadata, actorId, at }) {
+  const db = database(env);
+  const encoded = JSON.stringify(metadata);
+  if (!encoded || encoded.length > 500) throw new Error("Echo candidate package audit metadata is too large");
+  await db.prepare(`INSERT OR IGNORE INTO audit_events
+    (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
+    SELECT ?, 'system', ?, 'echo.candidate_package_bound', 'echo_packet', ?, ?, ?
+    WHERE EXISTS (SELECT 1 FROM echo_packets
+      WHERE id = ? AND state = 'open' AND superseded_at IS NULL)`)
+    .bind(id, actorId ?? null, packetId, encoded, timestamp(at), packetId).run();
+  return getEchoCandidatePackageBinding(env, id);
+}
+
 export async function createEchoJob(env, { id, packetId, idempotencyKey, triggerType, requestedBy, processorVersion, createdAt }) {
   const db = database(env);
   const at = timestamp(createdAt);
@@ -114,6 +153,35 @@ export async function createEchoCandidate(env, candidate, actorId) {
       actorType: "system", actorId: actorId ?? null, at, metadata: { packet_id: candidate.packetId }, requireChange: true }),
   ]);
   return db.prepare("SELECT * FROM echo_candidates WHERE id = ?").bind(candidate.id).first();
+}
+
+// One bounded evaluation plan per packet/candidate. The deterministic ID is
+// independent of job attempts, so a new-key retry cannot rewrite history or
+// manufacture duplicate evaluations. Candidate state-transition audits remain
+// the separate receipts for actual rejection or readiness.
+export async function recordEchoCandidateEvaluation(env, { id, packetId, candidateId, metadata, actorId, at }) {
+  const db = database(env);
+  const encoded = JSON.stringify(metadata);
+  if (!encoded || encoded.length > 1500) throw new Error("Echo evaluation audit metadata is too large");
+  const read = () => db.prepare("SELECT action, entity_type, entity_id, metadata_json FROM audit_events WHERE id = ?")
+    .bind(id).first();
+  let existing = await read();
+  if (!existing) {
+    await db.prepare(`INSERT OR IGNORE INTO audit_events
+      (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
+      SELECT ?, 'system', ?, 'echo.candidate_evaluated', 'echo_candidate', ?, ?, ?
+      WHERE EXISTS (SELECT 1 FROM echo_candidates AS candidate
+        JOIN echo_packets AS packet ON packet.id = candidate.packet_id
+        WHERE candidate.id = ? AND candidate.packet_id = ?
+          AND packet.state = 'open' AND packet.superseded_at IS NULL)`)
+      .bind(id, actorId ?? null, candidateId, encoded, timestamp(at), candidateId, packetId).run();
+    existing = await read();
+  }
+  if (!existing || existing.action !== "echo.candidate_evaluated" || existing.entity_type !== "echo_candidate" ||
+      existing.entity_id !== candidateId || existing.metadata_json !== encoded) {
+    throw new Error("Echo candidate evaluation conflicts with durable audit or packet is stale");
+  }
+  return existing;
 }
 
 export async function createEchoAssessment(env, assessment) {
