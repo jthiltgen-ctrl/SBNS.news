@@ -182,6 +182,9 @@ rights assessment, candidate readiness, packet ready/no-echo, and human decision
 audit metadata in the same transactional D1 batch as their consequential
 state. Conditional transitions abort the whole batch if the expected state is
 stale. No raw model reasoning or complete copyrighted work is audited.
+PR B adds one bounded `echo.candidate_evaluated` audit per packet/candidate,
+keyed independently of job attempts. It records the deterministic selection
+plan, not completed readiness; conflicting replay metadata is rejected.
 Later runtime stages may add context-verification events such as
 `echo.context_verified`; PR A does not pretend those operations have occurred.
 

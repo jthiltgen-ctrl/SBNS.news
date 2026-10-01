@@ -40,7 +40,7 @@ export function syntheticCandidate(n = 1) {
       status: "link_metadata_only", basis: "Synthetic restrictive review", permittedUse: "title and metadata only",
       rightsSource, reviewedBy: "synthetic-editor", reviewedAt: AT }],
     gate: { context: "verified", presentEvidence: "sufficient", mechanismMatch: "direct",
-      editorialValue: "adds", culturalProtocol: "clear", authority: "primary" },
+      editorialValue: "adds", culturalProtocol: "clear", contextAuthority: "primary" },
     priorUse: { status: "never_seen" } };
 }
 

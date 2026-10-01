@@ -31,9 +31,12 @@ There is no cultural candidate data in the brief.
 
 `echo-candidate-v1` supplies artifact identity, a nine-field Analogy Truth
 Test, claim-specific sources, per-asset rights reviews, structured gate facts,
-and prior-use status/justification. This is the contract a future PR C adapter
-may supply; PR B does not couple it to a catalog or search API. Before any
-write, an intake-scoped contemporary candidate source must match the brief's
+and prior-use status/justification. `gate.contextAuthority` (primary, scholarly,
+limited) describes only the authority supporting the artifact's **original
+historical context**. It is not a global authority grade for the candidate,
+its contemporary connection, rights, or any other claim. This is the contract a future PR C adapter
+may supply; PR B does not couple it to a catalog or search API. During the
+`researching` stage, before any candidate write, an intake-scoped contemporary candidate source must match the brief's
 linked source and intake IDs.
 
 ## Canonicalization and hashes
@@ -94,13 +97,16 @@ can pass. Restrictive `unknown`, `link_metadata_only`, or
 reproduction permission. No gate assigns a similarity score or declares an
 editorial FEATURE decision.
 
-Survivors are tiered transparently by authority (primary, scholarly, limited),
-mechanism match (direct, qualified), research burden (low, moderate, high),
-prior-use caution, then canonical artifact ID. This order only selects a
+Survivors are tiered transparently by mechanism match (direct, qualified),
+historical-context authority (primary, scholarly, limited), research burden
+(low, moderate, high), prior-use caution, then canonical artifact ID. This order only selects a
 reviewable packet; it is not an editorial verdict. At most three survivors
 receive slots 1–3 and the existing database constraint also bars a fourth.
-Additional passers become gate-rejected with `NOT_IN_TOP_THREE`. Others keep
-their bounded gate reason. Every input candidate receives a durable identity;
+Additional passers use the schema-v5-compatible candidate state
+`rejected_by_gate / NOT_IN_TOP_THREE`, but their evaluation audit records
+substantive `PASS` plus packet-cap `NOT_IN_TOP_THREE`. This is neither a factual
+nor an editorial rejection. Others keep their bounded substantive gate reason.
+Every input candidate receives a durable identity;
 only selected candidates receive an assessment, sources, rights review, and
 `editor_ready` state. No FEATURE/HOLD/REJECT or publication row is created.
 
@@ -113,11 +119,16 @@ cultural match.
 
 ## Persistence, replay, stale state, and failure
 
-The orchestrator uses PR A's audited persistence functions and only adds two
-narrow read helpers. It validates all supplied input before writes, computes
-the evidence hash, creates or reuses the issue packet, creates one job, moves
-the job through research/verification/rights/assembly, writes deterministic
-candidate packages, and completes `ready` or `no_echo`. Exact replay of a
+The orchestrator uses PR A's audited persistence functions, two narrow read
+helpers, and one bounded evaluation-audit helper. It validates the contemporary
+brief before creating/reusing the packet and job. Candidate normalization,
+hard gates, candidate creation/rejection, and top-three selection occur while
+the durable job is `researching`; zero survivors complete `no_echo` there.
+Selected assessments, frozen non-rights sources, and source-set hashes are
+persisted while `verifying`. Rights sources and per-asset rights reviews are
+persisted while `rights_check`. Readiness slots, unresolved-candidate checks,
+and `ready` completion occur while `assembling`. Failures are audited from the
+actual stage in which they occur. Exact replay of a
 completed snapshot returns `ALREADY_PROCESSED` without another job or row.
 The packet is one research result per contemporary evidence snapshot: changing
 only supplied candidates after completion does not reopen it. Reassessment
@@ -137,7 +148,17 @@ automatic retry infrastructure.
 
 Existing generic `audit_events` records packet/job creation, lifecycle and
 failure, candidate discovery/rejection, assessment/source/rights persistence,
-readiness, and ready/no-echo completion. No raw model reasoning is logged.
+readiness, and ready/no-echo completion. `echo.candidate_evaluated` additionally
+records one bounded **selection plan** per packet/candidate: packet/candidate IDs,
+processor version, substantive gate result, intended slot/cap/substantive
+selection outcome, mechanism and research-burden classes, prior-use status and
+justification-present boolean, historical-context authority, and evidence/
+rights-review presence booleans. A deterministic audit ID keyed to packet and
+candidate makes new-key retries reuse the same event; conflicting metadata is
+rejected rather than overwriting history. A slot in this evaluation event does
+not claim that readiness completed: candidate-readiness and packet-result
+audits are separate durable receipts. No justification prose, raw source text,
+copyrighted material, or model reasoning is logged.
 The suite uses only isolated SQLite memory migrated through v5 and fabricated
 fixtures; `npm run echo:check` exercises pure contracts and `npm run echo:test`
 exercises the full orchestration. Both are included in `npm run check`.

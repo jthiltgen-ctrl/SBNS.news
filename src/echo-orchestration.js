@@ -4,7 +4,7 @@ import {
   createEchoPacket, createEchoJob, transitionEchoJob, createEchoCandidate,
   createEchoAssessment, createEchoSource, createEchoRightsAssessment,
   markEchoCandidateReady, rejectEchoCandidateByGate, completeEchoPacket,
-  getEchoPacket, getEchoIssueSnapshot, getEchoPacketProgress,
+  getEchoPacket, getEchoIssueSnapshot, getEchoPacketProgress, recordEchoCandidateEvaluation,
 } from "./echo-persistence.js";
 
 export const BRIEF_SCHEMA = "echo-brief-v1";
@@ -212,7 +212,7 @@ export function canonicalCandidate(raw) {
       recheckAt: string(entry.recheckAt, "recheckAt", false) };
   }), (entry) => `${entry.assetType}|${entry.assetIdentifier}|${entry.proposedUse}`, "rights asset/use");
   const gate = object(raw.gate, "gate");
-  keys(gate, ["context", "presentEvidence", "mechanismMatch", "editorialValue", "culturalProtocol", "authority"], "gate");
+  keys(gate, ["context", "presentEvidence", "mechanismMatch", "editorialValue", "culturalProtocol", "contextAuthority"], "gate");
   const priorUse = object(raw.priorUse, "priorUse");
   keys(priorUse, ["status", "justification"], "priorUse");
   return { schema: CANDIDATE_SCHEMA, canonicalArtifactId: string(raw.canonicalArtifactId, "artifact ID"),
@@ -225,7 +225,7 @@ export function canonicalCandidate(raw) {
       mechanismMatch: choice(gate.mechanismMatch, new Set(["direct", "qualified", "topic_only", "misleading"]), "mechanism gate"),
       editorialValue: choice(gate.editorialValue, new Set(["adds", "none"]), "value gate"),
       culturalProtocol: choice(gate.culturalProtocol, new Set(["clear", "unresolved"]), "cultural protocol"),
-      authority: choice(gate.authority, new Set(["primary", "scholarly", "limited"]), "authority gate") },
+      contextAuthority: choice(gate.contextAuthority, new Set(["primary", "scholarly", "limited"]), "historical-context authority") },
     priorUse: { status: choice(priorUse.status, PRIOR_USE, "prior use"), justification: string(priorUse.justification, "prior-use justification", false) } };
 }
 
@@ -246,8 +246,8 @@ const tier = (value, order) => order.indexOf(value);
 export function orderEchoCandidates(candidates) {
   return candidates.toSorted((a, b) => {
     for (const [field, order] of [
-      [(item) => item.gate.authority, ["primary", "scholarly", "limited"]],
       [(item) => item.gate.mechanismMatch, ["direct", "qualified"]],
+      [(item) => item.gate.contextAuthority, ["primary", "scholarly", "limited"]],
       [(item) => item.assessment.researchBurden, ["low", "moderate", "high"]],
       [(item) => item.priorUse.status, ["never_seen", "previously_considered", "previously_rejected", "previously_featured", "recently_featured", "overused_pattern"]],
     ]) { const difference = tier(field(a), order) - tier(field(b), order); if (difference) return difference; }
@@ -282,11 +282,6 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
   object(input, "orchestration input");
   keys(input, ["brief", "candidates", "runKey", "requestedBy", "triggerType", "at"], "orchestration input");
   const brief = canonicalBrief(input.brief);
-  const candidates = unique(boundedList(input.candidates, "candidates", 24).map(canonicalCandidate), (entry) => entry.canonicalArtifactId, "candidate artifacts");
-  for (const candidate of candidates) for (const source of candidate.sources) if (source.intakeSourceId) {
-    if (!brief.evidenceSources.some((entry) => entry.id === source.intakeSourceId && entry.intakeId === source.sourceIntakeId))
-      fail("SOURCE_INTAKE_MISMATCH", "Candidate contemporary source must belong to the issue evidence snapshot");
-  }
   const runKey = string(input.runKey, "runKey");
   const requestedBy = string(input.requestedBy, "requestedBy");
   const at = string(input.at, "at");
@@ -330,6 +325,12 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
     await step("after_packet_creation");
     job = await transitionEchoJob(env, { jobId, from: "pending", to: "researching", actorId: requestedBy, at });
     await step("researching");
+    const candidates = unique(boundedList(input.candidates, "candidates", 24).map(canonicalCandidate),
+      (entry) => entry.canonicalArtifactId, "candidate artifacts");
+    for (const candidate of candidates) for (const source of candidate.sources) if (source.intakeSourceId &&
+        !brief.evidenceSources.some((entry) => entry.id === source.intakeSourceId && entry.intakeId === source.sourceIntakeId)) {
+      fail("SOURCE_INTAKE_MISMATCH", "Candidate contemporary source must belong to the issue evidence snapshot");
+    }
     const evaluated = candidates.map((candidate) => ({ candidate, reason: evaluateEchoGate(candidate) }));
     const chosen = orderEchoCandidates(evaluated.filter((entry) => !entry.reason).map((entry) => entry.candidate)).slice(0, 3);
     const chosenSlots = new Map(chosen.map((candidate, index) => [candidate.canonicalArtifactId, index + 1]));
@@ -341,20 +342,45 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
       const candidateId = await stableId("echo_candidate", packetId, candidate.canonicalArtifactId);
       await ensureCandidate(env, progress, { id: candidateId, packet_id: packetId, canonical_artifact_id: candidate.canonicalArtifactId,
         artifact_type: candidate.artifactType, title: candidate.title, creator: candidate.creator, creation_date: candidate.creationDate }, requestedBy);
-      await step("during_candidate");
       const gateReason = reason ?? (chosenSlots.has(candidate.canonicalArtifactId) ? null : "NOT_IN_TOP_THREE");
+      const slot = chosenSlots.get(candidate.canonicalArtifactId);
+      await recordEchoCandidateEvaluation(env, {
+        id: await stableId("echo_eval", packetId, candidateId), packetId, candidateId, actorId: requestedBy, at,
+        metadata: { packet_id: packetId, candidate_id: candidateId, processor_version: PROCESSOR_VERSION,
+          substantive_gate: reason ?? "PASS", selection_outcome: reason ? "SUBSTANTIVE_REJECTION" : slot ? `SLOT_${slot}` : "NOT_IN_TOP_THREE",
+          mechanism_match: candidate.gate.mechanismMatch, research_burden: candidate.assessment.researchBurden,
+          prior_use_status: candidate.priorUse.status, prior_use_justification_present: Boolean(candidate.priorUse.justification),
+          context_authority: candidate.gate.contextAuthority,
+          context_evidence_present: candidate.sources.some((source) => ["original_work", "historical_context"].includes(source.sourceRole)),
+          contemporary_evidence_present: candidate.sources.some((source) => source.sourceRole === "contemporary_evidence"),
+          rights_review_present: candidate.rights.length > 0 },
+      });
+      await step("during_candidate");
       const candidateRow = progress.candidates.find((entry) => entry.id === candidateId);
       if (gateReason) {
         if (candidateRow && candidateRow.state !== "found") expectedRow({ state: "rejected_by_gate", gate_reason_code: gateReason }, candidateRow, ["state", "gate_reason_code"]);
         else await rejectEchoCandidateByGate(env, { candidateId, reasonCode: gateReason, actorId: requestedBy, at });
-        continue;
       }
-      if (candidateRow?.state === "editor_ready") {
-        expectedRow({ editor_ready_slot: chosenSlots.get(candidate.canonicalArtifactId) }, candidateRow, ["editor_ready_slot"]);
-        continue;
-      }
-      const assessmentId = await stableId("echo_assessment", candidateId, await sourceSetHash(candidate.sources));
+    }
+    const reasons = evaluated.map((entry) => entry.reason);
+    const reasonCode = chosen.length ? null : noEchoReason(candidates, reasons);
+    if (!chosen.length) {
+      await step("before_completion");
+      await completeEchoPacket(env, { packetId, jobId, result: "no_echo", actorId: requestedBy, at, reasonCode });
+      return { status: "NO_CULTURAL_ECHO_WARRANTED", packetId, packetRevision: packet.revision, jobId,
+        packetState: "no_echo", evidenceSnapshotHash: hash, readyCount: 0,
+        gateSummary: evaluated.map((entry) => ({ artifactId: entry.candidate.canonicalArtifactId, outcome: entry.reason })), reasonCode };
+    }
+
+    job = await transitionEchoJob(env, { jobId, from: "researching", to: "verifying", actorId: requestedBy, at });
+    const selected = await Promise.all(chosen.map(async (candidate, index) => {
+      const candidateId = await stableId("echo_candidate", packetId, candidate.canonicalArtifactId);
       const sourceHash = await sourceSetHash(candidate.sources);
+      return { candidate, candidateId, sourceHash, assessmentId: await stableId("echo_assessment", candidateId, sourceHash), slot: index + 1 };
+    }));
+    for (const { candidate, candidateId, sourceHash, assessmentId } of selected) {
+      await step("before_verification");
+      progress = await getEchoPacketProgress(env, packetId);
       const fields = candidate.assessment;
       const oldAssessment = progress.assessments.find((entry) => entry.id === assessmentId);
       if (oldAssessment) expectedRow({ source_set_hash: sourceHash, original_context: fields.originalContext,
@@ -365,8 +391,19 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
       ["source_set_hash", "original_context", "what_echoes", "comparison_breaks", "remains_uncertain", "tempted_overclaim", "present_day_evidence", "editorial_value", "research_burden", "creator_intent_status"]);
       else await createEchoAssessment(env, { id: assessmentId, packetId, candidateId, ...fields, sourceSetHash: sourceHash,
         generatorType: "system", generatorVersion: PROCESSOR_VERSION, createdBy: requestedBy, createdAt: at });
+      for (const source of candidate.sources.filter((item) => item.sourceRole !== "rights")) {
+        const sourceId = await stableId("echo_source", assessmentId, sourceIdentity(source));
+        if (!progress.sources.some((entry) => entry.id === sourceId)) await createEchoSource(env, { ...source, id: sourceId,
+          packetId, candidateId, assessmentId, createdAt: at }, requestedBy);
+      }
       await step("during_verification");
-      for (const source of candidate.sources) {
+    }
+
+    job = await transitionEchoJob(env, { jobId, from: "verifying", to: "rights_check", actorId: requestedBy, at });
+    for (const { candidate, candidateId, assessmentId } of selected) {
+      await step("before_rights");
+      progress = await getEchoPacketProgress(env, packetId);
+      for (const source of candidate.sources.filter((item) => item.sourceRole === "rights")) {
         const sourceId = await stableId("echo_source", assessmentId, sourceIdentity(source));
         if (!progress.sources.some((entry) => entry.id === sourceId)) await createEchoSource(env, { ...source, id: sourceId,
           packetId, candidateId, assessmentId, createdAt: at }, requestedBy);
@@ -383,22 +420,31 @@ export async function orchestrateSyntheticEcho(env, input, { onStep } = {}) {
           createdAt: at });
       }
       await step("during_rights");
-      await markEchoCandidateReady(env, { candidateId, assessmentId, slot: chosenSlots.get(candidate.canonicalArtifactId), actorId: requestedBy, at });
     }
-    await step("before_assembly");
-    if (chosen.length) {
-      job = await transitionEchoJob(env, { jobId, from: "researching", to: "verifying", actorId: requestedBy, at });
-      job = await transitionEchoJob(env, { jobId, from: "verifying", to: "rights_check", actorId: requestedBy, at });
-      job = await transitionEchoJob(env, { jobId, from: "rights_check", to: "assembling", actorId: requestedBy, at });
+
+    job = await transitionEchoJob(env, { jobId, from: "rights_check", to: "assembling", actorId: requestedBy, at });
+    for (const { candidateId, assessmentId, slot } of selected) {
+      await step("before_assembly");
+      progress = await getEchoPacketProgress(env, packetId);
+      const candidateRow = progress.candidates.find((entry) => entry.id === candidateId);
+      if (candidateRow?.state === "editor_ready") {
+        expectedRow({ editor_ready_slot: slot, editor_ready_assessment_id: assessmentId }, candidateRow,
+          ["editor_ready_slot", "editor_ready_assessment_id"]);
+      } else {
+        await markEchoCandidateReady(env, { candidateId, assessmentId, slot, actorId: requestedBy, at });
+      }
+      await step("during_assembly");
     }
-    const result = chosen.length ? "ready" : "no_echo";
-    const reasons = evaluated.map((entry) => entry.reason);
-    const reasonCode = result === "no_echo" ? noEchoReason(candidates, reasons) : null;
-    await completeEchoPacket(env, { packetId, jobId, result, actorId: requestedBy, at, reasonCode });
-    return { status: result === "ready" ? "READY" : "NO_CULTURAL_ECHO_WARRANTED", packetId,
-      packetRevision: packet.revision, jobId, packetState: result, evidenceSnapshotHash: hash,
+    await step("before_completion");
+    progress = await getEchoPacketProgress(env, packetId);
+    if (progress.candidates.some((entry) => ["found", "researching"].includes(entry.state)) ||
+        progress.candidates.filter((entry) => entry.state === "editor_ready").length !== selected.length)
+      fail("UNRESOLVED_CANDIDATES", "Packet has unresolved candidates before completion");
+    await completeEchoPacket(env, { packetId, jobId, result: "ready", actorId: requestedBy, at });
+    return { status: "READY", packetId,
+      packetRevision: packet.revision, jobId, packetState: "ready", evidenceSnapshotHash: hash,
       readyCount: chosen.length, gateSummary: evaluated.map((entry) => ({ artifactId: entry.candidate.canonicalArtifactId,
-        outcome: entry.reason ?? (chosenSlots.has(entry.candidate.canonicalArtifactId) ? "PASS" : "NOT_IN_TOP_THREE") })), reasonCode };
+        outcome: entry.reason ?? (chosenSlots.has(entry.candidate.canonicalArtifactId) ? "PASS" : "NOT_IN_TOP_THREE") })), reasonCode: null };
   } catch (error) {
     const latest = (await getEchoPacketProgress(env, packetId)).jobs.find((entry) => entry.id === jobId);
     if (latest && !["failed", "ready", "no_echo"].includes(latest.state)) {
