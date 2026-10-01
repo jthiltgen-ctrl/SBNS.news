@@ -11,6 +11,7 @@ const TRACKING_PARAMETERS = new Set(["fbclid", "gclid", "dclid", "msclkid", "mc_
 const RECORD_TERMS = /\b(audit|evaluation|investigation|inspection|review|report|finding|recommendation|court|decision|enforcement|financial statement|corrective action)\b/i;
 const GAP_TERMS = /\b(should|needs?|needed|improv|risk|failure|failed|delay|incomplete|concern|problem|over budget|overrun|lack|without|not |hinder|disrupt|declin|gap|misconduct|noncompliance|compliance|controls?|weakness|vacan|untimely|deficien|violation|waste|wasteful|burden|backlog|shortage|inefficien|duplicat|disparit|inequit|barrier|exclude|denied|recurr|repeat|foresee|avoidable|externaliz|workaround|wait|cost)\b/i;
 const ACCOUNTABILITY_APERTURE_TERMS = /\b(waste|wasteful|burden|backlog|shortage|inefficien|duplicat|disparit|inequit|barrier|exclude|denied|recurr|repeat|foresee|avoidable|externaliz|workaround|delay|risk|cost|overrun|over budget|underperform|weakness|gap|lack|without|failed|failure|incomplete|declin|untimely|deficien|violation|noncompliance)\b/i;
+const NO_ACCOUNTABILITY_CONDITION = /\b(?:no (?:remaining )?(?:violation|finding|deficiency|gap|problem|issue)|did not identify (?:a |any )?(?:remaining )?(?:violation|finding|deficiency|gap|problem|issue)|no material (?:finding|deficiency|gap|problem|issue))\b/i;
 const OPINION_TERMS = /\b(opinion|editorial|endorsement|vote for|vote against|campaign strategy|horoscope|sponsored content)\b/i;
 const GENERIC_TOKENS = new Set(["audit", "report", "review", "oversight", "federal", "state", "city", "public", "government", "office", "department", "program", "should", "the", "and", "for", "with", "from", "into"]);
 const ACTOR_NAME = /\b((?:(?:[A-Z][A-Za-z’'-]+|of|the|and|for)\s+){1,7}(?:Administration|Agency|Department|Office|Service|Board|Commission|Authority|Bureau|Corporation))\b(?:\s*\(([A-Z][A-Z0-9]{1,7})\))?/g;
@@ -232,7 +233,9 @@ export function fitGate(candidate, item) {
   const substantiveEvidence = candidate.evidence_review_state !== "NOT REVIEWED"
     && Boolean(concise(item.reviewed_material)) && (evidenceText?.length || 0) >= 45
     && FACTUAL_SIGNAL.test(evidenceText);
-  const accountabilitySignal = Boolean(substantiveEvidence && ACCOUNTABILITY_APERTURE_TERMS.test(evidenceText || ""));
+  const accountabilitySignal = Boolean(substantiveEvidence
+    && ACCOUNTABILITY_APERTURE_TERMS.test(evidenceText || "")
+    && !NO_ACCOUNTABILITY_CONDITION.test(evidenceText || ""));
   if (!substantiveEvidence) reasons.push("candidate_specific_substantive_evidence_not_established");
   return {
     passes: reasons.length === 0,
