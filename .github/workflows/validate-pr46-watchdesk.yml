@@ -1,0 +1,27 @@
+name: Validate PR46 Watchdesk aperture
+
+on:
+  push:
+    branches:
+      - docs/2026-10-01-state-editorial-sprint
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run watchdesk:check
+      - run: npm run watchdesk:test
+      - run: node --check src/watchdesk.js
+      - run: node --check src/watchdesk-operations.js
+      - run: node --check public/admin-persistent/admin.js
+      - run: node --check scripts/watchdesk.mjs
