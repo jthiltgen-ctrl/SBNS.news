@@ -1,5 +1,6 @@
 import { verifyAccessRequest, verifyAccessServiceRequest } from "./access-auth.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON } from "./watchdesk-operations.js";
+import { WATCHDESK_SOURCES } from "../watchdesk/source-registry.js";
 import {
   createDecisionWithAudit,
   createDraftWithAudit,
@@ -13,6 +14,9 @@ import {
   getLatestDraft,
   getLatestAnalysisJob,
   listIntakes,
+  listWatchdeskSourceCandidates,
+  getWatchdeskSourceCandidate,
+  decideWatchdeskSourceCandidate,
   markAnalysisJobQueued,
   recordAnalysisRetryWithAudit,
   updateIdempotencyResponse,
@@ -188,6 +192,78 @@ async function createDecision(request, env, actor, intakeId) {
   return json(responseBody, 201);
 }
 
+function canonicalHostname(value) {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+  } catch {
+    return null;
+  }
+}
+
+function publicStaticSource(source) {
+  return {
+    id: source.id, name: source.name, source_class: source.source_class,
+    jurisdiction: source.jurisdiction, discovery_url: source.discovery_url,
+    adapter: source.adapter, enabled: source.enabled, primary_record: source.primary_record,
+    dynamic: false,
+  };
+}
+
+async function listWatchdeskSources(env) {
+  return {
+    static_sources: WATCHDESK_SOURCES.map(publicStaticSource),
+    learned_candidates: await listWatchdeskSourceCandidates(env, 100),
+  };
+}
+
+async function decideWatchdeskSource(request, env, actor, hostname) {
+  const candidate = await getWatchdeskSourceCandidate(env, hostname);
+  if (!candidate) throw new ApiError(404, "NOT_FOUND", "Source candidate not found.");
+  const body = await readJson(request);
+  if (!["approve", "reject"].includes(body.decision)) throw new ApiError(400, "VALIDATION_ERROR", "decision must be approve or reject.");
+  const decidedAt = now();
+  let update;
+  if (body.decision === "reject") {
+    update = {
+      hostname, status: "rejected", source_id: null, source_name: null, source_class: null,
+      jurisdiction: null, discovery_url: null, adapter: null, allowed_hosts_json: null,
+      allowed_path_prefixes_json: null, primary_record: null, enabled: false,
+      decision_note: optionalString(body.note, "note", 1_000), decided_by: actor.actorId, decided_at: decidedAt,
+    };
+  } else {
+    const sourceId = requiredString(body.source_id, "source_id", 80);
+    if (!/^[a-z0-9-]+$/.test(sourceId) || WATCHDESK_SOURCES.some((source) => source.id === sourceId)) throw new ApiError(400, "VALIDATION_ERROR", "source_id must be unique lowercase letters, numbers, and hyphens.");
+    const sourceName = requiredString(body.source_name, "source_name", 200);
+    const sourceClass = requiredString(body.source_class, "source_class", 80);
+    if (!new Set(["primary_oversight","primary_institutional","secondary_reporting_signal","local_regional","public_whistleblower_signal"]).has(sourceClass)) throw new ApiError(400, "VALIDATION_ERROR", "source_class is invalid.");
+    const jurisdiction = requiredString(body.jurisdiction, "jurisdiction", 200);
+    const discoveryUrl = validateUrl(body.discovery_url);
+    if (canonicalHostname(discoveryUrl) !== hostname) throw new ApiError(400, "VALIDATION_ERROR", "Monitoring URL must use the same source hostname as the learned candidate.");
+    const actualHost = new URL(discoveryUrl).hostname.toLowerCase();
+    if (/^(?:localhost|127\.|0\.|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(actualHost) || actualHost.endsWith(".local")) throw new ApiError(400, "VALIDATION_ERROR", "Private or local hosts cannot be monitored.");
+    const adapter = requiredString(body.adapter, "adapter", 32);
+    if (!new Set(["html_links","rss_atom"]).has(adapter)) throw new ApiError(400, "VALIDATION_ERROR", "adapter is invalid.");
+    if (!Array.isArray(body.allowed_path_prefixes) || !body.allowed_path_prefixes.length || body.allowed_path_prefixes.length > 20 || body.allowed_path_prefixes.some((value) => typeof value !== "string" || !value.startsWith("/") || value.length > 200)) throw new ApiError(400, "VALIDATION_ERROR", "allowed_path_prefixes must contain bounded URL path prefixes.");
+    if (typeof body.primary_record !== "boolean") throw new ApiError(400, "VALIDATION_ERROR", "primary_record must be boolean.");
+    update = {
+      hostname, status: "approved", source_id: sourceId, source_name: sourceName, source_class: sourceClass,
+      jurisdiction, discovery_url: discoveryUrl, adapter,
+      allowed_hosts_json: JSON.stringify([actualHost]),
+      allowed_path_prefixes_json: JSON.stringify(body.allowed_path_prefixes),
+      primary_record: body.primary_record, enabled: body.enabled !== false,
+      decision_note: optionalString(body.note, "note", 1_000), decided_by: actor.actorId, decided_at: decidedAt,
+    };
+  }
+  await decideWatchdeskSourceCandidate(env, update, {
+    id: opaqueId("audit"), actor_type: actor.actorType, actor_id: actor.actorId,
+    action: `watchdesk.source_${body.decision}d`, entity_type: "watchdesk_source",
+    entity_id: hostname, metadata_json: JSON.stringify({ status: update.status, source_id: update.source_id, enabled: update.enabled }),
+    created_at: decidedAt,
+  });
+  return json({ ok: true, source: await getWatchdeskSourceCandidate(env, hostname) }, 200);
+}
+
 async function runWatchdesk(request, env, actor, executeWatchdesk) {
   const body = await readJson(request);
   if (Object.keys(body).some((key) => key !== "dry_run") || (body.dry_run != null && typeof body.dry_run !== "boolean")) throw new ApiError(400, "VALIDATION_ERROR", "Watchdesk run accepts only an optional dry_run boolean.");
@@ -198,7 +274,10 @@ async function route(request, env, actor, executeWatchdesk) {
   const url = new URL(request.url);
   if (request.method === "GET" && url.pathname === "/api/admin/session") return json({ ok: true, actor: { role: "editor", email: actor.email } });
   if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/status") return json({ ok: true, schedule_configured: true, cron_utc: WATCHDESK_CRON, ...await getWatchdeskStatus(env) });
+  if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/sources") return json({ ok: true, ...await listWatchdeskSources(env) });
   if (request.method === "POST" && url.pathname === "/api/admin/watchdesk/runs") return runWatchdesk(request, env, actor, executeWatchdesk);
+  const sourceDecision = url.pathname.match(/^\/api\/admin\/watchdesk\/source-candidates\/([^/]+)\/decision$/);
+  if (sourceDecision && request.method === "POST") return decideWatchdeskSource(request, env, actor, decodeURIComponent(sourceDecision[1]));
   if (url.pathname === "/api/admin/intakes" && request.method === "GET") {
     const limit = Math.min(100, Math.max(1, Number.parseInt(url.searchParams.get("limit") || "50", 10) || 50));
     const status = url.searchParams.get("status"); const origin = url.searchParams.get("origin");
