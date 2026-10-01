@@ -50,6 +50,7 @@ the publication's standards.
 - [docs/AUDIENCE-OPTION-VALIDATION.md](docs/AUDIENCE-OPTION-VALIDATION.md) — current business, audience, measurement, burden, and cost posture.
 - [docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md](docs/EDITORIAL-PRODUCTION-SPRINT-2026-10.md) — next editorial-production sprint and technical freeze-by-default boundary.
 - [docs/SEMANTICS-CONTROL.md](docs/SEMANTICS-CONTROL.md) — control for research, editorial, and search-language drift.
+- [docs/WATCHDESK-SOURCE-PORTFOLIO.md](docs/WATCHDESK-SOURCE-PORTFOLIO.md) — discovery-source balance, authority boundaries, and public-whistleblower source governance.
 
 ## Local development
 
