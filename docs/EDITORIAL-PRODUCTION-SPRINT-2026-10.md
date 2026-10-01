@@ -72,7 +72,9 @@ Before a candidate stops solely because "failure" is not established, test wheth
 
 This does not lower the evidence standard. It broadens the set of evidence-supported accountability questions SBNS is willing to examine.
 
-During the sprint, sample stopped candidates to distinguish legitimate quality filtering from semantic throttling. Do not establish a target publication, pass, hold, or rejection rate.
+During the sprint, sample stopped candidates to distinguish legitimate quality filtering from semantic throttling. Pay particular attention to candidates dismissed as stale, expected, unsurprising, or repetitive: recurrence may be meaningful when it shows failed remediation, growing burden, normalization, or a newly documented extension of the pattern.
+
+Do not establish a target publication, pass, hold, or rejection rate.
 
 ## Workstream 3 — Evidence packet quality
 
