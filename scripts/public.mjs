@@ -31,6 +31,8 @@ const [
   appScript,
   storyHtml,
   feedText,
+  rssText,
+  followScript,
   faaSourceText,
   sourceDisplayFont,
   publicDisplayFont,
@@ -48,6 +50,8 @@ const [
     readFile(new URL("../public/app.js", import.meta.url), "utf8"),
     readFile(new URL(`../public/story/${knownId}.html`, import.meta.url), "utf8"),
     readFile(new URL("../public/stories.json", import.meta.url), "utf8"),
+    readFile(new URL("../public/feed.xml", import.meta.url), "utf8"),
+    readFile(new URL("../public/follow.js", import.meta.url), "utf8"),
     readFile(new URL("../content/stories/2026-09-20-faa-bnatcs-gao-review.json", import.meta.url), "utf8"),
     readFile(new URL("../assets/fonts/eb-garamond-variable.ttf", import.meta.url)),
     readFile(new URL("../public/fonts/eb-garamond-variable.ttf", import.meta.url)),
@@ -131,6 +135,34 @@ assert(homepageHtml.includes('data-view="Samples"'), "Prototype archive filter r
 const publicStories = JSON.parse(feedText);
 const reportingStories = publicStories.filter((story) => story.content_type === "reporting");
 const sampleStories = publicStories.filter((story) => story.content_type === "sample");
+const feedUrl = "https://shockedbutnotsurprised.news/feed.xml";
+const autodiscovery = `<link rel="alternate" type="application/rss+xml" title="SBNS reporting feed" href="${feedUrl}" />`;
+for (const html of [homepageHtml, storyHtml]) {
+  assert(html.includes(autodiscovery), "Homepage or story feed autodiscovery is missing");
+  assert(html.includes('<summary>Follow SBNS</summary>'), "Homepage or story Follow control is missing");
+  assert(html.includes('href="/feed.xml"') && html.includes(`value="${feedUrl}" data-feed-url`), "Canonical feed URL is missing from Follow");
+  assert(html.includes('data-copy-feed hidden') && html.includes('data-follow-status'), "Progressive feed copy action is missing");
+  assert(!/<script[^>]+src="https?:\/\//i.test(html), "Follow adds a third-party script");
+  for (const destination of ["Google Preferred Sources", "Feedly", "Inoreader", "NewsBlur (add feed address)"]) {
+    assert(html.includes(`>${destination}</a>`), `Follow destination is missing: ${destination}`);
+  }
+  assert(html.includes('href="https://www.google.com/preferences/source?q=shockedbutnotsurprised.news"'), "Google Preferred Sources does not use its publisher URL");
+  assert(html.includes('href="https://feedly.com/i/subscription/feed/https://shockedbutnotsurprised.news/feed.xml"'), "Feedly link does not carry the canonical feed");
+  assert(html.includes('href="https://www.inoreader.com/?add_feed=https%3A%2F%2Fshockedbutnotsurprised.news%2Ffeed.xml"'), "Inoreader link does not carry the canonical feed");
+  assert(html.includes('href="https://www.newsblur.com/"'), "NewsBlur manual-add destination is missing");
+}
+const homepageFollow = homepageHtml.match(/<details class="follow-control"[\s\S]*?<\/details>/)?.[0];
+const storyFollow = storyHtml.match(/<details class="follow-control"[\s\S]*?<\/details>/)?.[0];
+assert(homepageFollow && homepageFollow === storyFollow, "Homepage and story pages use different Follow treatments");
+assert(rssText.startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"'), "Canonical RSS structure is missing");
+assert((rssText.match(/<item>/g) || []).length === reportingStories.length, "RSS item count differs from published reporting");
+for (const story of reportingStories) {
+  const url = `https://shockedbutnotsurprised.news/story/${story.id}`;
+  assert(rssText.includes(`<link>${url}</link>`) && rssText.includes(`<guid isPermaLink="true">${url}</guid>`), `RSS URL or GUID is missing for ${story.id}`);
+}
+assert(sampleStories.every((story) => !rssText.includes(story.id) && !rssText.includes(story.headline)), "Prototype sample entered RSS");
+assert(followScript.includes("navigator.clipboard") && followScript.includes('document.execCommand("copy")'), "Feed copy action lost its fallback");
+assert(storyHtml.includes('data-native-share') && storyHtml.includes('data-copy-link') && storyHtml.includes('data-share-url-field'), "Existing story Share / Copy Link controls changed");
 const faaStory = publicStories.find((story) => story.id === knownId);
 const faaSourceStory = JSON.parse(faaSourceText);
 assert(

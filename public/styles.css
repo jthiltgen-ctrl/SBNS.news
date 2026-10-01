@@ -177,6 +177,109 @@ footer a:focus-visible {
   text-decoration-thickness: 0.14em;
 }
 
+.follow-bar {
+  display: flex;
+  justify-content: center;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--sbns-newsprint-gray);
+  background: var(--sbns-ink-black);
+}
+
+.follow-control {
+  position: relative;
+  width: min(100%, 18rem);
+  font-family: var(--sbns-utility);
+  font-size: 0.8rem;
+}
+
+.follow-control summary {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--sbns-newsprint-gray);
+  color: var(--sbns-paper-white);
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.follow-control summary::marker {
+  color: var(--sbns-signal-red);
+}
+
+.follow-panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 0.25rem);
+  left: 50%;
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 1rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--sbns-rule-gray);
+  border-top: 3px solid var(--sbns-signal-red);
+  background: var(--sbns-paper-white);
+  box-shadow: 4px 4px 0 var(--sbns-rule-gray);
+  color: var(--sbns-ink-black);
+  text-align: left;
+}
+
+.follow-panel p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.follow-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem 0.9rem;
+  margin: 0.7rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.follow-links a {
+  color: var(--sbns-ink-black);
+  text-decoration-color: var(--sbns-signal-red);
+  text-underline-offset: 0.2em;
+}
+
+.follow-links a:hover,
+.follow-links a:focus-visible {
+  color: var(--sbns-signal-red);
+}
+
+.follow-copy {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--sbns-ink-black);
+  color: var(--sbns-ink-black);
+  background: var(--sbns-paper-white);
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.follow-url-label {
+  display: block;
+  margin-top: 0.65rem;
+  font-size: 0.72rem;
+}
+
+.follow-url-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.45rem;
+  border: 1px solid var(--sbns-rule-gray);
+  color: var(--sbns-ink-black);
+  background: var(--sbns-paper-white);
+  font: 0.78rem/1.4 var(--sbns-utility);
+}
+
+.follow-status {
+  min-height: 1.5em;
+  margin-top: 0.4rem !important;
+  font-size: 0.72rem;
+}
+
 .eyebrow,
 .section-label {
   margin: 0 0 0.45rem;
@@ -1288,6 +1391,10 @@ footer nav {
     text-align: center;
   }
 
+  .follow-links {
+    grid-template-columns: 1fr;
+  }
+
   button {
     width: 100%;
   }
@@ -1386,6 +1493,7 @@ footer nav {
   }
 
   .publication-nav,
+  .follow-bar,
   .filters,
   .share-controls,
   #refresh,

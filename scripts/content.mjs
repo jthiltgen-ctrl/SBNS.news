@@ -30,12 +30,15 @@ const HOMEPAGE_FILE = resolve(process.env.SBNS_HOMEPAGE_FILE || join(PUBLIC_DIR,
 const STORY_OUTPUT_DIR = resolve(process.env.SBNS_STORY_OUTPUT_DIR || join(PUBLIC_DIR, "story"));
 const SHARE_OUTPUT_DIR = resolve(process.env.SBNS_SHARE_OUTPUT_DIR || join(PUBLIC_DIR, "share"));
 const SITEMAP_FILE = resolve(process.env.SBNS_SITEMAP_FILE || join(PUBLIC_DIR, "sitemap.xml"));
+const RSS_FILE = resolve(process.env.SBNS_RSS_FILE || join(PUBLIC_DIR, "feed.xml"));
 const STORY_IDS_FILE = resolve(
   process.env.SBNS_STORY_IDS_FILE || join(ROOT, "src", "generated-story-ids.js"),
 );
 const SITE_ORIGIN = "https://shockedbutnotsurprised.news";
 const PUBLICATION_NAME = "Shocked But Not Surprised";
 const PUBLICATION_WORDMARK = "Shocked But Not Surprised.news";
+const PUBLICATION_DESCRIPTION = "Independent accountability reporting on institutions and systems failing the people they serve.";
+const RSS_URL = `${SITE_ORIGIN}/feed.xml`;
 const EDITOR_NAME = "Justin Thiltgen";
 const HOMEPAGE_REPORTING_START = "<!-- SBNS_GENERATED_REPORTING_START -->";
 const HOMEPAGE_REPORTING_END = "<!-- SBNS_GENERATED_REPORTING_END -->";
@@ -187,6 +190,43 @@ function publishedStories(stories) {
 
 function generateFeed(stories) {
   return `${JSON.stringify(publishedStories(stories), null, 2)}\n`;
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uD800-\uDFFF\uFFFE\uFFFF]/gu, "")
+    .replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&apos;",
+    })[character]);
+}
+
+function generateRss(reporting) {
+  const items = reporting.map((story) => {
+    const url = canonicalStoryUrl(story.id);
+    return `    <item>
+      <title>${escapeXml(story.headline)}</title>
+      <link>${url}</link>
+      <guid isPermaLink="true">${url}</guid>
+      <pubDate>${new Date(story.published_at).toUTCString()}</pubDate>
+      <description>${escapeXml(story.summary)}</description>
+    </item>`;
+  }).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>${PUBLICATION_NAME}</title>
+    <link>${SITE_ORIGIN}/</link>
+    <description>${escapeXml(PUBLICATION_DESCRIPTION)}</description>
+    <language>en-us</language>
+    <atom:link href="${RSS_URL}" rel="self" type="application/rss+xml" />
+${items}
+  </channel>
+</rss>
+`;
 }
 
 function jsonForHtml(value) {
@@ -399,6 +439,7 @@ function generateStoryPage(story, reporting) {
     <title>${escapedHeadline} | ${PUBLICATION_WORDMARK}</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="canonical" href="${canonicalUrl}" />
+    <link rel="alternate" type="application/rss+xml" title="SBNS reporting feed" href="${RSS_URL}" />
     <meta property="og:type" content="article" />
     <meta property="og:site_name" content="${PUBLICATION_NAME}" />
     <meta property="og:title" content="${escapedHeadline}" />
@@ -420,6 +461,7 @@ ${jsonForHtml(jsonLd)}
     </script>
     <link rel="stylesheet" href="/styles.css" />
     <script src="/story.js" type="module"></script>
+    <script src="/follow.js" defer></script>
   </head>
   <body class="story-page">
     <header class="masthead story-masthead">
@@ -440,6 +482,26 @@ ${jsonForHtml(jsonLd)}
           </span>
         </a>
         <p class="tagline">Another day. Another system that had one job.</p>
+      </div>
+      <div class="follow-bar">
+        <details class="follow-control" data-follow>
+          <summary>Follow SBNS</summary>
+          <div class="follow-panel">
+            <p>Choose where to follow future SBNS reporting.</p>
+            <ul class="follow-links">
+              <li><a href="/feed.xml">RSS feed</a></li>
+              <li><a href="https://www.google.com/preferences/source?q=shockedbutnotsurprised.news" rel="noreferrer">Google Preferred Sources</a></li>
+              <li><a href="https://feedly.com/i/subscription/feed/${RSS_URL}" rel="noreferrer">Feedly</a></li>
+              <li><a href="https://www.inoreader.com/?add_feed=https%3A%2F%2Fshockedbutnotsurprised.news%2Ffeed.xml" rel="noreferrer">Inoreader</a></li>
+              <li><a href="https://www.newsblur.com/" rel="noreferrer">NewsBlur (add feed address)</a></li>
+            </ul>
+            <button class="follow-copy" type="button" data-copy-feed hidden>Copy feed address</button>
+            <label class="follow-url-label">Feed address
+              <input type="text" readonly value="${RSS_URL}" data-feed-url />
+            </label>
+            <p class="follow-status" role="status" aria-live="polite" data-follow-status></p>
+          </div>
+        </details>
       </div>
     </header>
 
@@ -568,6 +630,7 @@ function generateArtifacts(stories, homepage) {
   );
   return {
     feed: `${JSON.stringify(published, null, 2)}\n`,
+    rss: generateRss(reporting),
     homepage: generateHomepage(homepage, reporting),
     pages,
     cards,
@@ -631,6 +694,7 @@ async function build() {
   await Promise.all([
     mkdir(dirname(OUTPUT_FILE), { recursive: true }),
     mkdir(dirname(SITEMAP_FILE), { recursive: true }),
+    mkdir(dirname(RSS_FILE), { recursive: true }),
     mkdir(dirname(STORY_IDS_FILE), { recursive: true }),
   ]);
   await Promise.all([
@@ -645,6 +709,7 @@ async function build() {
     writeFile(OUTPUT_FILE, artifacts.feed, "utf8"),
     writeFile(HOMEPAGE_FILE, artifacts.homepage, "utf8"),
     writeFile(SITEMAP_FILE, artifacts.sitemap, "utf8"),
+    writeFile(RSS_FILE, artifacts.rss, "utf8"),
     writeFile(STORY_IDS_FILE, artifacts.storyIds, "utf8"),
     ...[...artifacts.pages].map(([filename, html]) =>
       writeFile(join(STORY_OUTPUT_DIR, filename), html, "utf8"),
@@ -703,6 +768,7 @@ async function check() {
     assertFileMatches(OUTPUT_FILE, artifacts.feed, "feed"),
     assertFileMatches(HOMEPAGE_FILE, artifacts.homepage, "homepage reporting"),
     assertFileMatches(SITEMAP_FILE, artifacts.sitemap, "sitemap"),
+    assertFileMatches(RSS_FILE, artifacts.rss, "RSS feed"),
     assertFileMatches(STORY_IDS_FILE, artifacts.storyIds, "story ID manifest"),
   ]);
 
@@ -878,6 +944,16 @@ async function test() {
   const reverseArtifacts = generateArtifacts(fixtureStories.toReversed(), homepageFixture);
 
   assert(artifacts.feed === generateFeed(fixtureStories), "Existing public feed generation changed");
+  assert(artifacts.rss === reverseArtifacts.rss, "RSS feed is not deterministic");
+  assert(artifacts.rss.startsWith('<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"'), "RSS document root is invalid");
+  assert((artifacts.rss.match(/<item>/g) || []).length === 2, "RSS must contain only published reporting");
+  assert(!artifacts.rss.includes(sample.headline) && !artifacts.rss.includes(draft.headline), "Sample or draft entered RSS");
+  assert(artifacts.rss.includes(`<link>${canonicalStoryUrl(unsafe.id)}</link>`), "RSS lacks a canonical story URL");
+  assert(artifacts.rss.includes(`<guid isPermaLink="true">${canonicalStoryUrl(unsafe.id)}</guid>`), "RSS lacks a stable story GUID");
+  assert(artifacts.rss.includes(`<atom:link href="${RSS_URL}" rel="self" type="application/rss+xml" />`), "RSS lacks a canonical self link");
+  assert(artifacts.rss.includes("&lt;script&gt;") && artifacts.rss.includes("&amp;"), "RSS does not escape story text");
+  assert(escapeXml("a\u0001<\uD800😀&") === "a&lt;😀&amp;", "RSS escaping does not remove XML-forbidden characters");
+  assert(artifacts.rss.includes("Sun, 20 Sep 2026 12:00:00 GMT"), "RSS publication date is not RFC 822 formatted");
   const parsedFeed = JSON.parse(artifacts.feed);
   assert(parsedFeed.length === 3, "Published stories were not preserved in the public feed");
   assert(!parsedFeed.some((story) => story.id === draft.id), "Draft fixture entered the public feed");
@@ -981,6 +1057,9 @@ async function test() {
   assert(page.includes(`/story/${related.id}`), "Related-story link is missing");
   assert(page.includes("data-copy-link"), "Copy Link control is missing");
   assert(page.includes("data-native-share"), "Native Share control is missing");
+  assert(page.includes(`<link rel="alternate" type="application/rss+xml" title="SBNS reporting feed" href="${RSS_URL}" />`), "Story feed autodiscovery is missing");
+  assert(page.includes('<summary>Follow SBNS</summary>') && page.includes('href="/feed.xml"'), "Story Follow control is missing");
+  assert(page.includes('data-feed-url') && page.includes('data-copy-feed'), "Story feed copy fallback is missing");
   assert(page.includes('class="story-evidence"'), "Synthetic evidence sequence is missing");
   assert(
     page.indexOf('id="receipt-1"') < page.indexOf('id="number-1"') &&
@@ -1069,6 +1148,7 @@ async function test() {
     homepage: value.homepage,
     pages: [...value.pages],
     sitemap: value.sitemap,
+    rss: value.rss,
     storyIds: value.storyIds,
   });
   assert(

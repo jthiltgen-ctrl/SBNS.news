@@ -212,5 +212,5 @@ published story uses evidence components.
 The following remain out of scope: The Shock / Why We're Not Surprised; The Job
 / The Record / The Gap; Institutional Response;
 Story History; a Workbench contract or implementation; Records Room; System
-Files; Challenge the Record; Brief / Show Me the Receipts modes; RSS / Follow
-the System; subscriptions; and Secure Source.
+Files; Challenge the Record; Brief / Show Me the Receipts modes; Follow the
+System; subscriber accounts; and Secure Source.

@@ -50,6 +50,11 @@ Unknown facts remain explicitly unstated until a human decision establishes
 them; the reader must not invent a legal structure, funding model, policy, or
 contact channel.
 
+The canonical open RSS feed at `/feed.xml` contains published reporting only.
+Homepage and permanent story pages advertise it for feed discovery. Follow SBNS
+offers direct feed access and optional reader destinations; it is distinct from
+sharing a permanent story URL. WebSub is deferred because no hub is configured.
+
 ## Canonical reader identity
 
 The masthead combines the approved document/magnifying-glass/centered-star mark
@@ -110,5 +115,5 @@ This reader contract does not add a Receipt, Number, or Timeline to a current
 story. It also does not implement The Shock or Why We're Not Surprised, The Job
 / The Record / The Gap, Records Room, System Files, Challenge the Record,
 story-history or institutional-response data models, Newsroom Workbench, Secure
-Source, visitor submissions, subscriptions, RSS, semantic search, or new
+Source, visitor submissions, subscriber accounts, semantic search, or new
 publication automation.
