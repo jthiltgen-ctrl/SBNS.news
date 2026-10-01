@@ -62,7 +62,7 @@ async function schemaState(persist) {
 
 async function check() {
   const files = (await readdir(MIGRATIONS)).filter((file) => file.endsWith(".sql")).sort();
-  expect(same(files, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"]), "Migration directory must contain 0001 through 0005");
+  expect(same(files, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql", "0006_watchdesk_source_learning.sql"]), "Migration directory must contain 0001 through 0006");
   const migration = await readFile(path.join(MIGRATIONS, files[0]), "utf8");
   expect(migration.includes("PRAGMA foreign_keys = ON;"), "Migration must enable foreign keys");
   expect(!migration.includes("submission_contacts"), "Phase 1 must not create submission_contacts");
