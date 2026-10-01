@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { runInNewContext } from "node:vm";
 import worker from "../src/index.js";
 import { refreshStoryFeed, storyMatchesView } from "../public/reader-state.js";
 import { validateStoryEvidence } from "./evidence.mjs";
@@ -281,19 +282,44 @@ const transparencyTitles = [
 for (const title of transparencyTitles) {
   assert(homepageHtml.includes(`<h3>${title}</h3>`), `Transparency category is missing: ${title}`);
 }
-for (const phrase of [
-  "independent publication edited and published by Justin Thiltgen",
-  "A formal public funding model has not yet been established",
-  "Relevant relationships belong in the record, too.",
-  "Ordinary email should not be treated as an anonymous or secure-source system",
-]) {
-  assert(homepageHtml.includes(phrase), `Revised transparency copy is missing: ${phrase}`);
-}
+const transparencyHtml = homepageHtml.match(/<section id="transparency"[\s\S]*?<\/section>/)?.[0] || "";
+assert((transparencyHtml.match(/<article\b/g) || []).length === 9, "Transparency must retain exactly nine boxes");
+assert(transparencyHtml.includes("SBNS is self-funded"), "Current self-funding disclosure is missing");
 assert(
-  homepageHtml.includes('href="mailto:editor@shockedbutnotsurprised.news"') &&
-    (homepageHtml.match(/mailto:/g) || []).length === 1,
-  "Public editorial email is missing or duplicated",
+  transparencyHtml.includes("Ordinary email does not provide anonymity or guaranteed confidentiality."),
+  "Ordinary editorial email boundary is missing",
 );
+assert(
+  !/secure[ -]source|tip line|globaleaks|coming soon|anonymous submission|in the future|will (?:add|identify|document)/i.test(transparencyHtml),
+  "Transparency advertises an unreleased feature or disclosure roadmap",
+);
+assert(!/same\s+problem/i.test(homepageHtml), "Unrecovered historical copy must remain held");
+assert(homepageHtml.includes("Receipts first. Judgment stays human."), "Human-judgment promise is missing");
+const editorialAddress = ["editor", "shockedbutnotsurprised.news"].join("@");
+const contactScript = await readFile(new URL("../public/editorial-contact.js", import.meta.url), "utf8");
+assert(!homepageHtml.includes(editorialAddress) && !contactScript.includes(editorialAddress), "Editorial address is exposed as a contiguous static string");
+assert(
+  homepageHtml.includes('src="/editorial-contact.js" defer') &&
+    homepageHtml.includes('href="#editorial-email-help" aria-describedby="editorial-email-boundary">Email the editorial desk</a>') &&
+    homepageHtml.includes('<summary>Manual email instructions</summary>') &&
+    homepageHtml.includes('id="editorial-email-help" tabindex="-1"'),
+  "Accessible editorial contact or native fallback is missing",
+);
+const handlers = new Map();
+let mailLocation = "";
+runInNewContext(contactScript, {
+  document: { querySelector: () => ({ addEventListener: (type, handler) => handlers.set(type, handler) }) },
+  window: { location: { set href(value) { mailLocation = value; } } },
+});
+assert(mailLocation === "", "Editorial address must only be assembled on activation");
+let prevented = false;
+handlers.get("click")({ button: 0, preventDefault() { prevented = true; } });
+assert(mailLocation === `mailto:${editorialAddress}` && prevented, "Editorial activation must initiate the normal mail workflow");
+mailLocation = "";
+prevented = false;
+handlers.get("click")({ button: 0, ctrlKey: true, preventDefault() { prevented = true; } });
+assert(mailLocation === "" && !prevented, "Modified contact activation must preserve the native fallback");
+runInNewContext(contactScript, { document: { querySelector: () => null } });
 assert(!homepageHtml.includes('href="tel:'), "A private telephone contact was exposed");
 for (const obsoletePlaceholder of [
   "belongs here rather than in a guess",
