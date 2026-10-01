@@ -27,8 +27,8 @@ async function check() {
   const expected = ["strong-gao-style-candidate", "duplicate-known-url", "existing-published-story-development", "generic-press-release-weak-fit", "partisan-opinion-no-primary-evidence", "secondary-with-primary-record", "secondary-primary-needed", "local-accountability-candidate", "unchanged-repeated-scan", "official-listing-only", "partially-reviewed-primary", "boilerplate-only", "telecom-compliance-without-gap", "tribal-water-explicit-gap", "gsa-accessibility-explicit-gap", "property-disposal-progress-only", "global-aging-implications-only", "aperture-waste-without-discrete-failure", "aperture-recurring-burden-development", "source-fetch-failure", "zero-qualifying-candidates"];
   assert.equal(data.notice.startsWith("SYNTHETIC-ONLY"), true);
   assert.deepEqual(data.cases.map((entry) => entry.id), expected);
-  assert.equal(WATCHDESK_SOURCES.length, 9);
-  assert.equal(WATCHDESK_SOURCES.filter((entry) => entry.enabled).length, 7);
+  assert.equal(WATCHDESK_SOURCES.length, 12);
+  assert.equal(WATCHDESK_SOURCES.filter((entry) => entry.enabled).length, 10);
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.source_class === "primary_oversight"), true);
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.source_class === "secondary_reporting_signal"), true);
   assert.equal(WATCHDESK_SOURCES.some((entry) => entry.source_class === "local_regional"), true);
@@ -46,7 +46,7 @@ async function check() {
   assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
   assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"]);
-  console.log("Watchdesk check passed: 9 governed sources (7 active), 21 synthetic fixture cases, official GAO RSS, broader local/independent/whistleblower discovery, bounded cron, and run-ledger migration.");
+  console.log("Watchdesk check passed: 12 governed sources (10 active), 21 synthetic fixture cases, broader local/national/independent/whistleblower discovery, bounded cron, and run-ledger migration.");
 }
 
 async function localOperationalDb() {
