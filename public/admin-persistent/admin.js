@@ -96,7 +96,9 @@ function accountableInstitution(candidate) {
   return candidate.schema_version==="1.2" ? (candidate.institution_or_system || "Not yet established") : "Unverified (legacy candidate)";
 }
 function readiness(candidate) {
-  return candidate.submission_readiness?.ready ? "Ready for automated intake" : candidate.submission_readiness ? "Discovery lead — not submission-ready" : "Not recorded (legacy candidate)";
+  if (candidate.submission_readiness?.ready && candidate.submission_readiness?.mode === "editorial_aperture") return "Newsroom intake — editorial aperture";
+  if (candidate.submission_readiness?.ready && candidate.submission_readiness?.mode === "gap") return "Newsroom intake — evidence gap";
+  return candidate.submission_readiness?.ready ? "Ready for Newsroom intake" : candidate.submission_readiness ? "Discovery lead — not submission-ready" : "Not recorded (legacy candidate)";
 }
 function updateQueueSummary() {
   const counts = queueCounts(loadedAssignments);
@@ -159,10 +161,11 @@ function renderDiscovery(candidate) {
     ["Publication / release date", candidate.publication_date], ["Discovered", candidate.discovered_at],
     ["Topic", candidate.topic], ["Accountable institution", accountableInstitution(candidate)],
     ["Jurisdiction", candidate.jurisdiction], ["Submission readiness", readiness(candidate)],
+    ["Accountability pathway", candidate.submission_readiness?.mode || "Not established"],
     ["Why this may belong at SBNS", candidate.why_this_may_belong, true],
-    ["Job / expectation", candidate.apparent_job || "Not yet established", true],
-    ["Observed condition", candidate.observed_condition || "Not yet established", true],
-    ["Accountability gap", candidate.accountability_gap || "Not yet established", true],
+    ["Job / expectation (if established)", candidate.apparent_job || "Not yet established", true],
+    ["Observed condition (if established)", candidate.observed_condition || "Not yet established", true],
+    ["Accountability gap (if established)", candidate.accountability_gap || "Not yet established", true],
     ["What the inspected material establishes", candidate.record_summary, true],
     ["Accountability question", candidate.accountability_question || "Not yet established", true],
     ["Research prompt (not evidence)", candidate.research_prompt, true],
