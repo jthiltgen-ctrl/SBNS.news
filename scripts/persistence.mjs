@@ -12,8 +12,8 @@ const MIGRATIONS = path.join(ROOT, "migrations");
 const DATABASE = "SBNS_DB";
 const WRANGLER = path.join(ROOT, "node_modules", "wrangler", "bin", "wrangler.js");
 const COMMANDS = new Set(["check", "test"]);
-const TABLES = ["analyses", "analysis_jobs", "audit_events", "claim_sources", "claims", "echo_candidate_assessments", "echo_candidate_sources", "echo_candidates", "echo_decisions", "echo_jobs", "echo_packet_intakes", "echo_packets", "echo_rights_assessments", "editorial_decisions", "editorial_drafts", "idempotency_records", "intakes", "monitoring_events", "publication_attempts", "sbns_meta", "sources", "watchdesk_run_lock", "watchdesk_runs"];
-const INDEXES = ["idx_analyses_intake_created", "idx_analysis_jobs_active_intake", "idx_analysis_jobs_intake_created", "idx_analysis_jobs_state_updated", "idx_audit_events_entity_created", "idx_claims_analysis", "idx_claims_intake", "idx_echo_assessments_candidate_revision", "idx_echo_candidates_packet_state", "idx_echo_decisions_packet_decided", "idx_echo_jobs_active_packet", "idx_echo_jobs_state_updated", "idx_echo_packet_intakes_intake", "idx_echo_packet_intakes_primary", "idx_echo_packets_issue_revision", "idx_echo_packets_state_updated", "idx_echo_rights_candidate_asset", "idx_echo_sources_assessment_role", "idx_echo_sources_intake_source", "idx_editorial_decisions_intake_decided", "idx_editorial_drafts_intake_revision", "idx_idempotency_actor_created", "idx_intakes_origin_submitted", "idx_intakes_status_updated", "idx_monitoring_events_status_checked", "idx_monitoring_events_story_checked", "idx_publication_attempts_intake_started", "idx_sources_intake", "idx_sources_normalized_url", "idx_watchdesk_runs_started"];
+const TABLES = ["analyses", "analysis_jobs", "audit_events", "claim_sources", "claims", "echo_candidate_assessments", "echo_candidate_sources", "echo_candidates", "echo_decisions", "echo_jobs", "echo_packet_intakes", "echo_packets", "echo_rights_assessments", "editorial_decisions", "editorial_drafts", "idempotency_records", "intakes", "monitoring_events", "publication_attempts", "sbns_meta", "sources", "watchdesk_run_lock", "watchdesk_runs", "watchdesk_source_candidates"];
+const INDEXES = ["idx_analyses_intake_created", "idx_analysis_jobs_active_intake", "idx_analysis_jobs_intake_created", "idx_analysis_jobs_state_updated", "idx_audit_events_entity_created", "idx_claims_analysis", "idx_claims_intake", "idx_echo_assessments_candidate_revision", "idx_echo_candidates_packet_state", "idx_echo_decisions_packet_decided", "idx_echo_jobs_active_packet", "idx_echo_jobs_state_updated", "idx_echo_packet_intakes_intake", "idx_echo_packet_intakes_primary", "idx_echo_packets_issue_revision", "idx_echo_packets_state_updated", "idx_echo_rights_candidate_asset", "idx_echo_sources_assessment_role", "idx_echo_sources_intake_source", "idx_editorial_decisions_intake_decided", "idx_editorial_drafts_intake_revision", "idx_idempotency_actor_created", "idx_intakes_origin_submitted", "idx_intakes_status_updated", "idx_monitoring_events_status_checked", "idx_monitoring_events_story_checked", "idx_publication_attempts_intake_started", "idx_sources_intake", "idx_sources_normalized_url", "idx_watchdesk_runs_started", "idx_watchdesk_source_candidates_status_activity"];
 
 function fail(message) { throw new Error(message); }
 
@@ -70,9 +70,9 @@ async function check() {
     const state = await schemaState(persist);
     expect(same(state.tables, TABLES), `Unexpected tables: ${state.tables.join(", ")}`);
     expect(same(state.indexes, INDEXES), `Unexpected indexes: ${state.indexes.join(", ")}`);
-    expect(state.version === "5", "schema_version must be 5");
+    expect(state.version === "6", "schema_version must be 6");
   });
-  console.log(`Persistence schema valid: 5 migrations, ${TABLES.length} tables, ${INDEXES.length} indexes, schema_version 5.`);
+  console.log(`Persistence schema valid: 6 migrations, ${TABLES.length} tables, ${INDEXES.length} indexes, schema_version 6.`);
 }
 
 async function test() {
@@ -82,7 +82,7 @@ async function test() {
     const now = "2026-08-19T21:30:00.000Z";
 
     const version = await execute(persist, "SELECT value FROM sbns_meta WHERE key='schema_version'");
-    pass(version[0]?.value === "5", "schema_version test failed");
+    pass(version[0]?.value === "6", "schema_version test failed");
 
     await execute(persist, `INSERT INTO intakes VALUES ('intake-1','editor','https://example.com/source','${now}',NULL,'submitted','not_started','${now}','${now}')`);
     const intake = await execute(persist, "SELECT * FROM intakes WHERE id='intake-1'");
