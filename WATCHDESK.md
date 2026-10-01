@@ -70,8 +70,8 @@ The existing `audit_events.metadata_json` stores the full candidate contract (ve
 - the apparent Job, or `null` when unsupported;
 - what the material actually inspected establishes, attributed to its source;
 - the observed condition, accountability gap, and evidence-derived question, each nullable;
-- a separately labeled research prompt, if present, that cannot establish submission readiness;
-- submission readiness and reasons when withheld;
+- a separately labeled research prompt, if present;
+- submission readiness, pathway (`gap` or `editorial_aperture` when ready), unresolved classic-gap elements, and reasons when withheld;
 - source class (provenance), primary-record URL/location, evidence review state, and inspected material as separate concepts;
 - key sources and their roles;
 - material qualification or counterevidence;
@@ -97,15 +97,25 @@ An exact source already used by published reporting is removed as known. A likel
 
 ## Fit gate and Rabbit Hole Triage
 
-Deterministic filtering requires a documentary-record signal and an accountability-gap signal. Routine announcements, unsupported outrage, campaign advocacy, and ordinary record churn stop before the fit gate.
+Deterministic filtering requires a documentary-record signal and a bounded accountability signal. The signal vocabulary intentionally includes not only explicit failure/gap language but evidence of waste, repeated or foreseeable problems, burden, delay, inefficiency, disparity, barriers, avoidable cost, and related accountability conditions. Routine announcements, unsupported outrage, campaign advocacy, and ordinary record churn still stop before the fit gate.
 
 The substantive-fit gate checks a bounded record summary, public relevance, and candidate-specific material actually inspected. It is **not** the submission gate. An official title, source reputation, inferred topic, numbers, a generic question, or a `What GAO Found` heading do not establish an accountability gap. A GAO feed abstract may provide bounded first-party evidence, but is explicitly marked partial, not full-report review.
 
-The separate submission-readiness gate requires a named accountable actor, reviewed substantive material, an expectation or Job, an observed condition, a defensible gap between them, an evidence-derived question, no defeating material qualification, and an `EXPLORE` or `DEVELOP` recommendation. The deterministic extractor accepts a named actor and a matching expectation/negative-condition pair from the inspected text; ambiguous actors or mismatched actions are withheld. It is intentionally conservative: an abstract that lacks this explicit structure remains a lead even if a human might find a story after reading the full report. Neither misconduct nor specific-harm causation is required.
+Submission readiness now has two bounded pathways.
 
-A plausibly relevant listing **or substantive abstract** that lacks the full readiness structure can appear as a non-persistent `discovery_lead` with an `EXPLORE` recommendation. This is research-worthiness, **not** submission-readiness: it cannot enter Newsroom automatically. Leads are bounded in the run response and may be rediscovered later; Watchdesk does not persist them or create a new D1 workflow. The run distinguishes `fit_gate_survivors`, `discovery_leads`, `submission_ready`, `would_submit`, and `deferred_by_ceiling`. The five-item ceiling applies only to submission-ready candidates. GAO is not penalized for source balance.
+The **gap pathway** preserves the original conservative contract: a named accountable actor, reviewed substantive material, an expectation or Job, an observed condition, a defensible gap between them, an evidence-derived question, no defeating material qualification, and an `EXPLORE` or `DEVELOP` recommendation. The deterministic extractor still requires a matching expectation/negative-condition pair before it claims that gap.
+
+The **editorial-aperture pathway** exists so discovery does not silently discard a potentially worthy story merely because the inspected record does not express a classic Job/failure pair. It requires reviewed substantive material, a supported institution/system, a bounded accountability signal in the inspected material, no defeating qualification, and an `EXPLORE` or `DEVELOP` recommendation. Missing Job, observed-condition, gap, or evidence-derived-question fields remain explicitly recorded as development gaps; Watchdesk does not invent them. These candidates enter Newsroom as exploratory editorial opportunities for human judgment, not as proven failures or publication recommendations.
+
+Neither pathway requires misconduct, intent, illegality, or specific-harm causation. The editorial-aperture pathway does not lower the later evidence or publication standard.
+
+A plausibly relevant listing that lacks candidate-specific reviewed evidence can still appear as a non-persistent `discovery_lead` with an `EXPLORE` recommendation. A substantive reviewed or partially reviewed record may instead become an editorial-aperture Newsroom intake when it satisfies that bounded pathway. Leads remain bounded in the run response and may be rediscovered later.
+
+The run distinguishes `fit_gate_survivors`, `discovery_leads`, `submission_ready`, `submission_ready_gap`, `submission_ready_aperture`, `would_submit`, and `deferred_by_ceiling`. The five-item ceiling applies to all submission-ready candidates, with classic gap-ready candidates ordered ahead of editorial-aperture candidates when the ceiling is reached. This priority protects the strongest deterministic evidence path without suppressing broader editorial opportunities.
 
 The first final-head read-only probe returned zero `STOP` recommendations. That was not a target or quota: routine and weak items were removed before triage, while promising but unready items were `EXPLORE` leads. Explicit novelty failures still `STOP`, and routed items still `ROUTE`; no artificial STOP count is generated.
+
+Recurring or unsurprising conditions are not automatically treated as non-novel. A repeat occurrence still needs a meaningful new development, evidence increment, failed-remediation signal, cumulative-burden insight, or other current accountability implication.
 
 Allowed recommendations are `STOP / NO ACTION`, `EXPLORE`, `DEVELOP`, and `ROUTE`. These recommendations describe whether limited human attention appears warranted. They never populate `editorial_decisions`, never produce the formal analysis recommendation values `publish`, `hold`, or `reject`, and never trigger publication.
 
@@ -139,7 +149,7 @@ The signed-in Editorial Desk has a Watchdesk status section and explicit **Run d
 
 `GET /api/admin/watchdesk/status` is a human-editor-only operational view. `GET /api/admin/watchdesk/health` is a separate service-token-only read-only aggregate for deployment/monitoring. The machine response contains Worker revision, configured cron, and latest run ID/time/status and counts; it contains no candidate, intake, editor, or queue contents. The service token remains denied from `/api/admin/session`, `/api/admin/watchdesk/status`, and `POST /api/admin/watchdesk/runs`.
 
-In the Newsroom queue, filter origin to `discovery`, open a `DISCOVERY CANDIDATE`, and review the retained trigger, source, institution, preliminary Job and Record, accountability question, qualification, missing evidence, triage recommendation, burden, and relationships. Opening a candidate does not launch research.
+In the Newsroom queue, filter origin to `discovery`, open a `DISCOVERY CANDIDATE`, and review the retained trigger, source, institution, accountability pathway, preliminary Job/observed condition/gap when established, qualification, missing evidence, triage recommendation, burden, and relationships. An `editorial_aperture` intake means only that reviewed evidence warrants human editorial consideration beyond a narrow failure gate. Opening a candidate does not launch research.
 
 ## Scheduling and authority boundary
 
