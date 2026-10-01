@@ -78,7 +78,9 @@ Useful accountability lenses include:
 - public claim versus documentary record;
 - concentrated power versus meaningful recourse.
 
-The existence of a bad outcome alone is not enough. But neither is the absence of a single provable malfunction a reason to reject a consequential accountability story.
+The existence of a bad outcome alone is not enough. But the absence of a single provable malfunction is not, by itself, a reason to reject a consequential accountability story.
+
+A system may be newsworthy because it repeatedly performs poorly, predictably produces a burden, tolerates known risk, wastes resources, externalizes costs, creates a documented disparity, or works as designed in a way that itself warrants scrutiny. But neither is the absence of a single provable malfunction a reason to reject a consequential accountability story.
 
 A system may be newsworthy because it repeatedly performs poorly, predictably produces a burden, tolerates known risk, wastes resources, externalizes costs, creates a documented disparity, or works as designed in a way that itself warrants scrutiny.
 
