@@ -54,6 +54,25 @@ export async function getEchoPacket(env, packetId) {
   return database(env).prepare("SELECT * FROM echo_packets WHERE id = ?").bind(packetId).first();
 }
 
+// Read-only views for the synthetic orchestrator. Writes still pass through the
+// existing audited persistence functions and database constraints.
+export async function getEchoIssueSnapshot(env, issueKey, evidenceSnapshotHash) {
+  return database(env).prepare("SELECT * FROM echo_packets WHERE issue_key = ? AND evidence_snapshot_hash = ?")
+    .bind(issueKey, evidenceSnapshotHash).first();
+}
+
+export async function getEchoPacketProgress(env, packetId) {
+  const db = database(env);
+  const read = async (sql) => (await db.prepare(sql).bind(packetId).all()).results;
+  return {
+    jobs: await read("SELECT * FROM echo_jobs WHERE packet_id = ? ORDER BY created_at, id"),
+    candidates: await read("SELECT * FROM echo_candidates WHERE packet_id = ? ORDER BY id"),
+    assessments: await read("SELECT * FROM echo_candidate_assessments WHERE packet_id = ? ORDER BY id"),
+    sources: await read("SELECT * FROM echo_candidate_sources WHERE packet_id = ? ORDER BY id"),
+    rights: await read("SELECT * FROM echo_rights_assessments WHERE packet_id = ? ORDER BY id"),
+  };
+}
+
 export async function createEchoJob(env, { id, packetId, idempotencyKey, triggerType, requestedBy, processorVersion, createdAt }) {
   const db = database(env);
   const at = timestamp(createdAt);

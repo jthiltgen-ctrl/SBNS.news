@@ -104,8 +104,9 @@ create a duplicate revision, while changed evidence creates a new revision and
 marks older packets superseded. New jobs and decisions through the persistence
 API refuse superseded packets. The old brief, hash, links, and assessments
 remain available. Brief content and packet/intake links cannot be updated or
-deleted in place. The initial brief is structured JSON; canonical domain-field
-validation and evidence-snapshot hashing remain PR B caller responsibilities.
+deleted in place. The database stores the initial structured brief and hash;
+PR B's synthetic-only orchestration caller now validates and computes them.
+The database does not recalculate or attest either hash.
 
 Assessment rows keep original context, creator-intent status, what echoes,
 where the analogy breaks, uncertainty, tempted overclaim, present-day evidence,
@@ -128,9 +129,11 @@ insert. Later assessments cannot silently change the reviewed analogy source
 package.
 Subsequent materially changed evidence needs a new packet revision or a
 separately designed explicit re-review path. Rights assessments remain
-independently versionable. The `source_set_hash` field is retained, but PR A
-does not prove that it matches attached source rows; PR B must define canonical
-source ordering, normalization, and hash generation before live orchestration.
+independently versionable. PR B's synthetic-only caller now canonically orders,
+normalizes, and hashes non-rights analogy sources into `source_set_hash`. Rights
+provenance is excluded so it can evolve after readiness. The database does not
+prove that the stored hash matches the attached rows; future live adapters must
+use and verify the same caller contract.
 
 `echo_candidates.editor_ready_slot` is database-constrained to slots 1–3,
 unique per packet, and non-null exactly when state is `editor_ready`. Thus a
@@ -199,11 +202,12 @@ and D1 constraints, then exercises the JavaScript persistence API against the
 same migration SQL in isolated SQLite memory. Both commands are included in
 `npm run check`; neither contacts remote D1.
 
-Opening a draft PR does not apply migration 0005 remotely. A later merge to
-`main` **would** trigger `.github/workflows/deploy-admin.yml`, which applies
-pending remote D1 migrations before deploying `sbns-admin`. Merge therefore
-requires separate production migration authorization. Recovery is a reviewed
-forward repair, never an automatic destructive down migration.
+Migration 0005 was applied through the separately authorized admin deployment
+of PR A. PR B adds no migration or schema change. A later PR B merge would
+trigger existing deployment workflows because its `src/**` and `package.json`
+paths are watched; opening its draft PR performs no deployment. Recovery of any
+future schema defect remains a reviewed forward repair, never an automatic
+destructive down migration.
 
 ## Recovery
 

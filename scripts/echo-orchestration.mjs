@@ -1,0 +1,239 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import {
+  BRIEF_SCHEMA, EchoInputError, canonicalJson, canonicalBrief, evidenceSnapshotHash,
+  normalizeEchoSource, sourceSetHash, canonicalCandidate, evaluateEchoGate,
+  orderEchoCandidates, noEchoReason, orchestrateSyntheticEcho,
+} from "../src/echo-orchestration.js";
+import { AT, TEST_HASH, SECOND_HASH, syntheticBrief, syntheticCandidate, syntheticInput, scenarios } from "../fixtures/echo/synthetic-fixtures.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const MIGRATIONS = ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"];
+let assertions = 0;
+function eq(actual, expected) { assert.deepEqual(actual, expected); assertions++; }
+function ok(value) { assert(value); assertions++; }
+function throws(action, code) {
+  assert.throws(action, (error) => error instanceof EchoInputError && error.code === code);
+  assertions++;
+}
+async function rejects(action, matcher) { await assert.rejects(action, matcher); assertions++; }
+
+class LocalD1 {
+  constructor() { this.sqlite = new DatabaseSync(":memory:"); }
+  prepare(sql) {
+    const statement = this.sqlite.prepare(sql);
+    return { bind: (...values) => ({
+      run: async () => { const result = statement.run(...values); return { meta: { changes: Number(result.changes) } }; },
+      first: async (column) => { const row = statement.get(...values) ?? null; return column ? row?.[column] ?? null : row; },
+      all: async () => ({ results: statement.all(...values) }),
+    }) };
+  }
+  async batch(statements) {
+    this.sqlite.exec("BEGIN IMMEDIATE");
+    try {
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      this.sqlite.exec("COMMIT");
+      return results;
+    } catch (error) { this.sqlite.exec("ROLLBACK"); throw error; }
+  }
+  close() { this.sqlite.close(); }
+}
+async function localEnvironment() {
+  const db = new LocalD1();
+  for (const file of MIGRATIONS) db.sqlite.exec(await readFile(path.join(ROOT, "migrations", file), "utf8"));
+  db.sqlite.prepare(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
+    VALUES ('synthetic-intake-1','editor','https://example.test/fictional-intake',?,'review_ready','complete',?,?)`).run(AT, AT, AT);
+  db.sqlite.prepare(`INSERT INTO sources (id,intake_id,url,normalized_url,name,source_type,verification_status,content_hash,created_at)
+    VALUES ('synthetic-source-1','synthetic-intake-1','https://example.test/fictional-audit',
+      'https://example.test/fictional-audit','Invented audit','audit','verified',?,?)`).run(TEST_HASH, AT);
+  return { db, env: { SBNS_DB: db } };
+}
+function count(db, table, predicate = "1=1") { return db.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${predicate}`).get().n; }
+
+async function check() {
+  eq(BRIEF_SCHEMA, "echo-brief-v1");
+  eq(canonicalBrief(syntheticBrief()).schema, BRIEF_SCHEMA);
+  eq(canonicalCandidate(syntheticCandidate()).schema, "echo-candidate-v1");
+  eq(canonicalJson({ b: 2, a: { d: 4, c: 3 } }), '{"a":{"c":3,"d":4},"b":2}');
+  eq(evaluateEchoGate(canonicalCandidate(syntheticCandidate())), null);
+  eq(noEchoReason([], []), "NO_CANDIDATES");
+  console.log(`Echo orchestration pure check passed: ${assertions} assertions, no D1 or network.`);
+}
+
+async function test() {
+  await check();
+  const brief = syntheticBrief();
+  const reordered = structuredClone(brief);
+  reordered.verifiedFacts = [{ sourceIds: ["synthetic-source-1"], text: brief.verifiedFacts[0].text, id: "fact-1" }];
+  reordered.evidenceSources = [{ provenance: brief.evidenceSources[0].provenance,
+    confidence: "primary_record", contentHash: TEST_HASH, canonicalId: "synthetic:audit:1",
+    intakeId: "synthetic-intake-1", id: "synthetic-source-1" }];
+  reordered.title = "Different display title";
+  reordered.runtimeAt = "2099-01-01T00:00:00Z";
+  eq(await evidenceSnapshotHash(brief), await evidenceSnapshotHash(reordered));
+  const changedFact = structuredClone(brief); changedFact.verifiedFacts[0].text += " Material addition.";
+  ok(await evidenceSnapshotHash(brief) !== await evidenceSnapshotHash(changedFact));
+  const changedQualifier = structuredClone(brief); changedQualifier.materialQualifications.push("Another synthetic caveat");
+  ok(await evidenceSnapshotHash(brief) !== await evidenceSnapshotHash(changedQualifier));
+  const changedSource = structuredClone(brief); changedSource.evidenceSources[0].contentHash = SECOND_HASH;
+  ok(await evidenceSnapshotHash(brief) !== await evidenceSnapshotHash(changedSource));
+  const changedIntake = structuredClone(brief); changedIntake.intakes.push({ intakeId: "synthetic-intake-2", role: "supporting" });
+  ok(await evidenceSnapshotHash(brief) !== await evidenceSnapshotHash(changedIntake));
+  const changedLimit = structuredClone(brief); changedLimit.mustNotClaim.push("Do not infer a cause");
+  ok(await evidenceSnapshotHash(brief) !== await evidenceSnapshotHash(changedLimit));
+  const source = syntheticCandidate().sources;
+  eq(await sourceSetHash(source), await sourceSetHash(source.toReversed()));
+  const changedSourceSet = structuredClone(source); changedSourceSet[0].contentHash = SECOND_HASH;
+  ok(await sourceSetHash(source) !== await sourceSetHash(changedSourceSet));
+  const removedSource = source.slice(1);
+  ok(await sourceSetHash(source) !== await sourceSetHash(removedSource));
+  const changedRole = structuredClone(source); changedRole[0].sourceRole = "original_work";
+  ok(await sourceSetHash(source) !== await sourceSetHash(changedRole));
+  const rightsOnlyChange = structuredClone(source); rightsOnlyChange[2].contentHash = SECOND_HASH;
+  eq(await sourceSetHash(source), await sourceSetHash(rightsOnlyChange));
+  eq(normalizeEchoSource({ ...source[0], url: "https://EXAMPLE.test:443/fictional-archive/1#fragment" }).url,
+    "https://example.test/fictional-archive/1");
+  throws(() => canonicalJson({ a: [undefined] }), "INVALID_JSON");
+  throws(() => canonicalBrief({ ...brief, schema: undefined }), "INVALID_SCHEMA");
+  throws(() => canonicalBrief({ ...brief, issueKey: "" }), "MISSING_FIELD");
+  throws(() => canonicalBrief({ ...brief, intakes: [{ intakeId: "x", role: "supporting" }] }), "PRIMARY_INTAKE_REQUIRED");
+  throws(() => canonicalBrief({ ...brief, intakes: [brief.intakes[0], brief.intakes[0]] }), "DUPLICATE");
+  throws(() => canonicalBrief({ ...brief, intakes: [{ intakeId: "x", role: "spectator" }] }), "INVALID_ENUM");
+  throws(() => canonicalBrief({ ...brief, accountabilityQuestion: "" }), "MISSING_FIELD");
+  throws(() => canonicalBrief({ ...brief, unresolvedFacts: "not a list" }), "INVALID_LIST");
+  throws(() => canonicalBrief({ ...brief, provenanceSummary: { confidence: "made_up", basis: "x" } }), "INVALID_ENUM");
+  throws(() => canonicalBrief({ ...brief, verifiedFacts: [{ id: "f", text: "fact", sourceIds: ["missing"] }] }), "FACT_SOURCE_REQUIRED");
+  throws(() => canonicalCandidate({ ...syntheticCandidate(), sources: "broken" }), "INVALID_LIST");
+  throws(() => canonicalCandidate({ ...syntheticCandidate(), assessment: { ...syntheticCandidate().assessment, whatEchoes: "" } }), "MISSING_FIELD");
+  throws(() => normalizeEchoSource({ ...source[0], sourceRole: "rights" }), "ROLE_FIELD_MISMATCH");
+  const prior = syntheticCandidate(); prior.priorUse = { status: "recently_featured" };
+  eq(evaluateEchoGate(canonicalCandidate(prior)), "PRIOR_USE_JUSTIFICATION_REQUIRED");
+  prior.priorUse.justification = "A synthetic, exceptionally clear mechanism";
+  eq(evaluateEchoGate(canonicalCandidate(prior)), null);
+  const ranked = [3, 1, 2].map(syntheticCandidate);
+  ranked[0].gate.authority = "limited";
+  eq(orderEchoCandidates(ranked.map(canonicalCandidate)).map((item) => item.canonicalArtifactId),
+    ["synthetic:work:1", "synthetic:work:2", "synthetic:work:3"]);
+  for (const [scenario, reason] of [["D_weak", "ANALOGY_TOO_WEAK"], ["E_context", "ORIGINAL_CONTEXT_INSUFFICIENT"],
+    ["F_present", "PRESENT_EVIDENCE_INSUFFICIENT"]]) eq(evaluateEchoGate(canonicalCandidate(scenarios[scenario]().candidates[0])), reason);
+  const noContext = syntheticCandidate(); noContext.sources = noContext.sources.filter((item) => item.sourceRole !== "historical_context");
+  eq(evaluateEchoGate(canonicalCandidate(noContext)), "ORIGINAL_CONTEXT_INSUFFICIENT");
+  const noCurrent = syntheticCandidate(); noCurrent.sources = noCurrent.sources.filter((item) => item.sourceRole !== "contemporary_evidence");
+  eq(evaluateEchoGate(canonicalCandidate(noCurrent)), "PRESENT_EVIDENCE_INSUFFICIENT");
+  const noRights = syntheticCandidate(); noRights.rights = [];
+  eq(evaluateEchoGate(canonicalCandidate(noRights)), "RIGHTS_REVIEW_MISSING");
+  const misleading = syntheticCandidate(); misleading.gate.mechanismMatch = "misleading";
+  eq(evaluateEchoGate(canonicalCandidate(misleading)), "ANALOGY_MISLEADING");
+  const noValue = syntheticCandidate(); noValue.gate.editorialValue = "none";
+  eq(evaluateEchoGate(canonicalCandidate(noValue)), "NO_EDITORIAL_VALUE");
+  const protocol = syntheticCandidate(); protocol.gate.culturalProtocol = "unresolved";
+  eq(evaluateEchoGate(canonicalCandidate(protocol)), "CULTURAL_PROTOCOL_UNRESOLVED");
+  const burden = syntheticCandidate(); burden.assessment.researchBurden = "disproportionate";
+  eq(evaluateEchoGate(canonicalCandidate(burden)), "RESEARCH_BURDEN_DISPROPORTIONATE");
+  eq(evaluateEchoGate(canonicalCandidate(scenarios.G_restrictive().candidates[0])), null);
+  const { db, env } = await localEnvironment();
+  try {
+    eq(db.sqlite.prepare("SELECT value FROM sbns_meta WHERE key='schema_version'").get().value, "5");
+    const strong = await orchestrateSyntheticEcho(env, scenarios.A_strong());
+    eq(strong.status, "READY"); eq(strong.readyCount, 1);
+    eq(count(db, "echo_candidates", `packet_id='${strong.packetId}' AND state='editor_ready'`), 1);
+    eq(count(db, "echo_decisions"), 0);
+    eq(db.sqlite.prepare("SELECT source_set_hash FROM echo_candidate_assessments WHERE packet_id=?").get(strong.packetId).source_set_hash,
+      await sourceSetHash(syntheticCandidate().sources));
+    eq(count(db, "echo_candidate_sources", `packet_id='${strong.packetId}'`), 3);
+    eq(db.sqlite.prepare("SELECT status FROM echo_rights_assessments WHERE packet_id=?").get(strong.packetId).status, "link_metadata_only");
+    const multiple = await orchestrateSyntheticEcho(env, scenarios.B_multiple());
+    eq(multiple.readyCount, 3);
+    eq(count(db, "echo_candidates", `packet_id='${multiple.packetId}' AND state='editor_ready'`), 3);
+    eq(count(db, "echo_candidates", `packet_id='${multiple.packetId}' AND gate_reason_code='NOT_IN_TOP_THREE'`), 1);
+    eq(db.sqlite.prepare("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id=? AND editor_ready_slot NOT BETWEEN 1 AND 3").get(multiple.packetId).n, 0);
+    const empty = await orchestrateSyntheticEcho(env, scenarios.C_no_echo());
+    eq(empty.status, "NO_CULTURAL_ECHO_WARRANTED"); eq(empty.reasonCode, "NO_CANDIDATES");
+    eq(count(db, "echo_candidates", `packet_id='${empty.packetId}'`), 0);
+    eq(db.sqlite.prepare("SELECT state FROM echo_jobs WHERE id=?").get(empty.jobId).state, "no_echo");
+    const weak = await orchestrateSyntheticEcho(env, scenarios.D_weak());
+    eq(weak.reasonCode, "ALL_ANALOGY_FAILED");
+    eq(count(db, "echo_candidates", `packet_id='${weak.packetId}' AND state='rejected_by_gate'`), 1);
+    const context = await orchestrateSyntheticEcho(env, scenarios.E_context());
+    eq(context.reasonCode, "ALL_CONTEXT_FAILED");
+    const present = await orchestrateSyntheticEcho(env, scenarios.F_present());
+    eq(present.reasonCode, "ALL_PRESENT_EVIDENCE_FAILED");
+    const restrictive = await orchestrateSyntheticEcho(env, scenarios.G_restrictive());
+    eq(restrictive.status, "READY");
+    eq(db.sqlite.prepare("SELECT status FROM echo_rights_assessments WHERE packet_id=?").get(restrictive.packetId).status, "do_not_reproduce");
+    eq(count(db, "echo_decisions"), 0);
+    const familiar = await orchestrateSyntheticEcho(env, scenarios.H_prior_use());
+    eq(familiar.status, "READY");
+    const replayInput = scenarios.J_replay();
+    const first = await orchestrateSyntheticEcho(env, replayInput);
+    const countsBefore = [count(db, "echo_packets"), count(db, "echo_jobs"), count(db, "echo_candidates")];
+    const replay = await orchestrateSyntheticEcho(env, replayInput);
+    eq(replay.status, "ALREADY_PROCESSED"); eq(replay.packetId, first.packetId);
+    eq([count(db, "echo_packets"), count(db, "echo_jobs"), count(db, "echo_candidates")], countsBefore);
+    const retitled = structuredClone(replayInput); retitled.brief.title = "New display-only working label";
+    eq((await orchestrateSyntheticEcho(env, retitled)).status, "ALREADY_PROCESSED");
+    eq([count(db, "echo_packets"), count(db, "echo_jobs"), count(db, "echo_candidates")], countsBefore);
+    const revisionA = await orchestrateSyntheticEcho(env, syntheticInput("revision"));
+    const revisionInput = syntheticInput("revision"); revisionInput.brief.verifiedFacts[0].text += " Another fabricated fact.";
+    const revisionB = await orchestrateSyntheticEcho(env, revisionInput);
+    eq(revisionB.packetRevision, 2);
+    eq(db.sqlite.prepare("SELECT superseded_at FROM echo_packets WHERE id=?").get(revisionA.packetId).superseded_at, AT);
+    eq(count(db, "echo_candidate_assessments", `packet_id='${revisionA.packetId}'`), 1);
+    const staleInput = scenarios.I_stale();
+    await rejects(() => orchestrateSyntheticEcho(env, staleInput, { onStep: async (point) => {
+      if (point === "researching") {
+        const changed = structuredClone(staleInput.brief); changed.verifiedFacts[0].text += " New evidence.";
+        const newInput = { ...staleInput, brief: changed, runKey: "revision-2", candidates: [] };
+        await orchestrateSyntheticEcho(env, newInput);
+      }
+    } }), (error) => error.code === "STALE_PACKET");
+    const stalePacket = db.sqlite.prepare("SELECT id,state,superseded_at FROM echo_packets WHERE issue_key=? AND revision=1").get(staleInput.brief.issueKey);
+    eq(stalePacket.state, "open"); ok(stalePacket.superseded_at);
+    eq(db.sqlite.prepare("SELECT state FROM echo_jobs WHERE packet_id=?").get(stalePacket.id).state, "failed");
+    eq(count(db, "echo_candidates", `packet_id='${stalePacket.id}'`), 0);
+    const lateInput = syntheticInput("stale-before-completion");
+    await rejects(() => orchestrateSyntheticEcho(env, lateInput, { onStep: async (point) => {
+      if (point === "before_assembly") {
+        const changed = structuredClone(lateInput.brief); changed.materialQualifications.push("Later fabricated qualification");
+        await orchestrateSyntheticEcho(env, { ...lateInput, brief: changed, runKey: "revision-2", candidates: [] });
+      }
+    } }), (error) => error.code === "STALE_PACKET");
+    const latePacket = db.sqlite.prepare("SELECT id,state,superseded_at FROM echo_packets WHERE issue_key=? AND revision=1").get(lateInput.brief.issueKey);
+    eq(latePacket.state, "open"); ok(latePacket.superseded_at);
+    eq(db.sqlite.prepare("SELECT state FROM echo_jobs WHERE packet_id=?").get(latePacket.id).state, "failed");
+    eq(count(db, "echo_candidates", `packet_id='${latePacket.id}' AND state='editor_ready'`), 1);
+    for (const point of ["after_packet_creation", "during_candidate", "during_verification", "during_rights", "before_assembly"]) {
+      const input = syntheticInput(`failure-${point}`);
+      await rejects(() => orchestrateSyntheticEcho(env, input, { onStep: async (name) => {
+        if (name === point) throw new Error(`Synthetic failure at ${point}`);
+      } }), /Synthetic failure/);
+      const packet = db.sqlite.prepare("SELECT id,state FROM echo_packets WHERE issue_key=?").get(input.brief.issueKey);
+      eq(packet.state, "open");
+      eq(db.sqlite.prepare("SELECT state FROM echo_jobs WHERE packet_id=?").get(packet.id).state, "failed");
+      input.runKey = "retry-2";
+      const retried = await orchestrateSyntheticEcho(env, input);
+      eq(retried.status, "READY");
+      eq(count(db, "echo_candidates", `packet_id='${packet.id}'`), 1);
+      eq(count(db, "echo_candidate_assessments", `packet_id='${packet.id}'`), 1);
+    }
+    const wrongSource = syntheticInput("wrong-source");
+    wrongSource.candidates[0].sources[1].intakeSourceId = "other-intake-source";
+    await rejects(() => orchestrateSyntheticEcho(env, wrongSource), (error) => error.code === "SOURCE_INTAKE_MISMATCH");
+    eq(count(db, "echo_packets", "issue_key='synthetic:wrong-source'"), 0);
+    for (const action of ["echo.issue_brief_created", "echo.job_created", "echo.candidate_found", "echo.candidate_rejected_by_gate",
+      "echo.analogy_checked", "echo.source_linked", "echo.rights_checked", "echo.candidate_ready", "echo.packet_ready",
+      "echo.no_echo_warranted", "echo.job_failed"]) ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action=?").get(action).n > 0);
+    eq(count(db, "echo_decisions"), 0);
+    eq(db.sqlite.prepare("PRAGMA foreign_key_check").all(), []);
+    console.log(`Echo synthetic orchestration passed: ${assertions} assertions, schema v5, zero FK violations, offline fixtures only.`);
+  } finally { db.close(); }
+}
+
+const action = process.argv[2];
+if (action === "check") await check();
+else if (action === "test") await test();
+else throw new Error("Use check or test");
