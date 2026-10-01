@@ -9,7 +9,7 @@ CREATE TABLE storyqueue_messages (
   subject TEXT,
   received_at TEXT NOT NULL,
   note_excerpt TEXT,
-  url_count INTEGER NOT NULL CHECK (url_count BETWEEN 1 AND 10),
+  url_count INTEGER NOT NULL CHECK (url_count BETWEEN 0 AND 10),
   intake_ids_json TEXT NOT NULL CHECK (json_valid(intake_ids_json) AND json_type(intake_ids_json) = 'array'),
   created_at TEXT NOT NULL
 );
