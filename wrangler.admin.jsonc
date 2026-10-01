@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "sbns-admin",
-  "main": "src/admin-index.js",
+  "main": "src/admin-entry.js",
   "compatibility_date": "2026-08-18",
   "compatibility_flags": ["nodejs_compat"],
   "triggers": { "crons": ["0 14,23 * * *"] },
