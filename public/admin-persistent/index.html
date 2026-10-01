@@ -3,29 +3,83 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Authenticated SBNS persistent editorial queue.">
-  <title>SBNS Editorial Desk</title>
+  <meta name="description" content="Authenticated SBNS editorial workspace.">
+  <title>Editorial Desk · Shocked But Not Surprised</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="admin.css">
 </head>
 <body>
-  <header><p class="eyebrow">SBNS EDITORIAL DESK</p><h1>Persistent Queue</h1><p id="actor">Authenticating…</p></header>
-  <main>
-    <section id="queue-view">
-      <section class="panel" aria-labelledby="watchdesk-heading">
-        <h2 id="watchdesk-heading">Watchdesk</h2>
-        <p>Scheduled public-source discovery: 14:00 and 23:00 UTC daily (approximately morning and late afternoon/evening Central).</p>
-        <div id="watchdesk-status" role="status">Loading Watchdesk status…</div>
-        <div id="watchdesk-latest"></div>
-        <div class="watchdesk-controls"><button id="watchdesk-dry" type="button">Run dry Watchdesk</button><button id="watchdesk-live" type="button">Run live Watchdesk</button></div>
-        <div id="watchdesk-result" role="status"></div>
-        <details><summary>Recent run history</summary><div id="watchdesk-history"></div></details>
-      </section>
-      <div class="toolbar"><select id="status-filter" aria-label="Filter by workflow status"><option value="">All statuses</option><option>submitted</option><option>queued</option><option>analyzing</option><option>review_ready</option><option>failed</option><option>held</option><option>rejected</option><option>approved</option></select><select id="origin-filter" aria-label="Filter by intake origin"><option value="">All origins</option><option>editor</option><option>visitor</option><option>monitor</option><option>discovery</option></select><button id="new-intake">New Intake</button></div>
-      <div id="queue-status" role="status"></div><div id="queue"></div>
+  <a class="skip-link" href="#main">Skip to editorial workspace</a>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="masthead-title">
+        <p class="masthead-kicker">NEWSROOM <span aria-hidden="true">•</span> HUMAN EDITORIAL AUTHORITY</p>
+        <h1>SHOCKED BUT NOT SURPRISED</h1>
+        <p class="masthead-subtitle">EDITORIAL DESK <span aria-hidden="true">/</span> ASSIGNMENT &amp; EVIDENCE</p>
+      </div>
+      <p class="editor-identity">Signed in <span id="actor">Authenticating…</span></p>
+    </div>
+  </header>
+
+  <div class="operational-strip" aria-label="Editorial desk operational summary">
+    <div><span>Loaded assignments</span><strong id="desk-total">—</strong></div>
+    <div><span>Review ready</span><strong id="desk-review">—</strong></div>
+    <div><span>Watchdesk</span><strong id="desk-watchdesk">Loading…</strong></div>
+    <div><span>Last run failures</span><strong id="desk-failures">—</strong></div>
+    <div><span>Watchdesk submitted · last run</span><strong id="desk-submitted">—</strong></div>
+  </div>
+
+  <main id="main">
+    <section id="queue-view" aria-labelledby="assignment-heading">
+      <div class="desk-layout">
+        <aside class="desk-rail" aria-label="Assignment desk controls">
+          <p class="rail-overline">DESK RAIL <span>01 / 03</span></p>
+          <h2>Assignment Desk</h2>
+          <p class="rail-note">Find the next item that needs an editor. Counts reflect the loaded desk list.</p>
+          <nav aria-label="Desk navigation"><a class="rail-current" href="#assignment-heading" aria-current="page">Queue <span aria-hidden="true">↗</span></a><a href="#watchdesk-heading">Watchdesk wire <span aria-hidden="true">↗</span></a></nav>
+          <div class="rail-controls">
+            <label for="queue-search">Search loaded assignments</label>
+            <input id="queue-search" type="search" autocomplete="off" placeholder="Title, institution, topic, URL…">
+            <label for="status-filter">Workflow state</label>
+            <select id="status-filter"><option value="">All states</option><option value="submitted">Submitted</option><option value="queued">Queued</option><option value="analyzing">Analyzing</option><option value="review_ready">Review ready</option><option value="failed">Failed</option><option value="held">Held</option><option value="rejected">Rejected</option><option value="approved">Approved</option></select>
+            <label for="origin-filter">Origin</label>
+            <select id="origin-filter"><option value="">All origins</option><option value="editor">Editor</option><option value="visitor">Visitor</option><option value="monitor">Monitor</option><option value="discovery">Discovery</option></select>
+          </div>
+          <div class="rail-counts" id="queue-counts" aria-label="Loaded queue counts"></div>
+          <button id="new-intake" class="new-intake" type="button">+ NEW INTAKE</button>
+        </aside>
+
+        <section class="assignment-surface" aria-labelledby="assignment-heading">
+          <div class="surface-heading"><div><p class="section-index">01 / ASSIGNMENTS</p><h2 id="assignment-heading" tabindex="-1">On the desk</h2></div><p class="surface-note">Open a file to review its evidence and decision history.</p></div>
+          <div id="queue-status" class="queue-status" role="status" aria-live="polite">Loading queue…</div>
+          <div id="queue" class="assignment-list"></div>
+        </section>
+
+        <aside class="wire" aria-labelledby="watchdesk-heading">
+          <div class="wire-heading"><p class="section-index">02 / PUBLIC-SOURCE DISCOVERY</p><h2 id="watchdesk-heading">WATCHDESK</h2><p>The wire, not the editorial decision.</p></div>
+          <div id="watchdesk-status" role="status" aria-live="polite">Loading Watchdesk status…</div>
+          <div id="watchdesk-latest"></div>
+          <div class="wire-cadence"><span>Scheduled cadence</span><strong id="watchdesk-cadence">—</strong></div>
+          <div class="watchdesk-controls"><button id="watchdesk-dry" class="diagnostic-action" type="button">TEST SCAN <small>Dry run · no intake writes</small></button><button id="watchdesk-live" class="live-action" type="button">RUN WATCHDESK LIVE <small>Up to five discovery intakes</small></button></div>
+          <div id="watchdesk-result" role="status" aria-live="polite"></div>
+          <details class="wire-details"><summary>Source health &amp; run metrics</summary><div id="watchdesk-metrics"></div><div id="watchdesk-sources"></div></details>
+          <details class="wire-details"><summary>Recent run history</summary><div id="watchdesk-history"></div></details>
+        </aside>
+      </div>
     </section>
-    <section id="new-view" hidden><button class="back">← Queue</button><h2>New Intake</h2><form id="new-form"><label>Source URL<input name="submitted_url" type="url" required></label><label>Editorial note<textarea name="submitter_note" maxlength="2000"></textarea></label><button>Add to editorial queue</button></form><p id="new-status" role="status"></p></section>
-    <section id="detail-view" hidden><button class="back">← Queue</button><div id="detail"></div></section>
+
+    <section id="new-view" class="single-surface" aria-labelledby="new-heading" hidden>
+      <button class="back" type="button">← Assignment Desk</button>
+      <div class="surface-heading"><div><p class="section-index">NEW / EDITORIAL INTAKE</p><h2 id="new-heading" tabindex="-1">Add to the desk</h2></div></div>
+      <p>Record a source for editorial review. This does not approve or publish a story.</p>
+      <form id="new-form" class="panel intake-form"><label>Source URL<input name="submitted_url" type="url" required></label><label>Editorial note<textarea name="submitter_note" maxlength="2000"></textarea></label><button type="submit">Add to editorial queue</button></form>
+      <p id="new-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="detail-view" class="story-file" aria-label="Story file" hidden>
+      <button class="back" type="button">← Assignment Desk</button>
+      <div id="detail"></div>
+    </section>
   </main>
   <script type="module" src="admin.js"></script>
 </body>

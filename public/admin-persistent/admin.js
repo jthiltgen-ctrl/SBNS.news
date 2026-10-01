@@ -1,43 +1,466 @@
-const views=[...document.querySelectorAll("main > section")],queue=document.querySelector("#queue"),queueStatus=document.querySelector("#queue-status"),detail=document.querySelector("#detail");
-const JOB_LABELS={pending_enqueue:"Waiting to queue",queued:"Queued",running:"Analyzing evidence",retrying:"Retrying analysis",complete:"Review ready",failed:"Analysis failed",dead_letter:"Analysis failed"};
-function element(tag,text,className){const node=document.createElement(tag);if(text!=null)node.textContent=text;if(className)node.className=className;return node}function show(id){views.forEach((view)=>{view.hidden=view.id!==id})}function key(){return crypto.randomUUID()}async function api(path,options={}){const headers={Accept:"application/json",...(options.body?{"Content-Type":"application/json","Idempotency-Key":key()}:{}),...options.headers};const response=await fetch(path,{...options,headers}),body=await response.json();if(!response.ok)throw new Error(body.error?.message||"Request failed.");return body}function section(title){const panel=element("section",null,"panel");panel.append(element("h2",title));return panel}function field(label,value){const p=element("p");const display=value==="PRIMARY RECORD FOUND"?"Legacy location claim; review state unverified":value;p.append(element("strong",`${label}: `),document.createTextNode(display??"—"));return p}function list(title,values){const wrap=element("div"),ul=element("ul");wrap.append(element("h3",title));(values?.length?values:["None recorded."]).forEach((value)=>ul.append(element("li",value)));wrap.append(ul);return wrap}function safeJson(value,fallback=null){try{return JSON.parse(value)}catch{return fallback}}function discoveryFromAudit(data){const event=[...data.audit].reverse().find((item)=>item.action==="watchdesk.candidate_submitted");return safeJson(event?.metadata_json,{})?.candidate||null}
-function accountableInstitution(candidate){return candidate.schema_version==="1.2"?(candidate.institution_or_system||"Not yet established"):"Unverified (legacy candidate)"}
-function renderDiscovery(candidate){
-  if(!candidate)return null;
-  const panel=section("DISCOVERY CANDIDATE — AUTOMATED TRIAGE, NOT AN EDITORIAL DECISION");
-  panel.classList.add("discovery");
-  const link=element("a",candidate.normalized_url);
-  link.href=candidate.normalized_url;link.target="_blank";link.rel="noopener noreferrer";
-  panel.append(
-    element("p","Watchdesk surfaced this candidate for human attention. It is not an approved story and has no formal PUBLISH, HOLD, or REJECT decision.","warning"),
-    field("Primary-record status",candidate.primary_record_status),
-    field("Evidence review state",candidate.evidence_review_state||"Unverified (legacy candidate)"),
-    field("Material examined",candidate.reviewed_material||"Not recorded"),
-    field("Primary-record location",candidate.primary_record_url||"Not yet located"),
-    field("Discovered title",candidate.discovered_title),field("Source",candidate.source?.name),field("Source class",candidate.source?.source_class),link,
-    field("Publication / release date",candidate.publication_date),field("Discovered",candidate.discovered_at),
-    field("Topic",candidate.topic),field("Accountable institution",accountableInstitution(candidate)),field("Jurisdiction",candidate.jurisdiction),
-    field("Submission readiness",candidate.submission_readiness?.ready?"Ready for automated intake":candidate.submission_readiness?"Discovery lead — not submission-ready":"Not recorded (legacy candidate)"),
-    field("Why this may belong at SBNS",candidate.why_this_may_belong),field("Job / expectation",candidate.apparent_job||"Not yet established"),
-    field("Observed condition",candidate.observed_condition||"Not yet established"),field("Accountability gap",candidate.accountability_gap||"Not yet established"),
-    field("What the inspected material establishes",candidate.record_summary),field("Accountability question",candidate.accountability_question||"Not yet established"),field("Research prompt (not evidence)",candidate.research_prompt),
-    field("Material qualification / counterevidence",candidate.material_qualification),field("Institutional response",candidate.institutional_response),
-    field("What remains unproven",candidate.remains_unproven),field("Rabbit Hole recommendation",candidate.triage?.recommendation),
-    field("Triage rationale",candidate.triage?.rationale),field("Research burden",candidate.research_burden),
-    field("Published-story relationship",candidate.published_story_relationship?.story_id),field("Related discovery intake",candidate.related_intake_id)
-  );
-  const sources=element("div");sources.append(element("h3","Key sources"));
-  (candidate.key_sources||[]).forEach((source)=>{const sourceLink=element("a",`${source.role}: ${source.url}`);sourceLink.href=source.url;sourceLink.target="_blank";sourceLink.rel="noopener noreferrer";sources.append(sourceLink)});
-  panel.append(sources);return panel;
+import { filterAssignments, queueCounts } from "./desk-state.js";
+
+const views = [...document.querySelectorAll("main > section")];
+const queue = document.querySelector("#queue");
+const queueStatus = document.querySelector("#queue-status");
+const detail = document.querySelector("#detail");
+const watchdeskStatus = document.querySelector("#watchdesk-status");
+const watchdeskLatest = document.querySelector("#watchdesk-latest");
+const watchdeskMetrics = document.querySelector("#watchdesk-metrics");
+const watchdeskSources = document.querySelector("#watchdesk-sources");
+const watchdeskResult = document.querySelector("#watchdesk-result");
+const watchdeskHistory = document.querySelector("#watchdesk-history");
+const watchdeskDry = document.querySelector("#watchdesk-dry");
+const watchdeskLive = document.querySelector("#watchdesk-live");
+const jobLabels = {
+  pending_enqueue: "Waiting to queue", queued: "Queued", running: "Analyzing evidence",
+  retrying: "Retrying analysis", complete: "Review ready",
+  failed: "Analysis failed", dead_letter: "Analysis failed"
+};
+let loadedAssignments = [];
+
+function el(tag, value, className) {
+  const node = document.createElement(tag);
+  if (value !== undefined && value !== null) node.textContent = String(value);
+  if (className) node.className = className;
+  return node;
 }
-async function loadQueue(){show("queue-view");queue.replaceChildren();queueStatus.textContent="Loading queue…";const status=document.querySelector("#status-filter").value,origin=document.querySelector("#origin-filter").value,params=new URLSearchParams();if(status)params.set("status",status);if(origin)params.set("origin",origin);const data=await api(`/api/admin/intakes${params.size?`?${params}`:""}`);queueStatus.textContent=data.intakes.length?`${data.intakes.length} queue item${data.intakes.length===1?"":"s"}.`:"Queue is empty.";data.intakes.forEach((item)=>{const metadata=safeJson(item.latest_discovery_metadata_json,{}),candidate=metadata?.candidate,card=element("article",null,"card"),open=element("button");open.type="button";if(candidate){card.classList.add("discovery");open.append(element("p","DISCOVERY CANDIDATE","eyebrow"),element("h3",candidate.discovered_title),field("Topic",candidate.topic),field("Accountable institution",accountableInstitution(candidate)),field("Submission readiness",candidate.submission_readiness?.ready?"Ready for automated intake":candidate.submission_readiness?"Discovery lead — not submission-ready":"Not recorded (legacy candidate)"),field("Source URL",item.submitted_url),field("Watchdesk triage",candidate.triage?.recommendation),field("Primary record",candidate.primary_record_status),field("Research burden",candidate.research_burden),field("Discovered",candidate.discovered_at),field("Workflow",item.status),field("Latest human decision",item.latest_decision))}else open.append(element("h3",item.submitted_url),field("Origin",item.origin),field("Workflow",item.status),field("Analysis",JOB_LABELS[item.latest_analysis_job_state]||item.analysis_status),field("Recommendation",item.latest_recommendation),field("Confidence",item.latest_confidence),field("Category",item.latest_category),field("Severity",item.latest_severity),field("Latest revision",item.latest_draft_revision),field("Latest decision",item.latest_decision),field("Last activity",item.updated_at));open.addEventListener("click",()=>loadDetail(item.id));card.append(open);queue.append(card)})}
-function draftForm(intakeId,latest,proposal){const seed=latest||proposal||{},panel=section(latest?"Save as new revision":proposal?"Save AI proposal as revision 1":"Create draft revision"),form=element("form"),fields=[["story_id","Story ID","input"],["headline","Headline","input"],["summary","Summary","textarea"],["fml_kicker","FML kicker","textarea"],["topic_tags","Tags, comma-separated","input"]];fields.forEach(([name,labelText,tag])=>{const label=element("label",labelText),input=element(tag);input.name=name;input.value=name==="topic_tags"?(seed.topic_tags||[]).join(", "):seed[name]||"";if(["headline","summary","fml_kicker"].includes(name))input.required=true;label.append(input);form.append(label)});const categoryLabel=element("label","Category"),category=element("select");category.name="category";["International","National","Local"].forEach((value)=>{const option=element("option",value);option.value=value;option.selected=seed.category===value;category.append(option)});categoryLabel.append(category);form.append(categoryLabel);const severityLabel=element("label","Severity"),severity=element("select");severity.name="severity";[1,2,3,4,5].forEach((value)=>{const option=element("option",String(value));option.value=String(value);option.selected=seed.severity===value;severity.append(option)});severityLabel.append(severity);form.append(severityLabel);form.append(element("button",latest?"Save as new revision":"Save revision 1"));const status=element("p");status.setAttribute("role","status");form.addEventListener("submit",async(event)=>{event.preventDefault();const values=Object.fromEntries(new FormData(form));values.severity=Number(values.severity);values.topic_tags=values.topic_tags.split(",").map((tag)=>tag.trim()).filter(Boolean);try{const saved=await api(`/api/admin/intakes/${intakeId}/drafts`,{method:"POST",body:JSON.stringify(values)});status.textContent=`REVISION ${saved.draft.revision} SAVED`;await loadDetail(intakeId)}catch(error){status.textContent=error.message}});panel.append(form,status);return panel}
-function renderAnalysis(data){const panel=section("ANALYSIS");panel.classList.add("analysis");const job=data.analysis_jobs.at(-1);panel.append(field("State",JOB_LABELS[job?.state]||data.intake.analysis_status));if(!data.analyses.length){if(job?.last_error_message)panel.append(element("p",job.last_error_message,"warning"));return panel}const analysis=safeJson(data.analyses.at(-1).raw_analysis_json,{});panel.append(element("p",analysis.recommendation?.toUpperCase(),`recommendation ${analysis.recommendation||""}`),field("Confidence",analysis.recommendation_confidence),field("Category",analysis.category),field("Severity",analysis.severity),field("Why SBNS",analysis.why_sbns),list("Recommendation reasons",analysis.recommendation_reasons),list("Hold reasons",analysis.hold_reasons),list("Reject reasons",analysis.reject_reasons));const evidence=section("EVIDENCE & CLAIMS");evidence.append(field("Observed condition",analysis.observed_condition),field("Attributable failure",analysis.attributable_failure),field("Specific-harm causation",analysis.specific_harm_causation),field("Qualification required",analysis.qualification_required?"Yes":"No"),field("Factual risk",analysis.factual_risk),field("Legal risk",analysis.legal_risk));data.sources.forEach((source)=>{const card=element("article",null,"source-card"),link=element("a",source.url),disclosure=element("details");card.append(element("h3",source.source_title||source.name));link.href=source.url;link.target="_blank";link.rel="noopener noreferrer";disclosure.append(element("summary","View normalized evidence"),element("pre",source.extracted_text,"evidence-text"));card.append(link,field("Verification",source.verification_status),field("Format",source.extraction_format),disclosure);evidence.append(card)});analysis.claims?.forEach((claim)=>{const card=element("article",null,"claim-card");card.append(element("h3",claim.claim_id),element("p",claim.claim_text),field("Material",claim.material?"Yes":"No"),field("Verification",claim.verification_status),field("Qualification",claim.qualification),field("Conflict",claim.conflict?"Yes":"No"));evidence.append(card)});evidence.append(list("Source conflicts",(analysis.source_conflicts||[]).map((conflict)=>conflict.statements.join(" / "))));panel.append(evidence,list("DO NOT CLAIM",analysis.do_not_claim));const proposal=section("AI STORY PROPOSAL — NOT SAVED");proposal.append(field("Headline",analysis.proposed_headline),field("Summary",analysis.proposed_summary),element("p",analysis.proposed_fml_kicker,"kicker"),field("Tags",analysis.proposed_topic_tags?.join(", ")));panel.append(proposal);return panel}
-async function retryAnalysis(id){await api(`/api/admin/intakes/${id}/analyze`,{method:"POST",body:"{}"});await loadDetail(id,"Analysis queued.")}async function decide(intakeId,decision,draftId){await api(`/api/admin/intakes/${intakeId}/decisions`,{method:"POST",body:JSON.stringify({decision,draft_id:decision==="approve"?draftId:null,notes:null})});await loadDetail(intakeId)}
-async function loadDetail(id,notice=""){const data=await api(`/api/admin/intakes/${id}`);show("detail-view");detail.replaceChildren();if(notice)detail.append(element("p",notice,"status"));const submission=section("SUBMISSION");submission.append(field("URL",data.intake.submitted_url),field("Origin",data.intake.origin),field("Submitted",data.intake.submitted_at),field("Workflow",data.intake.status),field("Note",data.intake.submitter_note));detail.append(submission);const discovery=renderDiscovery(discoveryFromAudit(data));if(discovery)detail.append(discovery);detail.append(renderAnalysis(data));const job=data.analysis_jobs.at(-1);if(["pending_enqueue","failed","dead_letter"].includes(job?.state)){const retry=element("button","Retry analysis");retry.addEventListener("click",()=>retryAnalysis(id));detail.append(retry)}const latestAnalysis=safeJson(data.analyses.at(-1)?.raw_analysis_json,{}),proposal=latestAnalysis.proposed_headline?{headline:latestAnalysis.proposed_headline,summary:latestAnalysis.proposed_summary,fml_kicker:latestAnalysis.proposed_fml_kicker,category:latestAnalysis.category,severity:latestAnalysis.severity,topic_tags:latestAnalysis.proposed_topic_tags}:null,drafts=section("EDITORIAL DRAFTS");data.drafts.forEach((draft)=>{draft.topic_tags=safeJson(draft.topic_tags_json,[]);const card=element("article",null,"card draft");card.append(element("h3",`REVISION ${draft.revision}`),field("Headline",draft.headline),field("Summary",draft.summary),element("p",draft.fml_kicker,"kicker"),field("Category",draft.category),field("Severity",draft.severity));drafts.append(card)});detail.append(drafts,draftForm(id,data.drafts.at(-1),proposal));const decisions=section("HUMAN DECISIONS"),latestDraft=data.drafts.at(-1),approved=data.decisions.filter((item)=>item.decision==="approve").at(-1);if(approved&&latestDraft&&approved.draft_id!==latestDraft.id)decisions.append(element("p","Latest draft differs from approved revision. New approval required.","warning"));data.decisions.forEach((item)=>{const revision=data.drafts.find((draft)=>draft.id===item.draft_id)?.revision;decisions.append(field(item.decision==="approve"&&revision?`APPROVED — REVISION ${revision}`:item.decision.toUpperCase(),item.decided_at))});const row=element("div",null,"decision-row");["approve","hold","reject"].forEach((value)=>{const button=element("button",value==="approve"&&latestDraft?`Approve revision ${latestDraft.revision}`:value);button.disabled=value==="approve"&&!latestDraft;button.addEventListener("click",()=>decide(id,value,latestDraft?.id));row.append(button)});decisions.append(row);detail.append(decisions);const audit=section("AUDIT HISTORY");data.audit.forEach((item)=>audit.append(element("p",`${item.created_at} · ${item.actor_id||item.actor_type} · ${item.action}`,"audit")));detail.append(audit)}
-const watchdeskStatus=document.querySelector("#watchdesk-status"),watchdeskLatest=document.querySelector("#watchdesk-latest"),watchdeskResult=document.querySelector("#watchdesk-result"),watchdeskHistory=document.querySelector("#watchdesk-history"),watchdeskDry=document.querySelector("#watchdesk-dry"),watchdeskLive=document.querySelector("#watchdesk-live");
-function renderWatchdeskMetrics(target,run){target.replaceChildren();if(!run){target.append(element("p","No Watchdesk runs recorded yet."));return}const metrics=run.metrics||{};target.append(field("Run ID",run.run_id),field("Status",run.status==="success"&&metrics.would_submit===0&&metrics.discovery_leads===0?"Successful run, zero worthwhile candidates":run.status),field("Last completed",run.completed_at||"Still running"),field("Run type",run.trigger_type),field("Mode",run.dry_run?"Dry run":"Live"),field("Sources checked",metrics.sources_checked??0),field("Source failures",run.source_failure_count??run.source_failures?.length??0),field("Discovered items",metrics.items_discovered??0),field("Discovery leads",metrics.discovery_leads??0),field("Submission-ready",metrics.submission_ready??0),field("Would submit",metrics.would_submit??0),field("Submitted",run.submitted_count??metrics.submitted_to_newsroom??0));if(run.source_health?.length){const sources=list("Source health",run.source_health.map((source)=>`${source.source_id}: ${source.status} · ${source.items_parsed} parsed · ${source.checked_at}${source.error?` · ${source.error}`:""}`));target.append(sources)}if(run.submitted_intake_ids?.length)target.append(field("Submitted intake IDs",run.submitted_intake_ids.join(", ")));if(run.error_class)target.append(field("Error",`${run.error_class}: ${run.error_message||"Unknown failure"}`))}
-async function loadWatchdeskStatus(){const data=await api("/api/admin/watchdesk/status");watchdeskStatus.textContent=data.latest?`Latest run: ${data.latest.status}.` : "No Watchdesk runs recorded yet.";renderWatchdeskMetrics(watchdeskLatest,data.last_completed||data.latest);watchdeskHistory.replaceChildren();for(const run of data.recent||[])watchdeskHistory.append(element("p",`${run.started_at} · ${run.trigger_type} · ${run.dry_run?"dry":"live"} · ${run.status} · ${run.run_id}`));if(!data.recent?.length)watchdeskHistory.append(element("p","No runs recorded."))}
-async function runWatchdeskNow(dryRun){if(!dryRun&&!window.confirm("Run Watchdesk now? This may add up to five automated discovery candidates to the Newsroom queue. It cannot publish or make editorial decisions."))return;watchdeskDry.disabled=true;watchdeskLive.disabled=true;watchdeskResult.textContent=dryRun?"Running dry Watchdesk…":"Running live Watchdesk…";try{const result=await api("/api/admin/watchdesk/runs",{method:"POST",body:JSON.stringify({dry_run:dryRun})});watchdeskResult.replaceChildren(element("p",result.message||`Run ${result.status}.`));renderWatchdeskMetrics(watchdeskLatest,{...result,source_failure_count:result.source_failures?.length});await loadWatchdeskStatus()}catch(error){watchdeskResult.textContent=`Watchdesk run failed: ${error.message}`;await loadWatchdeskStatus().catch(()=>{})}finally{watchdeskDry.disabled=false;watchdeskLive.disabled=false}}
-watchdeskDry.addEventListener("click",()=>runWatchdeskNow(true));watchdeskLive.addEventListener("click",()=>runWatchdeskNow(false));
-document.querySelector("#new-intake").addEventListener("click",()=>show("new-view"));document.querySelectorAll(".back").forEach((button)=>button.addEventListener("click",loadQueue));document.querySelector("#status-filter").addEventListener("change",loadQueue);document.querySelector("#origin-filter").addEventListener("change",loadQueue);document.querySelector("#new-form").addEventListener("submit",async(event)=>{event.preventDefault();const values=Object.fromEntries(new FormData(event.currentTarget));try{const data=await api("/api/admin/intakes",{method:"POST",body:JSON.stringify(values)});await loadDetail(data.intake.id,data.queued?"Intake saved and analysis queued.":data.message)}catch(error){document.querySelector("#new-status").textContent=error.message}});try{const session=await api("/api/admin/session");document.querySelector("#actor").textContent=session.actor.email;await loadQueue();await loadWatchdeskStatus().catch((error)=>{watchdeskStatus.textContent=error.message})}catch(error){document.querySelector("#actor").textContent="Authentication required";queueStatus.textContent=error.message;watchdeskStatus.textContent="Authentication required"}
+function show(id, heading) {
+  views.forEach((view) => { view.hidden = view.id !== id; });
+  if (heading) document.querySelector(heading)?.focus();
+  window.scrollTo({ top: 0, behavior: "instant" });
+}
+function key() { return crypto.randomUUID(); }
+async function api(path, options = {}) {
+  const headers = { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json", "Idempotency-Key": key() } : {}), ...options.headers };
+  const response = await fetch(path, { ...options, headers });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body.error?.message || "Request failed.");
+  return body;
+}
+function safeJson(value, fallback = null) {
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+function text(value) { return value === undefined || value === null || value === "" ? "—" : String(value); }
+function date(value) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? String(value) : parsed.toLocaleString();
+}
+function panel(id, title, className = "") {
+  const node = el("section", null, "panel " + className);
+  node.id = id;
+  node.append(el("p", id.toUpperCase().replace("STORY-", "").replaceAll("-", " / "), "section-label"), el("h2", title));
+  return node;
+}
+function field(label, value, className = "") {
+  const node = el("p", null, className);
+  const display = value === "PRIMARY RECORD FOUND" ? "Legacy location claim; review state unverified" : text(value);
+  node.append(el("strong", label + ": "), document.createTextNode(display));
+  return node;
+}
+function fieldGrid(entries) {
+  const grid = el("div", null, "field-grid");
+  entries.forEach(([label, value, wide]) => grid.append(field(label, value, wide ? "wide" : "")));
+  return grid;
+}
+function list(title, values) {
+  const wrap = el("div");
+  wrap.append(el("h3", title));
+  const ul = el("ul");
+  (values?.length ? values : ["None recorded."]).forEach((value) => ul.append(el("li", value)));
+  wrap.append(ul);
+  return wrap;
+}
+function safeLink(url, label) {
+  const value = String(url || "");
+  let parsed;
+  try { parsed = new URL(value); } catch { return el("span", label || value || "—"); }
+  if (!["http:", "https:"].includes(parsed.protocol)) return el("span", label || value);
+  const link = el("a", label || value, "source-link");
+  link.href = parsed.href;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  return link;
+}
+function badge(value, kind) {
+  const node = el("span", text(value).replaceAll("_", " "), kind + " " + kind + "-" + String(value || "").toLowerCase().replace(/[^a-z0-9_-]/g, "-"));
+  return node;
+}
+function candidateFromItem(item) { return safeJson(item.latest_discovery_metadata_json, {})?.candidate || null; }
+function discoveryFromAudit(data) {
+  const event = [...data.audit].reverse().find((item) => item.action === "watchdesk.candidate_submitted");
+  return safeJson(event?.metadata_json, {})?.candidate || null;
+}
+function accountableInstitution(candidate) {
+  return candidate.schema_version==="1.2" ? (candidate.institution_or_system || "Not yet established") : "Unverified (legacy candidate)";
+}
+function readiness(candidate) {
+  return candidate.submission_readiness?.ready ? "Ready for automated intake" : candidate.submission_readiness ? "Discovery lead — not submission-ready" : "Not recorded (legacy candidate)";
+}
+function updateQueueSummary() {
+  const counts = queueCounts(loadedAssignments);
+  document.querySelector("#desk-total").textContent = String(counts.total);
+  document.querySelector("#desk-review").textContent = String(counts.reviewReady);
+  const wrap = document.querySelector("#queue-counts");
+  wrap.replaceChildren();
+  [["Loaded", counts.total], ["Review ready", counts.reviewReady], ["Discovery", counts.discovery], ["Needs attention", counts.attention]].forEach(([label, value]) => wrap.append(el("span", label), el("strong", value)));
+}
+function assignmentCard(item) {
+  const candidate = candidateFromItem(item);
+  const card = el("article", null, "assignment-card" + (candidate ? " discovery" : "") + (["review_ready", "failed"].includes(item.status) ? " attention" : ""));
+  const open = el("button");
+  open.type = "button";
+  open.setAttribute("aria-label", "Open " + (candidate?.discovered_title || item.submitted_url) + " story file");
+  const top = el("span", null, "card-top");
+  top.append(badge(candidate ? "Discovery" : item.origin, "origin"), badge(item.status, "status"));
+  const title = el("strong", candidate?.discovered_title || item.submitted_url, "card-title");
+  const meta = el("span", null, "card-meta");
+  if (candidate) {
+    [accountableInstitution(candidate), candidate.topic].forEach((value) => meta.append(el("span", value)));
+  } else {
+    ["AI read: " + text(item.latest_recommendation)].forEach((value) => meta.append(el("span", value)));
+  }
+  const bottom = el("span", null, "card-bottom");
+  bottom.append(el("span", "Analysis: " + (jobLabels[item.latest_analysis_job_state] || text(item.analysis_status))), el("span", "Human decision: " + text(item.latest_decision)), el("span", "Last activity: " + date(item.updated_at)));
+  open.append(top, title, meta);
+  if (candidate) open.append(el("span", "Readiness: " + readiness(candidate) + " · Rabbit Hole: " + text(candidate.triage?.recommendation) + " · Burden: " + text(candidate.research_burden), "card-secondary"));
+  open.append(bottom);
+  open.addEventListener("click", () => loadDetail(item.id).catch((error) => { queueStatus.textContent = error.message; }));
+  card.append(open);
+  return card;
+}
+function renderQueue() {
+  const visible = filterAssignments(loadedAssignments, {
+    query: document.querySelector("#queue-search").value,
+    status: document.querySelector("#status-filter").value,
+    origin: document.querySelector("#origin-filter").value
+  });
+  queue.replaceChildren(...visible.map(assignmentCard));
+  queueStatus.textContent = visible.length + " of " + loadedAssignments.length + " loaded assignments shown" + (loadedAssignments.length === 100 ? " · API limit is 100; older assignments may not be loaded." : ".");
+  if (!visible.length) queue.append(el("p", loadedAssignments.length ? "No loaded assignments match these filters." : "The assignment desk is empty."));
+}
+async function loadQueue() {
+  show("queue-view");
+  queueStatus.textContent = "Loading queue…";
+  const data = await api("/api/admin/intakes?limit=100");
+  loadedAssignments = data.intakes || [];
+  updateQueueSummary();
+  renderQueue();
+}
+function renderDiscovery(candidate) {
+  if (!candidate) return null;
+  const node = panel("story-discovery", "Discovery candidate", "discovery-panel");
+  node.append(el("p", "Watchdesk surfaced this candidate for human attention. This discovery record is not itself approval or a formal human decision.", "warning"));
+  node.append(fieldGrid([
+    ["Primary-record status", candidate.primary_record_status], ["Evidence review state", candidate.evidence_review_state || "Unverified (legacy candidate)"],
+    ["Material examined", candidate.reviewed_material || "Not recorded"], ["Primary-record location", candidate.primary_record_url || "Not yet located"],
+    ["Discovered title", candidate.discovered_title, true], ["Source", candidate.source?.name], ["Source class", candidate.source?.source_class],
+    ["Publication / release date", candidate.publication_date], ["Discovered", candidate.discovered_at],
+    ["Topic", candidate.topic], ["Accountable institution", accountableInstitution(candidate)],
+    ["Jurisdiction", candidate.jurisdiction], ["Submission readiness", readiness(candidate)],
+    ["Why this may belong at SBNS", candidate.why_this_may_belong, true],
+    ["Job / expectation", candidate.apparent_job || "Not yet established", true],
+    ["Observed condition", candidate.observed_condition || "Not yet established", true],
+    ["Accountability gap", candidate.accountability_gap || "Not yet established", true],
+    ["What the inspected material establishes", candidate.record_summary, true],
+    ["Accountability question", candidate.accountability_question || "Not yet established", true],
+    ["Research prompt (not evidence)", candidate.research_prompt, true],
+    ["Material qualification / counterevidence", candidate.material_qualification, true],
+    ["Institutional response", candidate.institutional_response, true],
+    ["What remains unproven", candidate.remains_unproven, true],
+    ["Rabbit Hole recommendation", candidate.triage?.recommendation],
+    ["Triage rationale", candidate.triage?.rationale, true],
+    ["Research burden", candidate.research_burden],
+    ["Published-story relationship", candidate.published_story_relationship?.story_id],
+    ["Related discovery intake", candidate.related_intake_id]
+  ]));
+  node.append(el("h3", "Discovered source"), safeLink(candidate.normalized_url));
+  const sources = el("div");
+  sources.append(el("h3", "Key sources"));
+  (candidate.key_sources || []).forEach((source) => sources.append(safeLink(source.url, source.role + ": " + source.url)));
+  if (!candidate.key_sources?.length) sources.append(el("p", "None recorded."));
+  node.append(sources);
+  return node;
+}
+function renderAnalysis(data) {
+  const node = panel("story-analysis", "Analysis", "analysis-panel");
+  const job = data.analysis_jobs.at(-1);
+  node.append(field("Analysis state", jobLabels[job?.state] || data.intake.analysis_status));
+  const retryable = ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
+  if (retryable) {
+    if (job?.last_error_message) node.append(el("p", job.last_error_message, "warning"));
+    const retry = el("button", "Retry analysis");
+    retry.type = "button";
+    retry.addEventListener("click", async () => {
+      try { await api("/api/admin/intakes/" + data.intake.id + "/analyze", { method: "POST", body: "{}" }); await loadDetail(data.intake.id, "Analysis queued."); }
+      catch (error) { retry.insertAdjacentElement("afterend", el("p", error.message, "warning")); }
+    });
+    node.append(retry);
+  }
+  const analysis = safeJson(data.analyses.at(-1)?.raw_analysis_json, null);
+  if (!analysis) {
+    node.append(el("p", "No completed analysis is available. Human review remains required."));
+    return { analysis: node, evidence: renderEvidence(data, null), proposal: null, parsed: null };
+  }
+  const grid = el("div", null, "analysis-grid");
+  const read = el("section", null, "analysis-block");
+  read.append(el("h3", "Editorial read"), el("p", analysis.recommendation || "No recommendation", "recommendation " + (analysis.recommendation || "")));
+  read.append(fieldGrid([["Confidence", analysis.recommendation_confidence], ["Category", analysis.category], ["Severity", analysis.severity], ["Why SBNS", analysis.why_sbns, true]]), list("Recommendation reasons", analysis.recommendation_reasons));
+  const truth = el("section", null, "analysis-block truth-test");
+  truth.append(el("h3", "Truth test"), el("p", "Observed condition is not attributable failure; attributable failure is not proven specific-harm causation."));
+  truth.append(fieldGrid([["Observed condition", analysis.observed_condition], ["Attributable failure", analysis.attributable_failure], ["Specific-harm causation", analysis.specific_harm_causation], ["Qualification required", analysis.qualification_required ? "Yes" : "No"]]));
+  const risks = el("section", null, "analysis-block");
+  risks.append(el("h3", "Risks"), fieldGrid([["Factual risk", analysis.factual_risk], ["Legal risk", analysis.legal_risk]]), list("Hold reasons", analysis.hold_reasons), list("Reject reasons", analysis.reject_reasons), list("DO NOT CLAIM", analysis.do_not_claim));
+  grid.append(read, truth, risks);
+  node.append(grid);
+  const proposal = panel("story-proposal", "AI proposal — not saved / not approved", "proposal-panel");
+  proposal.append(el("p", "Generated suggestions are not established evidence or a human editorial decision.", "warning"));
+  proposal.append(fieldGrid([["Headline", analysis.proposed_headline], ["Summary", analysis.proposed_summary, true], ["FML kicker", analysis.proposed_fml_kicker, true], ["Tags", analysis.proposed_topic_tags?.join(", ")]]));
+  return { analysis: node, evidence: renderEvidence(data, analysis), proposal, parsed: analysis };
+}
+function renderEvidence(data, analysis) {
+  const node = panel("story-evidence", "Evidence & claims");
+  if (!data.sources.length && !analysis?.claims?.length) node.append(el("p", "No extracted sources or claims recorded."));
+  data.sources.forEach((source, index) => {
+    const card = el("article", null, "source-card");
+    card.append(el("p", "SOURCE " + String(index + 1).padStart(2, "0"), "revision-label"), el("h3", source.source_title || source.name || "Untitled source"));
+    card.append(safeLink(source.url), fieldGrid([["Source type", source.source_type], ["Verification", source.verification_status], ["Format", source.extraction_format], ["Published", source.published_at]]));
+    const disclosure = el("details");
+    disclosure.append(el("summary", "View normalized evidence"), el("pre", source.extracted_text, "evidence-text"));
+    card.append(disclosure);
+    node.append(card);
+  });
+  (analysis?.claims || []).forEach((claim) => {
+    const card = el("article", null, "claim-card");
+    card.append(el("p", "CLAIM " + text(claim.claim_id), "revision-label"), el("h3", claim.claim_text));
+    card.append(fieldGrid([["Material", claim.material ? "Yes" : "No"], ["Verification", claim.verification_status], ["Qualification", claim.qualification], ["Conflict", claim.conflict ? "Yes" : "No"]]));
+    node.append(card);
+  });
+  node.append(list("Source conflicts", (analysis?.source_conflicts || []).map((conflict) => (conflict.statements || []).join(" / "))));
+  return node;
+}
+function draftForm(intakeId, latest, proposal) {
+  const seed = latest || proposal || {};
+  const node = panel("story-copy-editor", latest ? "Edit copy / save new revision" : proposal ? "Save AI proposal as revision 1" : "Create draft revision", "copy-editor");
+  node.append(el("p", latest ? "Editing the latest saved revision. Saving creates a new revision; it does not change an existing approval." : proposal ? "This form is seeded from the unsaved AI proposal. Review every field before saving." : "Create a human-reviewed draft before approval."));
+  const form = el("form");
+  const fields = [["story_id", "Story ID", "input"], ["headline", "Headline", "input"], ["summary", "Summary", "textarea"], ["fml_kicker", "FML kicker", "textarea"], ["topic_tags", "Tags, comma-separated", "input"]];
+  fields.forEach(([name, labelText, tag]) => {
+    const label = el("label", labelText, ["summary", "fml_kicker", "topic_tags"].includes(name) ? "wide" : "");
+    const input = el(tag);
+    input.name = name;
+    input.value = name === "topic_tags" ? (seed.topic_tags || []).join(", ") : seed[name] || "";
+    if (["headline", "summary", "fml_kicker"].includes(name)) input.required = true;
+    label.append(input);
+    form.append(label);
+  });
+  [["category", "Category", ["International", "National", "Local"]], ["severity", "Severity", [1, 2, 3, 4, 5]]].forEach(([name, labelText, options]) => {
+    const label = el("label", labelText);
+    const select = el("select");
+    select.name = name;
+    options.forEach((value) => {
+      const option = el("option", value);
+      option.value = String(value);
+      option.selected = seed[name] === value;
+      select.append(option);
+    });
+    label.append(select);
+    form.append(label);
+  });
+  const save = el("button", latest ? "Save new revision" : "Save revision 1");
+  save.type = "submit";
+  const status = el("p");
+  status.setAttribute("role", "status");
+  form.append(save, status);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(form));
+    values.severity = Number(values.severity);
+    values.topic_tags = values.topic_tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+    save.disabled = true;
+    try {
+      const saved = await api("/api/admin/intakes/" + intakeId + "/drafts", { method: "POST", body: JSON.stringify(values) });
+      await loadDetail(intakeId, "Revision " + saved.draft.revision + " saved.");
+    } catch (error) { status.textContent = error.message; save.disabled = false; }
+  });
+  node.append(form);
+  return node;
+}
+function renderDrafts(data, analysis) {
+  const node = panel("story-drafts", "Editorial drafts");
+  const latest = data.drafts.at(-1);
+  const lastApprovedDraftId = data.decisions.filter((item) => item.decision === "approve").at(-1)?.draft_id;
+  if (!data.drafts.length) node.append(el("p", "No saved draft revision. AI proposals do not count as saved copy."));
+  data.drafts.forEach((draft, index) => {
+    const card = el("article", null, "draft-card" + (index === data.drafts.length - 1 ? " latest" : ""));
+    card.append(el("p", "SAVED REVISION " + draft.revision + (index === data.drafts.length - 1 ? " / LATEST" : " / PRIOR") + (draft.id === lastApprovedDraftId ? " / LAST APPROVED" : ""), "revision-label"));
+    card.append(el("h3", draft.headline), el("p", draft.summary), el("p", draft.fml_kicker, "kicker"));
+    card.append(fieldGrid([["Story ID", draft.story_id], ["Category", draft.category], ["Severity", draft.severity], ["Tags", safeJson(draft.topic_tags_json, []).join(", ")]]));
+    node.append(card);
+  });
+  const proposal = analysis?.proposed_headline ? {
+    headline: analysis.proposed_headline, summary: analysis.proposed_summary, fml_kicker: analysis.proposed_fml_kicker,
+    category: analysis.category, severity: analysis.severity, topic_tags: analysis.proposed_topic_tags
+  } : null;
+  node.append(draftForm(data.intake.id, latest ? { ...latest, topic_tags: safeJson(latest.topic_tags_json, []) } : null, proposal));
+  return node;
+}
+function renderDecisions(data) {
+  const node = panel("story-decision", "Human decision", "decision-panel");
+  node.append(el("p", "AI assists. Human editor decides.", "decision-principle"));
+  const latestDraft = data.drafts.at(-1);
+  const approved = data.decisions.filter((item) => item.decision === "approve").at(-1);
+  if (approved && latestDraft && approved.draft_id !== latestDraft.id) node.append(el("p", "Latest draft differs from approved revision. New approval required.", "warning"));
+  if (!latestDraft) node.append(el("p", "Save a draft revision before approving."));
+  data.decisions.forEach((item) => {
+    const revision = data.drafts.find((draft) => draft.id === item.draft_id)?.revision;
+    node.append(field(item.decision === "approve" && revision ? "APPROVED — REVISION " + revision : String(item.decision).toUpperCase(), date(item.decided_at), "decision-log"));
+  });
+  const row = el("div", null, "decision-row");
+  [["approve", latestDraft ? "Approve revision " + latestDraft.revision : "Approve · draft required"], ["hold", "Hold"], ["reject", "Reject"]].forEach(([value, label]) => {
+    const button = el("button", label, value);
+    button.type = "button";
+    button.disabled = value === "approve" && !latestDraft;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        await api("/api/admin/intakes/" + data.intake.id + "/decisions", { method: "POST", body: JSON.stringify({ decision: value, draft_id: value === "approve" ? latestDraft.id : null, notes: null }) });
+        await loadDetail(data.intake.id, "Human decision recorded.");
+      } catch (error) { node.append(el("p", error.message, "warning")); button.disabled = false; }
+    });
+    row.append(button);
+  });
+  node.append(row);
+  return node;
+}
+function renderAudit(data) {
+  const node = panel("story-audit", "Audit history");
+  const log = el("ol", null, "audit-list");
+  [...data.audit].reverse().forEach((item) => {
+    const entry = el("li", null, "audit");
+    entry.append(el("time", date(item.created_at)), el("span", item.actor_id || item.actor_type), el("span", item.action));
+    log.append(entry);
+  });
+  if (!data.audit.length) log.append(el("li", "No activity recorded."));
+  node.append(log);
+  return node;
+}
+async function loadDetail(id, notice = "") {
+  const data = await api("/api/admin/intakes/" + id);
+  detail.replaceChildren();
+  show("detail-view");
+  if (notice) detail.append(el("p", notice, "warning"));
+  const candidate = discoveryFromAudit(data);
+  const latestAnalysis = safeJson(data.analyses.at(-1)?.raw_analysis_json, {});
+  const header = el("header", null, "file-header");
+  const fileTitle = el("h2", candidate?.discovered_title || data.drafts.at(-1)?.headline || data.intake.submitted_url);
+  fileTitle.tabIndex = -1;
+  header.append(el("p", "STORY FILE / " + data.intake.id, "file-overline"), fileTitle);
+  const context = el("div", null, "file-context");
+  context.append(badge(data.intake.status, "status"), badge(data.intake.origin, "origin"));
+  [["Analysis", jobLabels[data.analysis_jobs.at(-1)?.state] || data.intake.analysis_status], ["AI read", latestAnalysis.recommendation], ["Human decision", data.decisions.at(-1)?.decision], ["Draft", data.drafts.at(-1) ? "Rev " + data.drafts.at(-1).revision : "None"], ["Last activity", date(data.intake.updated_at)]].forEach(([label, value]) => context.append(el("span", label + ": " + text(value))));
+  header.append(context);
+  const nav = el("nav", null, "file-nav");
+  nav.setAttribute("aria-label", "Story file sections");
+  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
+  sections.filter(([section]) => section !== "story-discovery" || candidate).forEach(([section, label]) => {
+    const link = el("a", label); link.href = "#" + section; nav.append(link);
+  });
+  const sticky = el("div", null, "file-sticky");
+  sticky.append(header, nav);
+  detail.append(sticky);
+  const intake = panel("story-intake", "Intake");
+  intake.append(fieldGrid([["URL", data.intake.submitted_url, true], ["Origin", data.intake.origin], ["Submitted", date(data.intake.submitted_at)], ["Workflow", data.intake.status], ["Note", data.intake.submitter_note, true]]));
+  detail.append(intake);
+  const discovery = renderDiscovery(candidate);
+  if (discovery) detail.append(discovery);
+  const rendered = renderAnalysis(data);
+  detail.append(rendered.analysis, rendered.evidence);
+  if (rendered.proposal) detail.append(rendered.proposal);
+  detail.append(renderDrafts(data, rendered.parsed), renderDecisions(data), renderAudit(data));
+  fileTitle.focus({ preventScroll: true });
+}
+function metric(target, label, value) {
+  const row = el("p", null, "metric-line");
+  row.append(el("span", label), el("strong", text(value)));
+  target.append(row);
+}
+function renderWatchdeskRun(run, target) {
+  target.replaceChildren();
+  if (!run) { target.append(el("p", "No Watchdesk runs recorded yet.")); return; }
+  const metrics = run.metrics || {};
+  [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
+  if (run.submitted_intake_ids?.length) metric(target, "Submitted intake IDs", run.submitted_intake_ids.join(", "));
+  if (run.error_class) metric(target, "Error", run.error_class + ": " + (run.error_message || "Unknown failure"));
+}
+function updateWatchdeskStrip(latest, run) {
+  const metrics = run?.metrics || {};
+  document.querySelector("#desk-watchdesk").textContent = latest?.status || "No runs";
+  document.querySelector("#desk-failures").textContent = run ? String(run.source_failure_count ?? 0) : "—";
+  document.querySelector("#desk-submitted").textContent = run ? String(run.submitted_count ?? metrics.submitted_to_newsroom ?? 0) : "—";
+}
+async function loadWatchdeskStatus() {
+  const data = await api("/api/admin/watchdesk/status");
+  const run = data.last_completed || data.latest;
+  watchdeskStatus.textContent = data.latest ? "Latest run: " + data.latest.status + (run?.status === "success" && run.metrics?.would_submit === 0 ? " · zero qualifying submissions" : "") : "No Watchdesk runs recorded yet.";
+  watchdeskStatus.classList.toggle("alert", ["failed", "partial"].includes(data.latest?.status) || (data.latest?.source_failure_count || 0) > 0);
+  updateWatchdeskStrip(data.latest, run);
+  watchdeskLatest.replaceChildren();
+  if (run) {
+    const summary = el("div", null, "wire-summary");
+    [["Completed", date(run.completed_at)], ["Sources", run.metrics?.sources_checked ?? 0], ["Failures", run.source_failure_count ?? 0], ["Leads", run.metrics?.discovery_leads ?? 0], ["Submitted", run.submitted_count ?? 0]].forEach(([label, value]) => {
+      const part = el("p"); part.append(el("span", label), el("strong", value)); summary.append(part);
+    });
+    watchdeskLatest.append(summary);
+  } else watchdeskLatest.append(el("p", "No completed scan yet."));
+  document.querySelector("#watchdesk-cadence").textContent = data.schedule_configured ? (data.cron_utc === "0 14,23 * * *" ? "14:00 & 23:00 UTC daily" : data.cron_utc) : "Not configured";
+  renderWatchdeskRun(run, watchdeskMetrics);
+  watchdeskSources.replaceChildren();
+  if (run?.source_health?.length) {
+    watchdeskSources.append(el("h3", "Source health"));
+    run.source_health.forEach((source) => watchdeskSources.append(el("p", source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed · " + date(source.checked_at) + (source.error ? " · " + source.error : ""))));
+  }
+  watchdeskHistory.replaceChildren();
+  (data.recent || []).forEach((item) => watchdeskHistory.append(el("p", date(item.started_at) + " · " + item.trigger_type + " · " + (item.dry_run ? "dry" : "live") + " · " + item.status + " · " + item.run_id)));
+  if (!data.recent?.length) watchdeskHistory.append(el("p", "No runs recorded."));
+}
+async function runWatchdeskNow(dryRun) {
+  if (!dryRun && !window.confirm("Run Watchdesk now? This may add up to five automated discovery candidates to the Newsroom queue. It cannot publish or make editorial decisions.")) return;
+  watchdeskDry.disabled = true; watchdeskLive.disabled = true;
+  watchdeskResult.textContent = dryRun ? "Running dry Watchdesk…" : "Running live Watchdesk…";
+  try {
+    const result = await api("/api/admin/watchdesk/runs", { method: "POST", body: JSON.stringify({ dry_run: dryRun }) });
+    watchdeskResult.textContent = result.message || "Run " + result.status + ".";
+    await Promise.all([loadWatchdeskStatus(), loadQueue()]);
+  } catch (error) {
+    watchdeskResult.textContent = "Watchdesk run failed: " + error.message;
+    await loadWatchdeskStatus().catch(() => {});
+  } finally { watchdeskDry.disabled = false; watchdeskLive.disabled = false; }
+}
+
+watchdeskDry.addEventListener("click", () => runWatchdeskNow(true));
+watchdeskLive.addEventListener("click", () => runWatchdeskNow(false));
+document.querySelector("#new-intake").addEventListener("click", () => show("new-view", "#new-heading"));
+document.querySelectorAll(".back").forEach((button) => button.addEventListener("click", () => loadQueue().then(() => document.querySelector("#assignment-heading").focus()).catch((error) => { queueStatus.textContent = error.message; })));
+["#queue-search", "#status-filter", "#origin-filter"].forEach((selector) => document.querySelector(selector).addEventListener(selector === "#queue-search" ? "input" : "change", renderQueue));
+document.querySelector("#new-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(event.currentTarget));
+  const submit = event.currentTarget.querySelector("button");
+  submit.disabled = true;
+  try {
+    const data = await api("/api/admin/intakes", { method: "POST", body: JSON.stringify(values) });
+    await loadDetail(data.intake.id, data.queued ? "Intake saved and analysis queued." : data.message);
+  } catch (error) { document.querySelector("#new-status").textContent = error.message; }
+  finally { submit.disabled = false; }
+});
+try {
+  const session = await api("/api/admin/session");
+  document.querySelector("#actor").textContent = session.actor.email;
+  await Promise.all([loadQueue(), loadWatchdeskStatus().catch((error) => { watchdeskStatus.textContent = error.message; })]);
+} catch (error) {
+  document.querySelector("#actor").textContent = "Authentication required";
+  queueStatus.textContent = error.message;
+  watchdeskStatus.textContent = "Authentication required";
+}

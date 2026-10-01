@@ -16,7 +16,7 @@
     "monitoring:build": "node scripts/monitoring.mjs build",
     "monitoring:check": "node scripts/monitoring.mjs check",
     "monitoring:test": "node scripts/monitoring.mjs test",
-    "admin:check": "node scripts/admin-api.mjs check",
+    "admin:check": "node scripts/admin-api.mjs check && node scripts/admin-ui.mjs",
     "admin:test": "node scripts/admin-api.mjs test",
     "analysis:check": "node scripts/analysis.mjs check",
     "analysis:test": "node scripts/analysis.mjs test",
