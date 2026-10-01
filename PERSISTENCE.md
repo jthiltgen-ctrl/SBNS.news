@@ -85,10 +85,10 @@ to 5 without changing reporting rows. It adds eight Echo-only tables:
 
 | Table | Durable purpose |
 | --- | --- |
-| `echo_packets` | One immutable structured issue-brief/evidence snapshot per `issue_key` revision; mutable result is `open`, `ready`, `no_echo`, or operational `failed`. |
-| `echo_packet_intakes` | Immutable many-to-many links to existing Newsroom intakes, with one primary and optional supporting intakes per packet created through the persistence API. |
-| `echo_jobs` | Pending/researching/verifying/rights-check/assembling lifecycle and terminal ready/no-echo/failed states for later orchestration; no Queue is configured here. |
-| `echo_candidates` | Artifact identity and process/gate state, separate from human decisions. |
+| `echo_packets` | One immutable structured issue-brief/evidence snapshot per `issue_key` revision; current result is `open`, `ready`, or `no_echo`. The reserved `failed` packet state has no PR A transition. |
+| `echo_packet_intakes` | Immutable many-to-many links to existing Newsroom intakes, with exactly one primary required by atomic creation and at most one primary enforced by a partial unique index. |
+| `echo_jobs` | Pending/researching/verifying/rights-check/assembling lifecycle and terminal ready/no-echo/failed states for later orchestration; a failed job leaves its packet open and retryable. No Queue is configured here. |
+| `echo_candidates` | Artifact identity and process/gate state, separate from human decisions; readiness pins one exact assessment ID. |
 | `echo_candidate_assessments` | Append-only, explicit revisions of the seven-part Analogy Truth Test, research burden, source-set hash, and generator provenance. |
 | `echo_candidate_sources` | Append-only claim-specific cultural, historical, contemporary, or rights citations; contemporary evidence may reference an existing intake-scoped `sources` row. |
 | `echo_rights_assessments` | Append-only, asset- and proposed-use-specific rights revisions. A status is a recorded assessment, not publication permission. |
@@ -113,27 +113,44 @@ and editorial value as separate columns. No raw model-output field is the
 canonical assessment. Source rows identify the exact assessment component they
 support. An existing SBNS source can only be referenced if its intake is linked
 to that packet; independent Echo sources need no intake and store metadata,
-not a complete copyrighted work. Source links freeze when a candidate becomes
-editor-ready. Subsequent materially changed evidence needs a new packet
-revision rather than silently changing a reviewed candidate.
+not a complete copyrighted work. Source links and assessment creation freeze
+when a candidate becomes editor-ready. Assessment insertion is permitted only
+for a found/researching candidate on the current open packet. The candidate's
+non-null `editor_ready_assessment_id` references an assessment for that exact
+candidate and packet, is recorded in the readiness audit, and cannot be
+repointed after readiness. Human decisions must reference this pinned
+assessment; composite foreign keys also reject a direct unpinned decision
+insert. Later assessments cannot silently change the reviewed source package.
+Subsequent materially changed evidence needs a new packet revision or a
+separately designed explicit re-review path. Rights assessments remain
+independently versionable.
 
 `echo_candidates.editor_ready_slot` is database-constrained to slots 1–3,
 unique per packet, and non-null exactly when state is `editor_ready`. Thus a
 fourth editor-ready candidate is impossible even if two later writers race;
-the persistence function also requires an assessment before assigning a slot.
+the persistence function requires the exact assessment ID before assigning a slot.
 Human FEATURE/HOLD/REJECT is stored only in `echo_decisions`, never in the
 candidate's process state. A decision requires a nonblank human actor and
-rationale, and composite foreign keys anchor it to the exact candidate and
-assessment revision the editor saw. FEATURE does not update reporting
+rationale, a current non-superseded ready packet, and the candidate's pinned
+assessment revision. FEATURE does not update reporting
 `editorial_decisions` and creates no publication state.
 
 `no_echo` is a successful packet/job terminal result, possible with zero
-candidates and requiring a bounded reason code. It is distinct from `failed`,
-which denotes an operational error. No search result or daily cultural feature
-is required. Rights statuses are constrained per asset/proposed use; revisions
+candidates and requiring a bounded reason code. A job may enter `ready` only
+from `assembling`; it may enter `no_echo` from `researching`, `verifying`,
+`rights_check`, or `assembling`, but not `pending`. Completion requires every
+candidate to be resolved: `ready` needs 1–3 editor-ready candidates and no
+found/researching candidates; `no_echo` needs zero editor-ready and zero
+found/researching candidates, permitting none or all gate-rejected. A job may
+fail from any active state. That failure preserves the immutable packet in
+`open`, releases the active-job slot, and permits a new job with a distinct
+idempotency key on the same evidence snapshot. Packet-level `failed` is
+reserved for a future explicit closing policy, not a transient job error.
+No search result or daily cultural feature is required. Rights statuses are constrained per asset/proposed use; revisions
 supersede only the prior revision of that same asset/use and preserve the old
 assessment. `unknown` and `do_not_reproduce` are valid. This schema makes no
-fair-use or reproduction authorization decision.
+fair-use or reproduction authorization decision. A rights-role citation must
+support the rights field, and a rights-field citation must have the rights role.
 
 ### Audit and retention
 
@@ -157,7 +174,7 @@ Newsroom UI, or public WE WERE WARNED feature.
 
 ### Local validation and deployment boundary
 
-`npm run echo:persistence:check` validates the eight tables, eleven named
+`npm run echo:persistence:check` validates the eight tables, twelve named
 indexes, schema v5, and foreign-key integrity in a freshly migrated isolated
 **local D1** database. `npm run echo:persistence:test` repeats local migration
 and D1 constraints, then exercises the JavaScript persistence API against the

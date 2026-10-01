@@ -91,10 +91,6 @@ export async function transitionEchoJob(env, { jobId, from, to, actorId, at, fai
       updated_at = ? WHERE id = ? AND state = ?`)
       .bind(to, to, to === "failed" ? failureCode : null, to === "failed" ? failureMessage : null, to, when, when, jobId, from),
   ];
-  if (to === "failed") {
-    statements.push(db.prepare(`UPDATE echo_packets SET state = 'failed', updated_at = ?
-      WHERE id = ? AND state = 'open' AND changes() = 1`).bind(when, packet.packet_id));
-  }
   statements.push(
     auditStatement(db, { action: to === "failed" ? "echo.job_failed" : "echo.job_state_changed", entityType: "echo_packet",
       entityId: packet.packet_id, actorType: "system", actorId: actorId ?? null, at: when,
@@ -129,15 +125,20 @@ export async function createEchoAssessment(env, assessment) {
        comparison_breaks, remains_uncertain, tempted_overclaim, present_day_evidence, editorial_value,
        research_burden, source_set_hash, generator_type, generator_version, created_by, created_at)
       SELECT ?, ?, ?, COALESCE(MAX(revision), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-      FROM echo_candidate_assessments WHERE candidate_id = ?`)
+      FROM echo_candidate_assessments WHERE candidate_id = ?
+      HAVING EXISTS (SELECT 1 FROM echo_candidates AS candidate
+        JOIN echo_packets AS packet ON packet.id = candidate.packet_id
+        WHERE candidate.id = ? AND candidate.packet_id = ?
+          AND candidate.state IN ('found', 'researching')
+          AND packet.state = 'open' AND packet.superseded_at IS NULL)`)
       .bind(assessment.id, assessment.packetId, assessment.candidateId, assessment.originalContext,
         assessment.creatorIntentStatus, assessment.whatEchoes, assessment.comparisonBreaks, assessment.remainsUncertain,
         assessment.temptedOverclaim, assessment.presentDayEvidence, assessment.editorialValue, assessment.researchBurden,
         assessment.sourceSetHash, assessment.generatorType, assessment.generatorVersion, assessment.createdBy, at,
-        assessment.candidateId),
+        assessment.candidateId, assessment.candidateId, assessment.packetId),
     auditStatement(db, { action: "echo.analogy_checked", entityType: "echo_candidate", entityId: assessment.candidateId,
       actorType: assessment.generatorType === "human" ? "editor" : "system", actorId: assessment.createdBy,
-      at, metadata: { assessment_id: assessment.id, packet_id: assessment.packetId } }),
+      at, metadata: { assessment_id: assessment.id, packet_id: assessment.packetId }, requireChange: true }),
   ]);
   return db.prepare("SELECT * FROM echo_candidate_assessments WHERE id = ?").bind(assessment.id).first();
 }
@@ -184,21 +185,24 @@ export async function createEchoRightsAssessment(env, rights) {
   return db.prepare("SELECT * FROM echo_rights_assessments WHERE id = ?").bind(rights.id).first();
 }
 
-export async function markEchoCandidateReady(env, { candidateId, slot, actorId, at }) {
+export async function markEchoCandidateReady(env, { candidateId, assessmentId, slot, actorId, at }) {
   const db = database(env);
   const when = timestamp(at);
+  nonempty(assessmentId, "readiness assessment ID");
   if (!Number.isInteger(slot) || slot < 1 || slot > 3) throw new Error("Editor-ready slot must be 1, 2, or 3");
   const candidate = await db.prepare("SELECT packet_id FROM echo_candidates WHERE id = ?").bind(candidateId).first();
   if (!candidate) throw new Error("Echo candidate not found");
   await db.batch([
-    db.prepare(`UPDATE echo_candidates SET state = 'editor_ready', editor_ready_slot = ?, updated_at = ?
+    db.prepare(`UPDATE echo_candidates SET state = 'editor_ready', editor_ready_slot = ?,
+      editor_ready_assessment_id = ?, updated_at = ?
       WHERE id = ? AND state IN ('found', 'researching') AND EXISTS
-      (SELECT 1 FROM echo_candidate_assessments WHERE candidate_id = ?)
+      (SELECT 1 FROM echo_candidate_assessments WHERE id = ? AND candidate_id = ?
+        AND packet_id = echo_candidates.packet_id)
       AND EXISTS (SELECT 1 FROM echo_packets WHERE id = echo_candidates.packet_id AND state = 'open' AND superseded_at IS NULL)`)
-      .bind(slot, when, candidateId, candidateId),
+      .bind(slot, assessmentId, when, candidateId, assessmentId, candidateId),
     auditStatement(db, { action: "echo.candidate_ready", entityType: "echo_candidate", entityId: candidateId,
       actorType: "system", actorId: actorId ?? null, at: when,
-      metadata: { packet_id: candidate.packet_id, slot }, requireChange: true }),
+      metadata: { packet_id: candidate.packet_id, assessment_id: assessmentId, slot }, requireChange: true }),
   ]);
   return db.prepare("SELECT * FROM echo_candidates WHERE id = ?").bind(candidateId).first();
 }
@@ -229,11 +233,16 @@ export async function completeEchoPacket(env, { packetId, jobId, result, actorId
   const candidatePredicate = result === "ready"
     ? "EXISTS (SELECT 1 FROM echo_candidates WHERE packet_id = ? AND state = 'editor_ready')"
     : "NOT EXISTS (SELECT 1 FROM echo_candidates WHERE packet_id = ? AND state = 'editor_ready')";
+  const allowedJobStates = result === "ready"
+    ? "state = 'assembling'"
+    : "state IN ('researching', 'verifying', 'rights_check', 'assembling')";
   await db.batch([
     db.prepare(`UPDATE echo_jobs SET state = ?, completed_at = ?, updated_at = ?
-      WHERE id = ? AND packet_id = ? AND state IN ('pending', 'researching', 'verifying', 'rights_check', 'assembling')
+      WHERE id = ? AND packet_id = ? AND ${allowedJobStates}
       AND EXISTS (SELECT 1 FROM echo_packets WHERE id = ? AND state = 'open' AND superseded_at IS NULL)
-      AND ${candidatePredicate}`).bind(result, when, when, jobId, packetId, packetId, packetId),
+      AND ${candidatePredicate}
+      AND NOT EXISTS (SELECT 1 FROM echo_candidates WHERE packet_id = ? AND state IN ('found', 'researching'))`)
+      .bind(result, when, when, jobId, packetId, packetId, packetId, packetId),
     db.prepare(`UPDATE echo_packets SET state = ?, no_echo_reason_code = ?, no_echo_reason = ?, updated_at = ?
       WHERE id = ? AND state = 'open' AND superseded_at IS NULL AND changes() = 1
       AND EXISTS (SELECT 1 FROM echo_jobs WHERE id = ? AND packet_id = ? AND state = ?)`)
@@ -256,10 +265,11 @@ export async function createEchoDecision(env, decision) {
       (id, packet_id, candidate_id, assessment_id, decision, decided_by, rationale, decided_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?
       WHERE EXISTS (SELECT 1 FROM echo_packets WHERE id = ? AND state = 'ready' AND superseded_at IS NULL)
-        AND EXISTS (SELECT 1 FROM echo_candidates WHERE id = ? AND packet_id = ? AND state = 'editor_ready')`)
+        AND EXISTS (SELECT 1 FROM echo_candidates WHERE id = ? AND packet_id = ? AND state = 'editor_ready'
+          AND editor_ready_assessment_id = ?)`)
       .bind(decision.id, decision.packetId, decision.candidateId, decision.assessmentId,
         decision.decision, decision.decidedBy, decision.rationale, at,
-        decision.packetId, decision.candidateId, decision.packetId),
+        decision.packetId, decision.candidateId, decision.packetId, decision.assessmentId),
     auditStatement(db, { action: `echo.human_${decision.decision === "feature" ? "featured" : decision.decision === "hold" ? "held" : "rejected"}`,
       entityType: "echo_candidate", entityId: decision.candidateId, actorType: "editor", actorId: decision.decidedBy,
       at, metadata: { decision_id: decision.id, packet_id: decision.packetId, assessment_id: decision.assessmentId },

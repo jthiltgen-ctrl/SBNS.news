@@ -38,6 +38,7 @@ CREATE TABLE echo_packet_intakes (
 );
 
 CREATE INDEX idx_echo_packet_intakes_intake ON echo_packet_intakes(intake_id, packet_id);
+CREATE UNIQUE INDEX idx_echo_packet_intakes_primary ON echo_packet_intakes(packet_id) WHERE intake_role = 'primary';
 CREATE TRIGGER echo_packet_intake_update_forbidden BEFORE UPDATE ON echo_packet_intakes
 BEGIN SELECT RAISE(ABORT, 'Echo packet intake links are immutable'); END;
 CREATE TRIGGER echo_packet_intake_delete_forbidden BEFORE DELETE ON echo_packet_intakes
@@ -77,19 +78,29 @@ CREATE TABLE echo_candidates (
   state TEXT NOT NULL CHECK (state IN ('found', 'researching', 'rejected_by_gate', 'editor_ready')),
   gate_reason_code TEXT CHECK (gate_reason_code IS NULL OR length(trim(gate_reason_code)) BETWEEN 1 AND 80),
   editor_ready_slot INTEGER CHECK (editor_ready_slot IS NULL OR editor_ready_slot BETWEEN 1 AND 3),
+  editor_ready_assessment_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (id, packet_id),
+  UNIQUE (id, packet_id, editor_ready_assessment_id),
   UNIQUE (packet_id, canonical_artifact_id),
   UNIQUE (packet_id, editor_ready_slot),
   FOREIGN KEY (packet_id) REFERENCES echo_packets(id) ON DELETE RESTRICT,
+  FOREIGN KEY (editor_ready_assessment_id, id, packet_id) REFERENCES echo_candidate_assessments(id, candidate_id, packet_id) ON DELETE RESTRICT,
   CHECK ((state = 'editor_ready') = (editor_ready_slot IS NOT NULL)),
+  CHECK ((state = 'editor_ready') = (editor_ready_assessment_id IS NOT NULL)),
   CHECK ((state = 'rejected_by_gate') = (gate_reason_code IS NOT NULL))
 );
 
 CREATE INDEX idx_echo_candidates_packet_state ON echo_candidates(packet_id, state);
 CREATE TRIGGER echo_candidate_identity_immutable BEFORE UPDATE OF packet_id, canonical_artifact_id, artifact_type, title, creator, creation_date, created_at ON echo_candidates
 BEGIN SELECT RAISE(ABORT, 'Echo candidate identity is immutable'); END;
+CREATE TRIGGER echo_candidate_readiness_immutable BEFORE UPDATE ON echo_candidates
+WHEN OLD.state = 'editor_ready' AND (
+  NEW.state != 'editor_ready' OR NEW.editor_ready_slot != OLD.editor_ready_slot
+  OR NEW.editor_ready_assessment_id != OLD.editor_ready_assessment_id
+)
+BEGIN SELECT RAISE(ABORT, 'Echo candidate readiness is pinned'); END;
 
 CREATE TABLE echo_candidate_assessments (
   id TEXT PRIMARY KEY,
@@ -116,6 +127,15 @@ CREATE TABLE echo_candidate_assessments (
 );
 
 CREATE INDEX idx_echo_assessments_candidate_revision ON echo_candidate_assessments(candidate_id, revision DESC);
+CREATE TRIGGER echo_assessment_current_research_only BEFORE INSERT ON echo_candidate_assessments
+WHEN NOT EXISTS (
+  SELECT 1 FROM echo_candidates AS candidate
+  JOIN echo_packets AS packet ON packet.id = candidate.packet_id
+  WHERE candidate.id = NEW.candidate_id AND candidate.packet_id = NEW.packet_id
+    AND candidate.state IN ('found', 'researching')
+    AND packet.state = 'open' AND packet.superseded_at IS NULL
+)
+BEGIN SELECT RAISE(ABORT, 'Echo assessments require a current open research candidate'); END;
 CREATE TRIGGER echo_assessment_update_forbidden BEFORE UPDATE ON echo_candidate_assessments
 BEGIN SELECT RAISE(ABORT, 'Echo assessments are append-only'); END;
 CREATE TRIGGER echo_assessment_delete_forbidden BEFORE DELETE ON echo_candidate_assessments
@@ -142,6 +162,7 @@ CREATE TABLE echo_candidate_sources (
   FOREIGN KEY (assessment_id, candidate_id, packet_id) REFERENCES echo_candidate_assessments(id, candidate_id, packet_id) ON DELETE RESTRICT,
   FOREIGN KEY (intake_source_id, source_intake_id) REFERENCES sources(id, intake_id) ON DELETE RESTRICT,
   FOREIGN KEY (packet_id, source_intake_id) REFERENCES echo_packet_intakes(packet_id, intake_id) ON DELETE RESTRICT,
+  CHECK ((source_role = 'rights') = (supports_field = 'rights')),
   CHECK ((intake_source_id IS NULL) = (source_intake_id IS NULL)),
   CHECK (intake_source_id IS NULL OR source_role = 'contemporary_evidence'),
   CHECK (intake_source_id IS NOT NULL OR (length(trim(COALESCE(url, ''))) > 0 OR length(trim(COALESCE(canonical_identifier, ''))) > 0))
@@ -214,7 +235,8 @@ CREATE TABLE echo_decisions (
   decided_by TEXT NOT NULL CHECK (length(trim(decided_by)) > 0),
   rationale TEXT NOT NULL CHECK (length(trim(rationale)) > 0),
   decided_at TEXT NOT NULL,
-  FOREIGN KEY (assessment_id, candidate_id, packet_id) REFERENCES echo_candidate_assessments(id, candidate_id, packet_id) ON DELETE RESTRICT
+  FOREIGN KEY (assessment_id, candidate_id, packet_id) REFERENCES echo_candidate_assessments(id, candidate_id, packet_id) ON DELETE RESTRICT,
+  FOREIGN KEY (candidate_id, packet_id, assessment_id) REFERENCES echo_candidates(id, packet_id, editor_ready_assessment_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_echo_decisions_packet_decided ON echo_decisions(packet_id, decided_at DESC, id DESC);

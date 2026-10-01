@@ -12,7 +12,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WRANGLER = path.join(ROOT, "node_modules", "wrangler", "bin", "wrangler.js");
 const MIGRATIONS = ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"];
 const ECHO_TABLES = ["echo_candidate_assessments", "echo_candidate_sources", "echo_candidates", "echo_decisions", "echo_jobs", "echo_packet_intakes", "echo_packets", "echo_rights_assessments"];
-const ECHO_INDEXES = ["idx_echo_assessments_candidate_revision", "idx_echo_candidates_packet_state", "idx_echo_decisions_packet_decided", "idx_echo_jobs_active_packet", "idx_echo_jobs_state_updated", "idx_echo_packet_intakes_intake", "idx_echo_packets_issue_revision", "idx_echo_packets_state_updated", "idx_echo_rights_candidate_asset", "idx_echo_sources_assessment_role", "idx_echo_sources_intake_source"];
+const ECHO_INDEXES = ["idx_echo_assessments_candidate_revision", "idx_echo_candidates_packet_state", "idx_echo_decisions_packet_decided", "idx_echo_jobs_active_packet", "idx_echo_jobs_state_updated", "idx_echo_packet_intakes_intake", "idx_echo_packet_intakes_primary", "idx_echo_packets_issue_revision", "idx_echo_packets_state_updated", "idx_echo_rights_candidate_asset", "idx_echo_sources_assessment_role", "idx_echo_sources_intake_source"];
 const execFileAsync = promisify(execFile);
 const AT = "2026-09-30T20:00:00.000Z";
 const hash = (letter) => letter.repeat(64);
@@ -92,21 +92,39 @@ async function test() {
     assert.equal((await query("SELECT value FROM sbns_meta WHERE key='schema_version'"))[0]?.value, "5");
     await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
       VALUES ('d1-intake','editor','https://example.test/d1','${AT}','review_ready','complete','${AT}','${AT}')`);
+    await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
+      VALUES ('d1-intake-2','editor','https://example.test/d1-2','${AT}','review_ready','complete','${AT}','${AT}')`);
     await query(`INSERT INTO echo_packets
       (id,issue_key,revision,evidence_snapshot_hash,brief_json,state,created_by,created_at,updated_at)
       VALUES ('d1-packet','d1-issue',1,'${hash("a")}','{}','open','editor','${AT}','${AT}')`);
     await query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','d1-intake','primary','${AT}')`);
+    await assert.rejects(() => query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','d1-intake-2','primary','${AT}')`));
     await assert.rejects(() => query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','missing','supporting','${AT}')`));
     for (let n = 1; n <= 4; n++) {
       await query(`INSERT INTO echo_candidates
         (id,packet_id,canonical_artifact_id,artifact_type,title,state,created_at,updated_at)
         VALUES ('d1-candidate-${n}','d1-packet','catalog:${n}','literature','Synthetic ${n}','found','${AT}','${AT}')`);
+      await query(`INSERT INTO echo_candidate_assessments
+        (id,packet_id,candidate_id,revision,original_context,creator_intent_status,what_echoes,
+         comparison_breaks,remains_uncertain,tempted_overclaim,present_day_evidence,editorial_value,
+         research_burden,source_set_hash,generator_type,generator_version,created_by,created_at)
+        VALUES ('d1-assessment-${n}','d1-packet','d1-candidate-${n}',1,'Synthetic context','unknown',
+          'Bounded echo','Different causes','Uncertain intent','False prediction','Synthetic evidence',
+          'Explains a mechanism','low','${hash("d")}','human','contracts-v1','editor','${AT}')`);
     }
     for (let n = 1; n <= 3; n++) {
-      await query(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=${n} WHERE id='d1-candidate-${n}'`);
+      await query(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=${n},
+        editor_ready_assessment_id='d1-assessment-${n}' WHERE id='d1-candidate-${n}'`);
     }
-    await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4 WHERE id='d1-candidate-4'"));
-    await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=1 WHERE id='d1-candidate-4'"));
+    await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4, editor_ready_assessment_id='d1-assessment-4' WHERE id='d1-candidate-4'"));
+    await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=1, editor_ready_assessment_id='d1-assessment-4' WHERE id='d1-candidate-4'"));
+    await assert.rejects(() => query("UPDATE echo_candidates SET editor_ready_assessment_id='d1-assessment-2' WHERE id='d1-candidate-1'"));
+    await assert.rejects(() => query(`INSERT INTO echo_candidate_assessments
+      (id,packet_id,candidate_id,revision,original_context,creator_intent_status,what_echoes,
+       comparison_breaks,remains_uncertain,tempted_overclaim,present_day_evidence,editorial_value,
+       research_burden,source_set_hash,generator_type,generator_version,created_by,created_at)
+      VALUES ('d1-late','d1-packet','d1-candidate-1',2,'Late context','unknown','Echo','Breaks',
+        'Uncertain','Overclaim','Evidence','Value','low','${hash("e")}','human','contracts-v1','editor','${AT}')`));
     assert.equal((await query("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id='d1-packet' AND state='editor_ready'"))[0]?.n, 3);
     await query(`INSERT INTO echo_packets
       (id,issue_key,revision,evidence_snapshot_hash,brief_json,state,no_echo_reason_code,created_by,created_at,updated_at)
@@ -172,10 +190,12 @@ async function test() {
     pass(row("SELECT revision FROM echo_candidate_assessments WHERE id='assessment-1'").revision === 1, "assessment revision one");
     const secondAssessment = await echo.createEchoAssessment(env, assessment("assessment-1b", "candidate-1"));
     pass(secondAssessment.revision === 2, "assessment revision two");
+    const thirdAssessment = await echo.createEchoAssessment(env, assessment("assessment-1c", "candidate-1"));
+    pass(thirdAssessment.revision === 3, "assessment revision three before readiness");
     await fails(async () => db.sqlite.prepare("UPDATE echo_candidate_assessments SET original_context='changed' WHERE id='assessment-1'").run(), "assessment append-only");
     await fails(async () => db.sqlite.prepare("DELETE FROM echo_candidate_assessments WHERE id='assessment-1'").run(), "assessment retained");
     const independent = await echo.createEchoSource(env, { id: "echo-source-independent", packetId: packetA.id,
-      candidateId: "candidate-1", assessmentId: "assessment-1", sourceRole: "historical_context",
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "historical_context",
       supportsField: "original_context", url: "https://archive.example.test/item", title: "Synthetic archive",
       authorityRationale: "Original institutional archive", retrievedAt: AT, contentHash: hash("e"), createdAt: AT }, "system:test");
     pass(independent.intake_source_id === null && independent.content_hash === hash("e"), "independent source provenance round trip");
@@ -188,7 +208,7 @@ async function test() {
       VALUES (?,?,?,?,?,'audit','verified',?)`)
       .run("source-c", "intake-c", "https://example.test/c", "https://example.test/c", "Unrelated report", AT);
     const linked = await echo.createEchoSource(env, { id: "echo-source-existing", packetId: packetA.id,
-      candidateId: "candidate-1", assessmentId: "assessment-1", sourceRole: "contemporary_evidence",
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "contemporary_evidence",
       supportsField: "present_day_evidence", intakeSourceId: "source-a", sourceIntakeId: "intake-a",
       authorityRationale: "Verified Newsroom source", createdAt: AT }, "system:test");
     pass(linked.intake_source_id === "source-a" && linked.url === null, "existing evidence referenced without duplication");
@@ -204,14 +224,37 @@ async function test() {
       candidateId: "candidate-1", assessmentId: "assessment-1", sourceRole: "blog_prediction",
       supportsField: "original_context", url: "https://example.test/x", authorityRationale: "Synthetic", createdAt: AT }),
       "source role vocabulary");
+    await fails(() => echo.createEchoSource(env, { id: "echo-source-rights-mismatch", packetId: packetA.id,
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "rights",
+      supportsField: "original_context", url: "https://example.test/rights", authorityRationale: "Synthetic", createdAt: AT }),
+      "rights-role source must support rights");
+    await fails(() => echo.createEchoSource(env, { id: "echo-source-field-mismatch", packetId: packetA.id,
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "historical_context",
+      supportsField: "rights", url: "https://example.test/context", authorityRationale: "Synthetic", createdAt: AT }),
+      "rights field must use rights-role source");
 
-    for (let n = 1; n <= 3; n++) await echo.markEchoCandidateReady(env, { candidateId: `candidate-${n}`, slot: n, at: AT });
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-1", slot: 1, at: AT }),
+      "readiness requires exact assessment ID");
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-1", assessmentId: "assessment-2", slot: 1, at: AT }),
+      "readiness cannot pin another candidate assessment");
+    for (let n = 1; n <= 3; n++) await echo.markEchoCandidateReady(env, {
+      candidateId: `candidate-${n}`, assessmentId: n === 1 ? "assessment-1b" : `assessment-${n}`, slot: n, at: AT });
     pass(row("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id=? AND state='editor_ready'", packetA.id).n === 3,
       "three editor-ready candidates");
-    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-4", slot: 1, at: AT }), "fourth ready candidate blocked by unique slot");
-    await fails(async () => db.sqlite.prepare(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4 WHERE id='candidate-4'`).run(),
+    pass(row("SELECT editor_ready_assessment_id FROM echo_candidates WHERE id='candidate-1'").editor_ready_assessment_id === "assessment-1b" &&
+      row("SELECT metadata_json FROM audit_events WHERE action='echo.candidate_ready' AND entity_id='candidate-1'").metadata_json.includes('"assessment_id":"assessment-1b"'),
+      "readiness pins and audits exact assessment revision");
+    await fails(() => echo.createEchoAssessment(env, assessment("assessment-1d", "candidate-1")),
+      "later assessment creation after readiness rejected");
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-4", assessmentId: "assessment-4", slot: 1, at: AT }), "fourth ready candidate blocked by unique slot");
+    await fails(async () => db.sqlite.prepare(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4,
+      editor_ready_assessment_id='assessment-4' WHERE id='candidate-4'`).run(),
       "fourth ready candidate blocked by slot constraint");
     pass(row("SELECT state FROM echo_candidates WHERE id='candidate-4'").state === "found", "fourth candidate state unchanged");
+    await fails(() => echo.completeEchoPacket(env, { packetId: packetA.id, jobId: jobA.id, result: "ready", at: AT }),
+      "ready packet cannot retain an unresolved found candidate");
+    pass(row("SELECT state FROM echo_jobs WHERE id=?", jobA.id).state === "assembling" &&
+      row("SELECT state FROM echo_packets WHERE id=?", packetA.id).state === "open", "unresolved ready attempt rolls back atomically");
     const rejected = await echo.rejectEchoCandidateByGate(env, { candidateId: "candidate-4",
       reasonCode: "ANALOGY_TOO_WEAK", actorId: "system:test", at: AT });
     pass(rejected.state === "rejected_by_gate" && rejected.gate_reason_code === "ANALOGY_TOO_WEAK" &&
@@ -220,7 +263,7 @@ async function test() {
     await fails(() => echo.rejectEchoCandidateByGate(env, { candidateId: "candidate-4", reasonCode: "RETRY", at: AT }),
       "gate rejection is not silently repeated");
     await fails(() => echo.createEchoSource(env, { id: "echo-source-after-ready", packetId: packetA.id,
-      candidateId: "candidate-1", assessmentId: "assessment-1", sourceRole: "historical_context",
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "historical_context",
       supportsField: "original_context", url: "https://example.test/late-ready", authorityRationale: "Synthetic", createdAt: AT }),
       "editor-ready source set frozen");
 
@@ -242,6 +285,13 @@ async function test() {
 
     const ready = await echo.completeEchoPacket(env, { packetId: packetA.id, jobId: jobA.id, result: "ready", at: AT });
     pass(ready.state === "ready" && row("SELECT state FROM echo_jobs WHERE id=?", jobA.id).state === "ready", "ready packet/job terminal together");
+    await fails(() => echo.createEchoAssessment(env, assessment("assessment-terminal", "candidate-1")),
+      "terminal packet assessment creation rejected");
+    const otherPacket = await echo.createEchoPacket(env, { id: "echo-other-packet", issueKey: "unrelated-issue",
+      evidenceSnapshotHash: hash("9"), brief: {}, intakes: [{ intakeId: "intake-c", role: "primary" }],
+      createdBy: "editor@example.test", createdAt: AT });
+    await candidate("candidate-other", otherPacket.id);
+    await echo.createEchoAssessment(env, assessment("assessment-other", "candidate-other", otherPacket.id));
     const beforeReportingDecisions = row("SELECT COUNT(*) AS n FROM editorial_decisions").n;
     const beforePublications = row("SELECT COUNT(*) AS n FROM publication_attempts").n;
     await fails(() => echo.createEchoDecision(env, { id: "decision-no-actor", packetId: packetA.id,
@@ -250,16 +300,29 @@ async function test() {
     await fails(() => echo.createEchoDecision(env, { id: "decision-cross", packetId: packetA.id,
       candidateId: "candidate-2", assessmentId: "assessment-1", decision: "feature", decidedBy: "editor@example.test",
       rationale: "Synthetic", decidedAt: AT }), "decision must anchor exact candidate/assessment");
+    for (const [id, assessmentId] of [["decision-older", "assessment-1"], ["decision-newer", "assessment-1c"],
+      ["decision-other-packet", "assessment-other"]]) {
+      await fails(() => echo.createEchoDecision(env, { id, packetId: packetA.id,
+        candidateId: "candidate-1", assessmentId, decision: "feature", decidedBy: "editor@example.test",
+        rationale: "Synthetic", decidedAt: AT }), `decision rejects unpinned ${assessmentId}`);
+    }
     const decision = await echo.createEchoDecision(env, { id: "decision-feature", packetId: packetA.id,
-      candidateId: "candidate-1", assessmentId: "assessment-1", decision: "feature", decidedBy: "editor@example.test",
+      candidateId: "candidate-1", assessmentId: "assessment-1b", decision: "feature", decidedBy: "editor@example.test",
       rationale: "Synthetic bounded comparison", decidedAt: AT });
-    pass(decision.assessment_id === "assessment-1" && secondAssessment.revision === 2, "decision retains exact earlier assessment");
+    pass(decision.assessment_id === "assessment-1b" && secondAssessment.revision === 2 && thirdAssessment.revision === 3,
+      "decision retains exactly pinned assessment");
+    await fails(async () => db.sqlite.prepare(`INSERT INTO echo_decisions
+      (id,packet_id,candidate_id,assessment_id,decision,decided_by,rationale,decided_at)
+      VALUES ('decision-sql-unpinned',?,?,?,?,?,?,?)`).run(packetA.id, "candidate-1", "assessment-1c",
+      "feature", "editor@example.test", "Synthetic", AT), "database FK rejects unpinned decision");
+    await fails(async () => db.sqlite.prepare(`UPDATE echo_candidates SET editor_ready_assessment_id='assessment-1c'
+      WHERE id='candidate-1'`).run(), "readiness pin cannot change after review");
     pass(row("SELECT COUNT(*) AS n FROM editorial_decisions").n === beforeReportingDecisions &&
       row("SELECT COUNT(*) AS n FROM publication_attempts").n === beforePublications, "FEATURE neither approves nor publishes");
-    await fails(async () => db.sqlite.prepare("UPDATE echo_decisions SET assessment_id='assessment-1b' WHERE id='decision-feature'").run(), "decision append-only");
+    await fails(async () => db.sqlite.prepare("UPDATE echo_decisions SET assessment_id='assessment-1c' WHERE id='decision-feature'").run(), "decision append-only");
     await fails(async () => db.sqlite.prepare("DELETE FROM echo_decisions WHERE id='decision-feature'").run(), "decision retained");
     await fails(() => echo.createEchoSource(env, { id: "echo-source-after-decision", packetId: packetA.id,
-      candidateId: "candidate-1", assessmentId: "assessment-1", sourceRole: "historical_context",
+      candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "historical_context",
       supportsField: "original_context", url: "https://example.test/late", authorityRationale: "Synthetic", createdAt: AT }),
       "reviewed source set frozen");
     const packetB = await echo.createEchoPacket(env, { id: "echo-packet-b", issueKey: "synthetic-issue", evidenceSnapshotHash: hash("b"),
@@ -273,12 +336,22 @@ async function test() {
     await fails(() => echo.createEchoDecision(env, { id: "echo-stale-decision", packetId: packetA.id,
       candidateId: "candidate-1", assessmentId: "assessment-1b", decision: "feature", decidedBy: "editor@example.test",
       rationale: "Stale", decidedAt: AT }), "superseded packet cannot receive a new human decision");
+    await echo.createEchoPacket(env, { id: "echo-other-packet-revision", issueKey: "unrelated-issue",
+      evidenceSnapshotHash: hash("8"), brief: { updated: true },
+      intakes: [{ intakeId: "intake-c", role: "primary" }], createdBy: "editor@example.test", createdAt: AT });
+    await fails(() => echo.createEchoAssessment(env, assessment("assessment-other-late", "candidate-other", otherPacket.id)),
+      "superseded packet cannot gain a new assessment revision");
 
     const noEchoPacket = await echo.createEchoPacket(env, { id: "echo-no-echo", issueKey: "another-issue",
       evidenceSnapshotHash: hash("f"), brief: { no_candidate: true },
       intakes: [{ intakeId: "intake-b", role: "primary" }], createdBy: "editor@example.test", createdAt: AT });
     const noEchoJob = await echo.createEchoJob(env, { id: "echo-job-zero", packetId: noEchoPacket.id,
       idempotencyKey: "zero", triggerType: "manual", requestedBy: "editor@example.test", processorVersion: "contracts-v1", createdAt: AT });
+    await fails(() => echo.completeEchoPacket(env, { packetId: noEchoPacket.id, jobId: noEchoJob.id,
+      result: "no_echo", reasonCode: "PREMATURE", at: AT }), "pending job cannot conclude no echo");
+    pass(row("SELECT state FROM echo_jobs WHERE id=?", noEchoJob.id).state === "pending" &&
+      row("SELECT state FROM echo_packets WHERE id=?", noEchoPacket.id).state === "open", "premature no-echo rolls back atomically");
+    await echo.transitionEchoJob(env, { jobId: noEchoJob.id, from: "pending", to: "researching", at: AT });
     const zero = await echo.completeEchoPacket(env, { packetId: noEchoPacket.id, jobId: noEchoJob.id,
       result: "no_echo", reasonCode: "NO_MEANINGFUL_CANDIDATE", reason: "Synthetic search found no sound analogy", at: AT });
     pass(zero.state === "no_echo" && row("SELECT state FROM echo_jobs WHERE id=?", noEchoJob.id).state === "no_echo" &&
@@ -287,6 +360,69 @@ async function test() {
       "no-echo audit");
     await fails(() => echo.completeEchoPacket(env, { packetId: noEchoPacket.id, jobId: noEchoJob.id, result: "no_echo",
       reasonCode: "RETRY", at: AT }), "terminal no-echo cannot replay");
+    for (const [suffix, states] of [["verifying", ["researching", "verifying"]],
+      ["rights", ["researching", "verifying", "rights_check"]],
+      ["assembling", ["researching", "verifying", "rights_check", "assembling"]]]) {
+      const packet = await echo.createEchoPacket(env, { id: `echo-no-echo-${suffix}`, issueKey: `no-echo-${suffix}`,
+        evidenceSnapshotHash: hash("f"), brief: {}, intakes: [{ intakeId: "intake-b", role: "primary" }],
+        createdBy: "editor@example.test", createdAt: AT });
+      const job = await echo.createEchoJob(env, { id: `echo-job-${suffix}`, packetId: packet.id,
+        idempotencyKey: suffix, triggerType: "manual", requestedBy: "editor@example.test",
+        processorVersion: "contracts-v1", createdAt: AT });
+      let from = "pending";
+      for (const to of states) { await echo.transitionEchoJob(env, { jobId: job.id, from, to, at: AT }); from = to; }
+      const terminal = await echo.completeEchoPacket(env, { packetId: packet.id, jobId: job.id,
+        result: "no_echo", reasonCode: "NO_MEANINGFUL_CANDIDATE", at: AT });
+      pass(terminal.state === "no_echo" && row("SELECT state FROM echo_jobs WHERE id=?", job.id).state === "no_echo",
+        `no-echo legal from ${from}`);
+    }
+    const rejectedPacket = await echo.createEchoPacket(env, { id: "echo-rejected-packet", issueKey: "rejected-issue",
+      evidenceSnapshotHash: hash("f"), brief: {}, intakes: [{ intakeId: "intake-b", role: "primary" }],
+      createdBy: "editor@example.test", createdAt: AT });
+    const rejectedJob = await echo.createEchoJob(env, { id: "echo-rejected-job", packetId: rejectedPacket.id,
+      idempotencyKey: "rejected", triggerType: "manual", requestedBy: "editor@example.test",
+      processorVersion: "contracts-v1", createdAt: AT });
+    await echo.transitionEchoJob(env, { jobId: rejectedJob.id, from: "pending", to: "researching", at: AT });
+    await candidate("candidate-rejected", rejectedPacket.id);
+    await fails(() => echo.completeEchoPacket(env, { packetId: rejectedPacket.id, jobId: rejectedJob.id,
+      result: "no_echo", reasonCode: "UNRESOLVED", at: AT }), "no-echo cannot retain an unresolved candidate");
+    pass(row("SELECT state FROM echo_jobs WHERE id=?", rejectedJob.id).state === "researching" &&
+      row("SELECT state FROM echo_packets WHERE id=?", rejectedPacket.id).state === "open", "unresolved no-echo rolls back atomically");
+    db.sqlite.prepare("UPDATE echo_candidates SET state='researching' WHERE id='candidate-rejected'").run();
+    await fails(() => echo.completeEchoPacket(env, { packetId: rejectedPacket.id, jobId: rejectedJob.id,
+      result: "no_echo", reasonCode: "STILL_UNRESOLVED", at: AT }), "no-echo cannot retain a researching candidate");
+    await echo.rejectEchoCandidateByGate(env, { candidateId: "candidate-rejected", reasonCode: "NO_VALUE", at: AT });
+    const resolvedNoEcho = await echo.completeEchoPacket(env, { packetId: rejectedPacket.id, jobId: rejectedJob.id,
+      result: "no_echo", reasonCode: "NO_MEANINGFUL_CANDIDATE", at: AT });
+    pass(resolvedNoEcho.state === "no_echo" && row("SELECT state FROM echo_candidates WHERE id='candidate-rejected'").state === "rejected_by_gate",
+      "no-echo succeeds with all candidates gate-rejected");
+    for (const countReady of [1, 2]) {
+      const packet = await echo.createEchoPacket(env, { id: `echo-ready-${countReady}`, issueKey: `ready-${countReady}`,
+        evidenceSnapshotHash: hash("a"), brief: {}, intakes: [{ intakeId: "intake-b", role: "primary" }],
+        createdBy: "editor@example.test", createdAt: AT });
+      const job = await echo.createEchoJob(env, { id: `echo-job-ready-${countReady}`, packetId: packet.id,
+        idempotencyKey: `ready-${countReady}`, triggerType: "manual", requestedBy: "editor@example.test",
+        processorVersion: "contracts-v1", createdAt: AT });
+      await echo.transitionEchoJob(env, { jobId: job.id, from: "pending", to: "researching", at: AT });
+      for (let n = 1; n <= countReady; n++) {
+        const id = `candidate-ready-${countReady}-${n}`;
+        const assessmentId = `assessment-ready-${countReady}-${n}`;
+        await candidate(id, packet.id);
+        await echo.createEchoAssessment(env, assessment(assessmentId, id, packet.id));
+        await echo.markEchoCandidateReady(env, { candidateId: id, assessmentId, slot: n, at: AT });
+      }
+      await fails(() => echo.completeEchoPacket(env, { packetId: packet.id, jobId: job.id, result: "ready", at: AT }),
+        "ready cannot be entered before assembling");
+      pass(row("SELECT state FROM echo_jobs WHERE id=?", job.id).state === "researching" &&
+        row("SELECT state FROM echo_packets WHERE id=?", packet.id).state === "open", "premature ready rolls back atomically");
+      for (const [from, to] of [["researching", "verifying"], ["verifying", "rights_check"], ["rights_check", "assembling"]]) {
+        await echo.transitionEchoJob(env, { jobId: job.id, from, to, at: AT });
+      }
+      const terminal = await echo.completeEchoPacket(env, { packetId: packet.id, jobId: job.id, result: "ready", at: AT });
+      pass(terminal.state === "ready" && row("SELECT state FROM echo_jobs WHERE id=?", job.id).state === "ready" &&
+        row("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id=? AND state='editor_ready'", packet.id).n === countReady,
+        `ready succeeds with ${countReady} candidate(s)`);
+    }
     const failedPacket = await echo.createEchoPacket(env, { id: "echo-failed", issueKey: "failed-issue",
       evidenceSnapshotHash: hash("0"), brief: {}, intakes: [{ intakeId: "intake-c", role: "primary" }],
       createdBy: "editor@example.test", createdAt: AT });
@@ -294,8 +430,14 @@ async function test() {
       idempotencyKey: "failure", triggerType: "manual", requestedBy: "editor@example.test", processorVersion: "contracts-v1", createdAt: AT });
     await echo.transitionEchoJob(env, { jobId: failedJob.id, from: "pending", to: "failed", failureCode: "SYNTHETIC_ERROR",
       failureMessage: "Synthetic bounded failure", at: AT });
-    pass(row("SELECT state FROM echo_packets WHERE id=?", failedPacket.id).state === "failed" &&
-      row("SELECT state FROM echo_jobs WHERE id=?", failedJob.id).state === "failed", "operational failure distinct from no-echo");
+    pass(row("SELECT state FROM echo_packets WHERE id=?", failedPacket.id).state === "open" &&
+      row("SELECT state FROM echo_jobs WHERE id=?", failedJob.id).state === "failed", "failed job preserves open packet");
+    const retryJob = await echo.createEchoJob(env, { id: "echo-job-retry", packetId: failedPacket.id,
+      idempotencyKey: "failure-retry", triggerType: "manual", requestedBy: "editor@example.test",
+      processorVersion: "contracts-v1", createdAt: AT });
+    pass(retryJob.state === "pending" && row("SELECT state FROM echo_jobs WHERE id=?", failedJob.id).state === "failed" &&
+      row("SELECT COUNT(*) AS n FROM echo_packets WHERE issue_key='failed-issue'").n === 1,
+      "new idempotency key retries same immutable packet after job failure");
     pass(row("PRAGMA foreign_key_check") === undefined && rows("PRAGMA foreign_key_check").length === 0, "zero foreign-key violations");
     console.log(`Echo persistence tests passed: ${count} deterministic contract assertions; isolated local D1 migrations and zero FK violations.`);
   } finally {
