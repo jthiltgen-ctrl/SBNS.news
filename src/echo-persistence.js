@@ -198,8 +198,17 @@ export async function markEchoCandidateReady(env, { candidateId, assessmentId, s
       WHERE id = ? AND state IN ('found', 'researching') AND EXISTS
       (SELECT 1 FROM echo_candidate_assessments WHERE id = ? AND candidate_id = ?
         AND packet_id = echo_candidates.packet_id)
+      AND EXISTS (SELECT 1 FROM echo_candidate_sources AS source
+        WHERE source.assessment_id = ? AND source.candidate_id = echo_candidates.id
+          AND source.packet_id = echo_candidates.packet_id
+          AND source.source_role IN ('original_work', 'historical_context'))
+      AND EXISTS (SELECT 1 FROM echo_candidate_sources AS source
+        WHERE source.assessment_id = ? AND source.candidate_id = echo_candidates.id
+          AND source.packet_id = echo_candidates.packet_id AND source.source_role = 'contemporary_evidence')
+      AND EXISTS (SELECT 1 FROM echo_rights_assessments AS rights
+        WHERE rights.candidate_id = echo_candidates.id AND rights.packet_id = echo_candidates.packet_id)
       AND EXISTS (SELECT 1 FROM echo_packets WHERE id = echo_candidates.packet_id AND state = 'open' AND superseded_at IS NULL)`)
-      .bind(slot, assessmentId, when, candidateId, assessmentId, candidateId),
+      .bind(slot, assessmentId, when, candidateId, assessmentId, candidateId, assessmentId, assessmentId),
     auditStatement(db, { action: "echo.candidate_ready", entityType: "echo_candidate", entityId: candidateId,
       actorType: "system", actorId: actorId ?? null, at: when,
       metadata: { packet_id: candidate.packet_id, assessment_id: assessmentId, slot }, requireChange: true }),

@@ -6,7 +6,7 @@ CREATE TABLE echo_packets (
   revision INTEGER NOT NULL CHECK (revision >= 1),
   evidence_snapshot_hash TEXT NOT NULL CHECK (length(evidence_snapshot_hash) = 64 AND evidence_snapshot_hash NOT GLOB '*[^0-9a-f]*'),
   brief_json TEXT NOT NULL CHECK (json_valid(brief_json) AND json_type(brief_json) = 'object'),
-  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'ready', 'no_echo', 'failed')),
+  state TEXT NOT NULL DEFAULT 'open' CHECK (state IN ('open', 'ready', 'no_echo')),
   no_echo_reason_code TEXT CHECK (no_echo_reason_code IS NULL OR length(trim(no_echo_reason_code)) BETWEEN 1 AND 80),
   no_echo_reason TEXT CHECK (no_echo_reason IS NULL OR length(trim(no_echo_reason)) BETWEEN 1 AND 500),
   created_by TEXT NOT NULL CHECK (length(trim(created_by)) > 0),
@@ -171,9 +171,14 @@ CREATE TABLE echo_candidate_sources (
 CREATE INDEX idx_echo_sources_assessment_role ON echo_candidate_sources(assessment_id, source_role);
 CREATE INDEX idx_echo_sources_intake_source ON echo_candidate_sources(intake_source_id, source_intake_id);
 CREATE TRIGGER echo_source_reviewed_assessment_locked BEFORE INSERT ON echo_candidate_sources
-WHEN EXISTS (SELECT 1 FROM echo_candidates WHERE id = NEW.candidate_id AND state = 'editor_ready')
-  OR EXISTS (SELECT 1 FROM echo_decisions WHERE assessment_id = NEW.assessment_id)
-BEGIN SELECT RAISE(ABORT, 'Reviewed Echo assessment sources are frozen'); END;
+WHEN (NEW.source_role != 'rights' AND (
+    EXISTS (SELECT 1 FROM echo_candidates WHERE id = NEW.candidate_id AND packet_id = NEW.packet_id AND state = 'editor_ready')
+    OR EXISTS (SELECT 1 FROM echo_decisions WHERE assessment_id = NEW.assessment_id)
+  )) OR (NEW.source_role = 'rights' AND EXISTS (
+    SELECT 1 FROM echo_candidates WHERE id = NEW.candidate_id AND packet_id = NEW.packet_id
+      AND state = 'editor_ready' AND editor_ready_assessment_id != NEW.assessment_id
+  ))
+BEGIN SELECT RAISE(ABORT, 'Reviewed Echo analogy sources are frozen; rights sources must use the pinned assessment'); END;
 CREATE TRIGGER echo_source_update_forbidden BEFORE UPDATE ON echo_candidate_sources
 BEGIN SELECT RAISE(ABORT, 'Echo source links are append-only'); END;
 CREATE TRIGGER echo_source_delete_forbidden BEFORE DELETE ON echo_candidate_sources
@@ -225,6 +230,19 @@ CREATE TRIGGER echo_rights_update_forbidden BEFORE UPDATE ON echo_rights_assessm
 BEGIN SELECT RAISE(ABORT, 'Echo rights assessments are append-only'); END;
 CREATE TRIGGER echo_rights_delete_forbidden BEFORE DELETE ON echo_rights_assessments
 BEGIN SELECT RAISE(ABORT, 'Echo rights assessments are retained'); END;
+
+CREATE TRIGGER echo_candidate_minimum_readiness BEFORE UPDATE OF state ON echo_candidates
+WHEN NEW.state = 'editor_ready' AND OLD.state != 'editor_ready' AND (
+  NOT EXISTS (SELECT 1 FROM echo_candidate_sources
+    WHERE assessment_id = NEW.editor_ready_assessment_id AND candidate_id = NEW.id AND packet_id = NEW.packet_id
+      AND source_role IN ('original_work', 'historical_context'))
+  OR NOT EXISTS (SELECT 1 FROM echo_candidate_sources
+    WHERE assessment_id = NEW.editor_ready_assessment_id AND candidate_id = NEW.id AND packet_id = NEW.packet_id
+      AND source_role = 'contemporary_evidence')
+  OR NOT EXISTS (SELECT 1 FROM echo_rights_assessments
+    WHERE candidate_id = NEW.id AND packet_id = NEW.packet_id)
+)
+BEGIN SELECT RAISE(ABORT, 'Echo editor readiness needs context, contemporary evidence, and rights review'); END;
 
 CREATE TABLE echo_decisions (
   id TEXT PRIMARY KEY,

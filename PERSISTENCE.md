@@ -85,7 +85,7 @@ to 5 without changing reporting rows. It adds eight Echo-only tables:
 
 | Table | Durable purpose |
 | --- | --- |
-| `echo_packets` | One immutable structured issue-brief/evidence snapshot per `issue_key` revision; current result is `open`, `ready`, or `no_echo`. The reserved `failed` packet state has no PR A transition. |
+| `echo_packets` | One immutable structured issue-brief/evidence snapshot per `issue_key` revision; packet states are only `open`, `ready`, or `no_echo`. |
 | `echo_packet_intakes` | Immutable many-to-many links to existing Newsroom intakes, with exactly one primary required by atomic creation and at most one primary enforced by a partial unique index. |
 | `echo_jobs` | Pending/researching/verifying/rights-check/assembling lifecycle and terminal ready/no-echo/failed states for later orchestration; a failed job leaves its packet open and retryable. No Queue is configured here. |
 | `echo_candidates` | Artifact identity and process/gate state, separate from human decisions; readiness pins one exact assessment ID. |
@@ -104,8 +104,8 @@ create a duplicate revision, while changed evidence creates a new revision and
 marks older packets superseded. New jobs and decisions through the persistence
 API refuse superseded packets. The old brief, hash, links, and assessments
 remain available. Brief content and packet/intake links cannot be updated or
-deleted in place. The initial brief is structured JSON; the future caller must
-validate its domain-specific fields before invoking this persistence API.
+deleted in place. The initial brief is structured JSON; canonical domain-field
+validation and evidence-snapshot hashing remain PR B caller responsibilities.
 
 Assessment rows keep original context, creator-intent status, what echoes,
 where the analogy breaks, uncertainty, tempted overclaim, present-day evidence,
@@ -113,22 +113,37 @@ and editorial value as separate columns. No raw model-output field is the
 canonical assessment. Source rows identify the exact assessment component they
 support. An existing SBNS source can only be referenced if its intake is linked
 to that packet; independent Echo sources need no intake and store metadata,
-not a complete copyrighted work. Source links and assessment creation freeze
-when a candidate becomes editor-ready. Assessment insertion is permitted only
-for a found/researching candidate on the current open packet. The candidate's
+not a complete copyrighted work. Non-rights assessment provenance freezes when
+a candidate becomes editor-ready or receives a human decision. New rights-role
+sources supporting only `rights` may be appended after readiness, but must
+belong to the exact pinned `editor_ready_assessment_id`; rights revisions may
+then cite that new evidence without changing the analogy the human reviewed.
+Assessment insertion is permitted only for a found/researching candidate on
+the current open packet. The candidate's
 non-null `editor_ready_assessment_id` references an assessment for that exact
 candidate and packet, is recorded in the readiness audit, and cannot be
 repointed after readiness. Human decisions must reference this pinned
 assessment; composite foreign keys also reject a direct unpinned decision
-insert. Later assessments cannot silently change the reviewed source package.
+insert. Later assessments cannot silently change the reviewed analogy source
+package.
 Subsequent materially changed evidence needs a new packet revision or a
 separately designed explicit re-review path. Rights assessments remain
-independently versionable.
+independently versionable. The `source_set_hash` field is retained, but PR A
+does not prove that it matches attached source rows; PR B must define canonical
+source ordering, normalization, and hash generation before live orchestration.
 
 `echo_candidates.editor_ready_slot` is database-constrained to slots 1–3,
 unique per packet, and non-null exactly when state is `editor_ready`. Thus a
 fourth editor-ready candidate is impossible even if two later writers race;
-the persistence function requires the exact assessment ID before assigning a slot.
+the persistence function requires the exact assessment ID before assigning a
+slot.
+Both the persistence transition and a database trigger require, for that pinned
+assessment, at least one `original_work` or `historical_context` source and at
+least one `contemporary_evidence` source, plus at least one rights assessment
+for the candidate. This modest minimum is not exhaustive citation coverage or
+verification. A restrictive rights result, including `unknown`,
+`link_metadata_only`, or `do_not_reproduce`, satisfies the review requirement;
+it is not permission to reproduce an asset.
 Human FEATURE/HOLD/REJECT is stored only in `echo_decisions`, never in the
 candidate's process state. A decision requires a nonblank human actor and
 rationale, a current non-superseded ready packet, and the candidate's pinned
@@ -144,9 +159,12 @@ found/researching candidates; `no_echo` needs zero editor-ready and zero
 found/researching candidates, permitting none or all gate-rejected. A job may
 fail from any active state. That failure preserves the immutable packet in
 `open`, releases the active-job slot, and permits a new job with a distinct
-idempotency key on the same evidence snapshot. Packet-level `failed` is
-reserved for a future explicit closing policy, not a transient job error.
-No search result or daily cultural feature is required. Rights statuses are constrained per asset/proposed use; revisions
+idempotency key on the same evidence snapshot. Packet-level `failed` is not a
+valid state; any future unrecoverable packet-closing result requires a separate
+forward migration with explicit semantics. No search result or daily cultural
+feature is required.
+
+Rights statuses are constrained per asset/proposed use; revisions
 supersede only the prior revision of that same asset/use and preserve the old
 assessment. `unknown` and `do_not_reproduce` are valid. This schema makes no
 fair-use or reproduction authorization decision. A rights-role citation must

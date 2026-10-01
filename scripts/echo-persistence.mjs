@@ -97,6 +97,14 @@ async function test() {
     await query(`INSERT INTO echo_packets
       (id,issue_key,revision,evidence_snapshot_hash,brief_json,state,created_by,created_at,updated_at)
       VALUES ('d1-packet','d1-issue',1,'${hash("a")}','{}','open','editor','${AT}','${AT}')`);
+    await assert.rejects(() => query(`INSERT INTO echo_packets
+      (id,issue_key,revision,evidence_snapshot_hash,brief_json,state,created_by,created_at,updated_at)
+      VALUES ('d1-invalid-failed','invalid-failed',1,'${hash("c")}','{}','failed','editor','${AT}','${AT}')`));
+    await query(`INSERT INTO echo_jobs
+      (id,packet_id,idempotency_key,trigger_type,requested_by,processor_version,state,created_at,updated_at,completed_at)
+      VALUES ('d1-failed-job','d1-packet','failed-attempt','manual','editor','contracts-v1','failed','${AT}','${AT}','${AT}')`);
+    assert.equal((await query("SELECT state FROM echo_packets WHERE id='d1-packet'"))[0]?.state, "open");
+    assert.equal((await query("SELECT state FROM echo_jobs WHERE id='d1-failed-job'"))[0]?.state, "failed");
     await query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','d1-intake','primary','${AT}')`);
     await assert.rejects(() => query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','d1-intake-2','primary','${AT}')`));
     await assert.rejects(() => query(`INSERT INTO echo_packet_intakes VALUES ('d1-packet','missing','supporting','${AT}')`));
@@ -112,10 +120,44 @@ async function test() {
           'Bounded echo','Different causes','Uncertain intent','False prediction','Synthetic evidence',
           'Explains a mechanism','low','${hash("d")}','human','contracts-v1','editor','${AT}')`);
     }
+    await assert.rejects(() => query(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=1,
+      editor_ready_assessment_id='d1-assessment-1' WHERE id='d1-candidate-1'`));
+    await query(`INSERT INTO echo_candidate_sources
+      (id,packet_id,candidate_id,assessment_id,source_role,supports_field,url,authority_rationale,created_at)
+      SELECT 'd1-context-' || candidate_id,packet_id,candidate_id,id,'historical_context','original_context',
+        'https://example.test/context','Synthetic archive','${AT}'
+      FROM echo_candidate_assessments WHERE packet_id='d1-packet'`);
+    await query(`INSERT INTO echo_candidate_sources
+      (id,packet_id,candidate_id,assessment_id,source_role,supports_field,url,authority_rationale,created_at)
+      SELECT 'd1-current-' || candidate_id,packet_id,candidate_id,id,'contemporary_evidence','present_day_evidence',
+        'https://example.test/current','Synthetic reporting','${AT}'
+      FROM echo_candidate_assessments WHERE packet_id='d1-packet'`);
+    await query(`INSERT INTO echo_rights_assessments
+      (id,packet_id,candidate_id,asset_type,asset_identifier,proposed_use,revision,status,basis,permitted_use,reviewed_by,reviewed_at,created_at)
+      SELECT 'd1-rights-' || id,packet_id,id,'text','metadata:' || id,'link only',1,'unknown',
+        'Synthetic review','link only','editor','${AT}','${AT}'
+      FROM echo_candidates WHERE packet_id='d1-packet'`);
+    await query(`INSERT INTO echo_candidate_assessments
+      (id,packet_id,candidate_id,revision,original_context,creator_intent_status,what_echoes,
+       comparison_breaks,remains_uncertain,tempted_overclaim,present_day_evidence,editorial_value,
+       research_burden,source_set_hash,generator_type,generator_version,created_by,created_at)
+      VALUES ('d1-assessment-1b','d1-packet','d1-candidate-1',2,'Alternate context','unknown',
+        'Bounded echo','Different causes','Uncertain intent','False prediction','Synthetic evidence',
+        'Explains a mechanism','low','${hash("e")}','human','contracts-v1','editor','${AT}')`);
     for (let n = 1; n <= 3; n++) {
       await query(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=${n},
         editor_ready_assessment_id='d1-assessment-${n}' WHERE id='d1-candidate-${n}'`);
     }
+    const directSource = (id, assessmentId, role, field) => `INSERT INTO echo_candidate_sources
+      (id,packet_id,candidate_id,assessment_id,source_role,supports_field,url,authority_rationale,created_at)
+      VALUES ('${id}','d1-packet','d1-candidate-1','${assessmentId}','${role}','${field}',
+        'https://example.test/${id}','Synthetic provenance','${AT}')`;
+    await assert.rejects(() => query(directSource("d1-late-context", "d1-assessment-1", "historical_context", "original_context")));
+    await assert.rejects(() => query(directSource("d1-unpinned-rights", "d1-assessment-1b", "rights", "rights")));
+    await assert.rejects(() => query(directSource("d1-bad-rights-field", "d1-assessment-1", "rights", "original_context")));
+    await assert.rejects(() => query(directSource("d1-bad-context-role", "d1-assessment-1", "historical_context", "rights")));
+    await query(directSource("d1-later-rights", "d1-assessment-1", "rights", "rights"));
+    assert.equal((await query("SELECT assessment_id FROM echo_candidate_sources WHERE id='d1-later-rights'"))[0]?.assessment_id, "d1-assessment-1");
     await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4, editor_ready_assessment_id='d1-assessment-4' WHERE id='d1-candidate-4'"));
     await assert.rejects(() => query("UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=1, editor_ready_assessment_id='d1-assessment-4' WHERE id='d1-candidate-4'"));
     await assert.rejects(() => query("UPDATE echo_candidates SET editor_ready_assessment_id='d1-assessment-2' WHERE id='d1-candidate-1'"));
@@ -123,7 +165,7 @@ async function test() {
       (id,packet_id,candidate_id,revision,original_context,creator_intent_status,what_echoes,
        comparison_breaks,remains_uncertain,tempted_overclaim,present_day_evidence,editorial_value,
        research_burden,source_set_hash,generator_type,generator_version,created_by,created_at)
-      VALUES ('d1-late','d1-packet','d1-candidate-1',2,'Late context','unknown','Echo','Breaks',
+      VALUES ('d1-late','d1-packet','d1-candidate-1',3,'Late context','unknown','Echo','Breaks',
         'Uncertain','Overclaim','Evidence','Value','low','${hash("e")}','human','contracts-v1','editor','${AT}')`));
     assert.equal((await query("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id='d1-packet' AND state='editor_ready'"))[0]?.n, 3);
     await query(`INSERT INTO echo_packets
@@ -186,6 +228,14 @@ async function test() {
       temptedOverclaim: "Predicted the present", presentDayEvidence: "Synthetic intake evidence",
       editorialValue: "Explains a mechanism", researchBurden: "low", sourceSetHash: hash("d"),
       generatorType: "human", generatorVersion: "contracts-v1", createdBy: "editor@example.test", createdAt: AT });
+    const syntheticSource = (id, candidateId, assessmentId, sourceRole, supportsField, packetId = packetA.id) =>
+      echo.createEchoSource(env, { id, packetId, candidateId, assessmentId, sourceRole, supportsField,
+        url: `https://archive.example.test/${id}`, authorityRationale: "Synthetic test provenance", createdAt: AT }, "system:test");
+    const rights = (id, assetType, status, candidateId = "candidate-1", rightsSourceId = null, packetId = packetA.id) =>
+      ({ id, packetId, candidateId, assetType, assetIdentifier: `synthetic:${assetType}`,
+        proposedUse: "homepage illustration", status, basis: "Synthetic rights assessment",
+        permittedUse: status === "do_not_reproduce" ? "none" : "metadata only", rightsSourceId,
+        reviewedBy: "editor@example.test", reviewedAt: AT, createdAt: AT });
     for (let n = 1; n <= 4; n++) await echo.createEchoAssessment(env, assessment(`assessment-${n}`, `candidate-${n}`));
     pass(row("SELECT revision FROM echo_candidate_assessments WHERE id='assessment-1'").revision === 1, "assessment revision one");
     const secondAssessment = await echo.createEchoAssessment(env, assessment("assessment-1b", "candidate-1"));
@@ -237,6 +287,23 @@ async function test() {
       "readiness requires exact assessment ID");
     await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-1", assessmentId: "assessment-2", slot: 1, at: AT }),
       "readiness cannot pin another candidate assessment");
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-1", assessmentId: "assessment-1b", slot: 1, at: AT }),
+      "readiness needs a rights assessment even with historical and contemporary evidence");
+    await syntheticSource("source-c2-current", "candidate-2", "assessment-2", "contemporary_evidence", "present_day_evidence");
+    await echo.createEchoRightsAssessment(env, rights("rights-c2", "text", "unknown", "candidate-2"));
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-2", assessmentId: "assessment-2", slot: 2, at: AT }),
+      "readiness needs historical or original-work evidence");
+    await syntheticSource("source-c3-context", "candidate-3", "assessment-3", "historical_context", "original_context");
+    await echo.createEchoRightsAssessment(env, rights("rights-c3", "text", "do_not_reproduce", "candidate-3"));
+    await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-3", assessmentId: "assessment-3", slot: 3, at: AT }),
+      "readiness needs contemporary evidence");
+    pass([1, 2, 3].every((n) => row("SELECT state FROM echo_candidates WHERE id=?", `candidate-${n}`).state === "found"),
+      "missing evidence leaves candidates pre-ready");
+    await syntheticSource("source-c2-context", "candidate-2", "assessment-2", "original_work", "original_context");
+    await syntheticSource("source-c3-current", "candidate-3", "assessment-3", "contemporary_evidence", "present_day_evidence");
+    const initialRightsSource = await syntheticSource("source-rights-initial", "candidate-1", "assessment-1b", "rights", "rights");
+    const rights1 = await echo.createEchoRightsAssessment(env, rights("rights-art-1", "artwork", "unknown",
+      "candidate-1", initialRightsSource.id));
     for (let n = 1; n <= 3; n++) await echo.markEchoCandidateReady(env, {
       candidateId: `candidate-${n}`, assessmentId: n === 1 ? "assessment-1b" : `assessment-${n}`, slot: n, at: AT });
     pass(row("SELECT COUNT(*) AS n FROM echo_candidates WHERE packet_id=? AND state='editor_ready'", packetA.id).n === 3,
@@ -246,6 +313,9 @@ async function test() {
       "readiness pins and audits exact assessment revision");
     await fails(() => echo.createEchoAssessment(env, assessment("assessment-1d", "candidate-1")),
       "later assessment creation after readiness rejected");
+    await syntheticSource("source-c4-context", "candidate-4", "assessment-4", "historical_context", "original_context");
+    await syntheticSource("source-c4-current", "candidate-4", "assessment-4", "contemporary_evidence", "present_day_evidence");
+    await echo.createEchoRightsAssessment(env, rights("rights-c4", "text", "link_metadata_only", "candidate-4"));
     await fails(() => echo.markEchoCandidateReady(env, { candidateId: "candidate-4", assessmentId: "assessment-4", slot: 1, at: AT }), "fourth ready candidate blocked by unique slot");
     await fails(async () => db.sqlite.prepare(`UPDATE echo_candidates SET state='editor_ready', editor_ready_slot=4,
       editor_ready_assessment_id='assessment-4' WHERE id='candidate-4'`).run(),
@@ -265,17 +335,19 @@ async function test() {
     await fails(() => echo.createEchoSource(env, { id: "echo-source-after-ready", packetId: packetA.id,
       candidateId: "candidate-1", assessmentId: "assessment-1b", sourceRole: "historical_context",
       supportsField: "original_context", url: "https://example.test/late-ready", authorityRationale: "Synthetic", createdAt: AT }),
-      "editor-ready source set frozen");
-
-    const rights = (id, assetType, status) => ({ id, packetId: packetA.id, candidateId: "candidate-1", assetType,
-      assetIdentifier: `synthetic:${assetType}`, proposedUse: "homepage illustration", status,
-      basis: "Synthetic rights assessment", permittedUse: status === "do_not_reproduce" ? "none" : "metadata only",
-      reviewedBy: "editor@example.test", reviewedAt: AT, createdAt: AT });
-    const rights1 = await echo.createEchoRightsAssessment(env, rights("rights-art-1", "artwork", "unknown"));
-    const rights2 = await echo.createEchoRightsAssessment(env, rights("rights-art-2", "artwork", "do_not_reproduce"));
+      "editor-ready historical context is frozen");
+    await fails(() => syntheticSource("source-late-current", "candidate-1", "assessment-1b",
+      "contemporary_evidence", "present_day_evidence"), "editor-ready contemporary evidence is frozen");
+    await fails(() => syntheticSource("source-late-unpinned-rights", "candidate-1", "assessment-1",
+      "rights", "rights"), "post-readiness rights source must use pinned assessment");
+    const recheckedRightsSource = await syntheticSource("source-rights-recheck", "candidate-1", "assessment-1b", "rights", "rights");
+    const rights2 = await echo.createEchoRightsAssessment(env, rights("rights-art-2", "artwork", "do_not_reproduce",
+      "candidate-1", recheckedRightsSource.id));
     const rights3 = await echo.createEchoRightsAssessment(env, rights("rights-text-1", "text", "link_metadata_only"));
-    pass(rights1.revision === 1 && rights2.revision === 2 && rights2.supersedes_id === rights1.id && rights3.revision === 1,
-      "asset-specific rights revisions preserve history");
+    pass(rights1.revision === 1 && rights1.rights_source_id === initialRightsSource.id &&
+      rights2.revision === 2 && rights2.supersedes_id === rights1.id && rights2.rights_source_id === recheckedRightsSource.id &&
+      rights3.revision === 1 && rows("SELECT id FROM echo_candidate_sources WHERE id IN (?,?)", initialRightsSource.id, recheckedRightsSource.id).length === 2,
+      "post-readiness rights evidence and both append-only rights revisions survive");
     await fails(() => echo.createEchoRightsAssessment(env, rights("rights-bad", "lyrics", "automatically_cleared")), "rights vocabulary");
     await fails(async () => db.sqlite.prepare("UPDATE echo_rights_assessments SET status='licensed' WHERE id='rights-art-1'").run(), "rights append-only");
     await fails(async () => db.sqlite.prepare(`INSERT INTO echo_rights_assessments
@@ -409,6 +481,9 @@ async function test() {
         const assessmentId = `assessment-ready-${countReady}-${n}`;
         await candidate(id, packet.id);
         await echo.createEchoAssessment(env, assessment(assessmentId, id, packet.id));
+        await syntheticSource(`source-${id}-context`, id, assessmentId, "historical_context", "original_context", packet.id);
+        await syntheticSource(`source-${id}-current`, id, assessmentId, "contemporary_evidence", "present_day_evidence", packet.id);
+        await echo.createEchoRightsAssessment(env, rights(`rights-${id}`, "text", "unknown", id, null, packet.id));
         await echo.markEchoCandidateReady(env, { candidateId: id, assessmentId, slot: n, at: AT });
       }
       await fails(() => echo.completeEchoPacket(env, { packetId: packet.id, jobId: job.id, result: "ready", at: AT }),
