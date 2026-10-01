@@ -296,7 +296,7 @@ function renderAnalysis(data) {
   node.append(grid);
   const proposal = panel("story-proposal", "AI proposal — not saved / not approved", "proposal-panel");
   proposal.append(el("p", "Generated suggestions are not established evidence or a human editorial decision.", "warning"));
-  proposal.append(fieldGrid([["Headline", analysis.proposed_headline], ["Summary", analysis.proposed_summary, true], ["FML kicker", analysis.proposed_fml_kicker, true], ["Tags", analysis.proposed_topic_tags?.join(", ")]]));
+  proposal.append(fieldGrid([["Headline", analysis.proposed_headline], ["Summary", analysis.proposed_summary, true], ["SBNS Kicker", analysis.proposed_fml_kicker, true], ["Tags", analysis.proposed_topic_tags?.join(", ")]]));
   return { analysis: node, evidence: renderEvidence(data, analysis), proposal, parsed: analysis };
 }
 function renderEvidence(data, analysis) {
@@ -325,7 +325,7 @@ function draftForm(intakeId, latest, proposal) {
   const node = panel("story-copy-editor", latest ? "Edit copy / save new revision" : proposal ? "Save AI proposal as revision 1" : "Create draft revision", "copy-editor");
   node.append(el("p", latest ? "Editing the latest saved revision. Saving creates a new revision; it does not change an existing approval." : proposal ? "This form is seeded from the unsaved AI proposal. Review every field before saving." : "Create a human-reviewed draft before approval."));
   const form = el("form");
-  const fields = [["story_id", "Story ID", "input"], ["headline", "Headline", "input"], ["summary", "Summary", "textarea"], ["fml_kicker", "FML kicker", "textarea"], ["topic_tags", "Tags, comma-separated", "input"]];
+  const fields = [["story_id", "Story ID", "input"], ["headline", "Headline", "input"], ["summary", "Summary", "textarea"], ["fml_kicker", "SBNS Kicker", "textarea"], ["topic_tags", "Tags, comma-separated", "input"]];
   fields.forEach(([name, labelText, tag]) => {
     const label = el("label", labelText, ["summary", "fml_kicker", "topic_tags"].includes(name) ? "wide" : "");
     const input = el(tag);
