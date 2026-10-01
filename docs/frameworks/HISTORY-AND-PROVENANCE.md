@@ -650,6 +650,16 @@ PR #44, **Add deterministic Echo Desk orchestration**, remains open and draft at
 
 This stage does not authorize continued general feature development. The October 1 operating decision is to close the remaining bounded technical work and shift primary attention to editorial production, audience validation, and founder-burden learning.
 
+### October 1 editorial-aperture clarification
+
+During sprint design, the editorial constitution was clarified so that "institutional failure" is not treated as the sole qualifying form of accountability relevance.
+
+The clarification preserves the existing evidence, attribution, causation, qualification, neutrality, and human-authority standards while explicitly recognizing other evidence-supported accountability conditions, including persistent underperformance, foreseeable or accepted risk, waste, displaced stakeholder burdens, inequitable outcomes, contradictory incentives, inadequate recourse, and consequential systems functioning as designed.
+
+The same clarification adds an anti-throttling check for stopped candidates and states that expected or recurring failure is not automatically stale when new evidence establishes failed remediation, normalization, cumulative burden, expanded scale, or another meaningful development.
+
+This is an editorial-aperture clarification, not authorization to manufacture a narrative, lower sourcing requirements, or create a publication quota.
+
 ## 20. Current status classification
 
 ### Implemented and active in repository
