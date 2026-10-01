@@ -1,7 +1,7 @@
 import publishedFeed from "../public/stories.json" with { type: "json" };
 import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
-import { findDiscoveryMatches, findMonitoringMatch, storeDiscoveryCandidate } from "./persistence.js";
+import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, storeDiscoveryCandidate } from "./persistence.js";
 
 export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
@@ -337,7 +337,8 @@ async function defaultSubmit(env, candidate, requestedBy, runId, leaseNow) {
 }
 
 export async function runWatchdeskScan(env, options = {}) {
-  const registry = validateSourceRegistry(options.registry || WATCHDESK_SOURCES).filter((source) => source.enabled);
+  const dynamicSources = options.registry ? [] : await listApprovedDynamicWatchdeskSources(env);
+  const registry = validateSourceRegistry([...(options.registry || WATCHDESK_SOURCES), ...dynamicSources]).filter((source) => source.enabled);
   const clock = options.now || (() => new Date().toISOString());
   const discoveredAt = iso(clock());
   if (!discoveredAt) throw new Error("Watchdesk clock must return a valid date.");
