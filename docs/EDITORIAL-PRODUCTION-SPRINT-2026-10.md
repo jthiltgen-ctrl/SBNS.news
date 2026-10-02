@@ -8,8 +8,9 @@ Primary goal: improve the functionality, quality, distinctiveness, and founder e
 
 Begin this sprint after:
 
-- PR #44 receives one combined-tree validation and merge/no-merge decision;
-- the October 1 current-state record is accepted;
+- PRs #44 and #47 remain accepted and operational within their bounded Echo contracts;
+- PR #46 receives its separate merge, migration, deployment, and production-acceptance decision;
+- the updated current-state record is accepted;
 - no known site-health or trust issue requires immediate repair.
 
 Do not delay the sprint for nonessential technical polish.

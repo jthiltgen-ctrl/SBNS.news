@@ -650,6 +650,8 @@ PR #44, **Add deterministic Echo Desk orchestration**, remains open and draft at
 
 This stage does not authorize continued general feature development. The October 1 operating decision is to close the remaining bounded technical work and shift primary attention to editorial production, audience validation, and founder-burden learning.
 
+Later on October 1, PR #44 merged as `676164e7269206bd6b55400422b95fe584c45a0c`, and PR #47's development-only LOC/Smithsonian adapters merged as `1d71ae5c8249cc6396106b8f4976b87655839193`. The preceding PR #44 status describes the earlier checkpoint, not current state. Pre-PR-#46 production remains schema v5. Draft PR #46 is the remaining planned technical closeout; its migration 0006 and Story Queue preparation are not yet deployed or activated.
+
 ### October 1 editorial-aperture clarification
 
 During sprint design, the editorial constitution was clarified so that "institutional failure" is not treated as the sole qualifying form of accountability relevance.
@@ -679,6 +681,7 @@ This is an editorial-aperture clarification, not authorization to manufacture a 
 - draft revisions and human decisions;
 - Watchdesk discovery, Rabbit Hole Triage, durable run ledger, lease protections, and bounded scheduling;
 - Echo durable persistence contracts;
+- deterministic synthetic Echo orchestration and development-only LOC/Smithsonian source adapters;
 - scoped public and admin deployment workflows;
 - staging and production baselines.
 
@@ -696,7 +699,7 @@ This is an editorial-aperture clarification, not authorization to manufacture a 
 
 ### Active design or operational plan, not proof of completion
 
-- deterministic Echo orchestration in open draft PR #44;
+- production Echo execution/Newsroom integration and public WE WERE WARNED;
 - visitor submissions;
 - controlled repository publication orchestration;
 - immutable public correction history;
@@ -705,7 +708,7 @@ This is an editorial-aperture clarification, not authorization to manufacture a 
 
 ### Current operating direction
 
-- finish PR #44 through one combined-tree validation and merge/no-merge decision;
+- finish draft PR #46 through one reconciled validation and separate merge/migration/deployment authorization;
 - freeze general technical expansion by default;
 - operate October–December 2026 as Audience & Option Validation;
 - use real editorial production to identify bottlenecks;

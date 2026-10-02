@@ -104,8 +104,9 @@ create a duplicate revision, while changed evidence creates a new revision and
 marks older packets superseded. New jobs and decisions through the persistence
 API refuse superseded packets. The old brief, hash, links, and assessments
 remain available. Brief content and packet/intake links cannot be updated or
-deleted in place. The initial brief is structured JSON; canonical domain-field
-validation and evidence-snapshot hashing remain PR B caller responsibilities.
+deleted in place. The database stores the initial structured brief and hash;
+PR B's synthetic-only orchestration caller now validates and computes them.
+The database does not recalculate or attest either hash.
 
 Assessment rows keep original context, creator-intent status, what echoes,
 where the analogy breaks, uncertainty, tempted overclaim, present-day evidence,
@@ -128,9 +129,11 @@ insert. Later assessments cannot silently change the reviewed analogy source
 package.
 Subsequent materially changed evidence needs a new packet revision or a
 separately designed explicit re-review path. Rights assessments remain
-independently versionable. The `source_set_hash` field is retained, but PR A
-does not prove that it matches attached source rows; PR B must define canonical
-source ordering, normalization, and hash generation before live orchestration.
+independently versionable. PR B's synthetic-only caller now canonically orders,
+normalizes, and hashes non-rights analogy sources into `source_set_hash`. Rights
+provenance is excluded so it can evolve after readiness. The database does not
+prove that the stored hash matches the attached rows; future live adapters must
+use and verify the same caller contract.
 
 `echo_candidates.editor_ready_slot` is database-constrained to slots 1–3,
 unique per packet, and non-null exactly when state is `editor_ready`. Thus a
@@ -179,6 +182,21 @@ rights assessment, candidate readiness, packet ready/no-echo, and human decision
 audit metadata in the same transactional D1 batch as their consequential
 state. Conditional transitions abort the whole batch if the expected state is
 stale. No raw model reasoning or complete copyrighted work is audited.
+PR B adds one bounded `echo.candidate_evaluated` audit per packet/candidate,
+keyed independently of job attempts. It records the deterministic selection
+plan, not completed readiness; conflicting replay metadata is rejected.
+
+PR B also binds one normalized candidate package to an open packet through a
+deterministically identified `echo.candidate_package_bound` audit, storing a
+SHA-256 digest and bounded count/version metadata rather than candidate content.
+An exact-package new-key retry may reuse partial rows; a changed package is
+rejected before further candidate-package writes. A failure before binding and
+before any such rows leaves the first binding available to a later attempt.
+This packet-level retry guard is distinct from the contemporary
+`evidence_snapshot_hash` and the assessment's non-rights `source_set_hash`.
+Reassessing culture without changed contemporary evidence remains a separately
+designed future revision path, not an implicit retry.
+
 Later runtime stages may add context-verification events such as
 `echo.context_verified`; PR A does not pretend those operations have occurred.
 
@@ -199,11 +217,13 @@ and D1 constraints, then exercises the JavaScript persistence API against the
 same migration SQL in isolated SQLite memory. Both commands are included in
 `npm run check`; neither contacts remote D1.
 
-Opening a draft PR does not apply migration 0005 remotely. A later merge to
-`main` **would** trigger `.github/workflows/deploy-admin.yml`, which applies
-pending remote D1 migrations before deploying `sbns-admin`. Merge therefore
-requires separate production migration authorization. Recovery is a reviewed
-forward repair, never an automatic destructive down migration.
+Migration 0005 was applied through the separately authorized admin deployment
+of PR A. PR B and PR C subsequently merged without another schema change;
+PR C's public-source adapters remain development-only. Draft PR #46 proposes
+forward-only migration 0006 for Watchdesk learned-source state. Merging it
+would trigger the existing admin workflow's remote migration step; opening the
+draft does not. Recovery of any future schema defect remains a reviewed forward
+repair, never an automatic destructive down migration.
 
 ## Recovery
 

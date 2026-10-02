@@ -68,9 +68,10 @@ Current main-line capabilities include:
 - repository-local, human-gated publication-package preparation;
 - Watchdesk discovery with deterministic fit/readiness gates and Rabbit Hole Triage;
 - durable Watchdesk run/lease protections and bounded scheduling;
-- Echo durable persistence contracts.
+- Echo durable persistence contracts and deterministic synthetic orchestration;
+- development-only LOC and Smithsonian Echo source adapters, with no live Echo execution path.
 
-PR #44, deterministic Echo Desk orchestration, remains open and draft. It is not active main-line capability until merged and verified.
+PRs #44 and #47 are merged and operational within those boundaries. Echo has no production research service, API, schedule, UI, or public feature.
 
 ## Reader-facing frontend
 
@@ -122,18 +123,16 @@ Environment truth remains distinct from repository intent. See:
 
 ## Current closeout item
 
-The only open pull request is PR #44: **Add deterministic Echo Desk orchestration**.
+The only open pull request is draft PR #46: **Reconcile SBNS state, editorial aperture, and Newsroom discovery**. Current pre-#46 production remains at schema v5; migration 0006 is proposed in the draft, not applied remotely.
 
 Efficient closeout:
 
-1. integrate current `main`;
-2. run focused tests if needed;
-3. run one full combined-tree validation;
-4. repair only contract-blocking defects;
-5. make the merge/no-merge decision;
-6. stop technical expansion.
+1. reconcile the draft against current `main` without regressing merged Echo contracts;
+2. validate migration 0006 and the intended editorial/Watchdesk/Newsroom changes locally;
+3. seek separate merge, migration, and deployment authorization;
+4. stop technical expansion.
 
-Closing PR #44 does not authorize another feature cycle.
+Closing PR #46 is the last planned technical closeout before an editorial testing sprint, not authorization for another feature cycle.
 
 ## Audience and option validation
 

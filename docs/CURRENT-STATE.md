@@ -1,7 +1,7 @@
 # SBNS Current State & Website Status
 
-As of: October 1, 2026 (Central)
-Repository baseline: `main` at `85e262a04c848de43a98cac9fb9f8d3b16fd8917`
+Updated: October 1, 2026 (Central), after PR #47
+Repository baseline: `main` at `1d71ae5c8249cc6396106b8f4976b87655839193`
 Status purpose: living project and website baseline for the transition from infrastructure build-out to editorial-production optimization.
 
 ## Executive state
@@ -10,7 +10,7 @@ Shocked But Not Surprised is no longer blocked on basic public-site infrastructu
 
 The publication now has the core reader and discovery substrate needed to support an editorial-first operating period: canonical story pages, deterministic story generation, branded share assets, explicit search-indexing readiness, robots and sitemap output, RSS, a native Follow SBNS control, public accountability/transparency surfaces, a protected editorial desk, persistent editorial state, Watchdesk discovery, and a bounded scheduled discovery path.
 
-The principal unresolved technical item is PR #44, deterministic Echo Desk orchestration. It is an implementation closeout item, not a reason to continue general feature development.
+The remaining planned technical closeout is draft PR #46, which reconciles the editorial aperture, Watchdesk source governance, and prepared-but-inactive Story Queue. It is not a reason to continue general feature development.
 
 The next operating emphasis should therefore be editorial quality, production ergonomics, story distinctiveness, and publish-worthy output. Technical work should be frozen by default unless it protects reliability, removes recurring editorial burden, or fixes friction observed during real story production.
 
@@ -20,7 +20,7 @@ The next operating emphasis should therefore be editorial quality, production er
 
 Current `main`:
 
-`85e262a04c848de43a98cac9fb9f8d3b16fd8917`
+`1d71ae5c8249cc6396106b8f4976b87655839193`
 
 Latest main-line changes include:
 
@@ -30,7 +30,9 @@ Latest main-line changes include:
 - PR #41 — explicit search-indexing readiness;
 - PR #42 — Echo Desk durable persistence contracts;
 - PR #43 — transparency and ordinary editorial-contact reconciliation;
-- PR #45 — open reporting RSS feed and Follow SBNS control.
+- PR #44 — deterministic synthetic Echo orchestration;
+- PR #45 — open reporting RSS feed and Follow SBNS control;
+- PR #47 — bounded, development-only LOC and Smithsonian Echo source adapters.
 
 The latest GitHub Actions runs associated with current main reported success for both the public and admin deployment workflows.
 
@@ -40,22 +42,18 @@ This record treats workflow success as deployment evidence. It does not convert 
 
 Only one pull request is open:
 
-- PR #44 — **Add deterministic Echo Desk orchestration**
-- state: open draft;
-- head: `d7d3d714338bc1d8fb6f2cae904a105ff9c1b354`;
-- GitHub reports it mergeable;
-- relative to current main, the branch is two commits ahead and one commit behind;
-- the one-behind condition exists because PR #45 landed after PR #44's merge base.
+- PR #46 — **Reconcile SBNS state, editorial aperture, and Newsroom discovery**;
+- state: open draft, unmerged;
+- migration 0006 and Story Queue integration are still proposed, not deployed.
 
 Efficient closeout path:
 
-1. integrate current main into PR #44;
-2. run one full combined-tree validation;
-3. resolve only defects that block the defined orchestration contract;
-4. make one merge/no-merge decision;
-5. stop.
+1. reconcile PR #46 against current main without regressing Echo A/B/C;
+2. validate its v5-to-v6 migration and intended contracts locally;
+3. seek a separate merge/migration/deployment decision;
+4. stop.
 
-Do not begin another technical feature merely because PR #44 closes.
+Do not begin another technical feature merely because PR #46 closes.
 
 ## Data and persistence state
 
@@ -139,9 +137,7 @@ Scheduled discovery is not automated journalism. Discovery, research, editorial 
 
 ### Echo Desk
 
-Echo durable persistence contracts are merged on main through PR #42.
-
-Deterministic Echo orchestration remains in draft PR #44. Until PR #44 is merged and verified, Echo orchestration should be described as implemented in the draft branch, not as active main-line capability.
+Echo durable persistence contracts (PR #42) and deterministic synthetic orchestration (PR #44) are merged. LOC and Smithsonian metadata-first source adapters (PR #47) are also merged, but remain development-only. No production Echo discovery, external fetch, Queue, API, UI, schedule, or publication path is active.
 
 ## Business, audience, and growth state
 
@@ -210,7 +206,7 @@ Current mode is **Build transitioning to Normal editorial operation**.
 
 The transition gate is deliberately small:
 
-- close PR #44 through one combined-tree validation and decision;
+- close PR #46 through local reconciliation, validation, and a separately authorized merge/migration/deployment decision;
 - reconcile the canonical/living project records;
 - then freeze feature work by default.
 
@@ -254,7 +250,7 @@ Stop research when:
 
 Update this living record when one of the following materially changes:
 
-- PR #44 merges or is closed;
+- PR #46 merges or is closed;
 - a new public story is published;
 - Search Console or analytics begins producing reliable decision-useful data;
 - direct-reader capture goes live;
