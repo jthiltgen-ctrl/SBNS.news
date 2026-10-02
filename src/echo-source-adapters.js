@@ -15,8 +15,10 @@ const plain = (value) => value && typeof value === "object" && !Array.isArray(va
 const text = (value, limit = 500) => typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, limit) || null : null;
 const firstText = (value, limit) => text(Array.isArray(value) ? value.find((item) => typeof item === "string") : value, limit);
 const strings = (value, limit = 5) => Array.isArray(value) ? value.filter((entry) => typeof entry === "string").map((entry) => text(entry, 160)).filter(Boolean).slice(0, limit) : [];
-const labeledPhrases = (value, limit = 10) => Array.isArray(value) ? value.slice(0, limit).flatMap((entry) =>
-  typeof entry === "string" ? [text(entry, 250)] : plain(entry) ? [text(entry.label, 100), text(entry.name, 100), text(entry.content, 250), text(entry.description, 250)] : []).filter(Boolean) : [];
+// The network response is already byte-capped. Scan every supplied note for
+// explicit cultural cautions, while retaining only one short signal below.
+const labeledPhrases = (value) => Array.isArray(value) ? value.flatMap((entry) =>
+  typeof entry === "string" ? [entry] : plain(entry) ? [entry.label, entry.name, entry.content, entry.description] : []).filter((item) => typeof item === "string") : [];
 const stamp = (value) => {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) fail("INVALID_RETRIEVAL_TIME", "A retrieval timestamp is required");
   return new Date(value).toISOString();
@@ -68,9 +70,9 @@ function conservativeRights(statements, { metadataAccess = null, mediaAccess = n
   };
 }
 function protocolSignal(values) {
-  const caution = values.map((entry) => text(entry, 250)).filter(Boolean).find((entry) =>
+  const caution = values.find((entry) =>
     /traditional knowledge|cultur(?:al|ally) sensitiv|indigen|tribal|ceremonial|sacred|human remains|restricted access|community protocol/i.test(entry));
-  return { status: caution ? "indicated" : "unclear", basis: caution ?? null };
+  return { status: caution ? "indicated" : "unclear", basis: text(caution, 250) };
 }
 function baseRecord({ adapter, id, url, title, creators, date, artifactType, description, authorityBasis, rights, protocol, retrievedAt, versionId }) {
   return {
@@ -103,7 +105,7 @@ export function normalizeLocResult(raw, retrievedAt) {
   if (!identity || !title) return null;
   const rights = conservativeRights([...strings(raw.rights_advisory), ...strings(raw.rights), ...strings(raw.rights_information)]);
   const protocol = protocolSignal([...labeledPhrases(raw.access_advisory), ...labeledPhrases(raw.traditional_knowledge_labels),
-    ...strings(raw.rights_advisory), ...strings(raw.rights)]);
+    ...labeledPhrases(raw.rights_advisory), ...labeledPhrases(raw.rights)]);
   return baseRecord({ adapter: "loc", id: identity.id, url: identity.url, title,
     creators: strings(raw.contributor_names ?? raw.contributors), date: text(raw.date, 60),
     artifactType: firstText(raw.original_format ?? raw.item_type, 100) ?? "unspecified",
@@ -117,6 +119,13 @@ function smithField(content, field, preferredLabels = []) {
   if (!Array.isArray(values)) return null;
   const preferred = values.find((entry) => plain(entry) && preferredLabels.includes(String(entry.label ?? "").toLowerCase()));
   return text((preferred ?? values.find((entry) => plain(entry) && typeof entry.content === "string"))?.content, 500);
+}
+function smithsonianContextNote(content) {
+  const notes = content?.freetext?.notes;
+  if (!Array.isArray(notes)) return null;
+  const allowed = new Set(["historical context", "curatorial description", "context"]);
+  const match = notes.find((entry) => plain(entry) && allowed.has(String(entry.label ?? "").trim().toLowerCase()));
+  return text(match?.content, 500);
 }
 export function normalizeSmithsonianResult(raw, retrievedAt) {
   const identity = smithsonianIdentity(raw);
@@ -139,7 +148,7 @@ export function normalizeSmithsonianResult(raw, retrievedAt) {
 
 function contextStatement(raw, adapter) {
   if (adapter === "loc") return firstText(raw?.summary, 500);
-  return smithField(raw?.content, "notes", ["historical context", "curatorial description", "context"]);
+  return smithsonianContextNote(raw?.content);
 }
 function contextFromDetail(record, detail, retrievedAt) {
   const statement = contextStatement(detail, record.adapter);
@@ -154,7 +163,7 @@ export function verifyLocContext(record, response, retrievedAt) {
   const normalized = normalizeLocResult(response.item, retrievedAt);
   if (!normalized || normalized.canonicalIdentifier !== record.canonicalIdentifier) fail("IDENTITY_MISMATCH", "LOC detail does not match discovery identity");
   const detailProtocol = protocolSignal([...labeledPhrases(response.traditional_knowledge_labels), ...labeledPhrases(response.item.access_advisory),
-    ...strings(response.item.rights_advisory), ...strings(response.item.rights)]);
+    ...labeledPhrases(response.item.rights_advisory), ...labeledPhrases(response.item.rights)]);
   const detailRights = conservativeRights([...strings(response.item.rights_advisory), ...strings(response.item.rights), ...strings(response.item.rights_information)]);
   const merged = { ...normalized,
     culturalProtocol: detailProtocol.status === "indicated" ? detailProtocol : record.culturalProtocol.status === "indicated" ? record.culturalProtocol : detailProtocol,

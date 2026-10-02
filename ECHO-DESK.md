@@ -263,7 +263,10 @@ not persist source-native response blobs or complete works. Cross-adapter
 deduplication uses strong canonical record IDs/URLs or a clearly shared stable
 identifier, not fuzzy title similarity. Uncertain matches remain separate.
 Verification is a distinct item-detail step: an unverified search hit must not
-be passed off as an editor-ready historical source.
+be passed off as an editor-ready historical source. Smithsonian original
+context requires a substantive note explicitly labeled `historical context`,
+`curatorial description`, or `context`; a long rights or administrative note
+does not qualify.
 
 Rights normalization is conservative. Explicit public-domain or open-license
 catalog statements are preserved as record-scoped hints, not blanket rights for
@@ -273,7 +276,9 @@ decides fair use or reproduction permission for a proposed excerpt, image, or
 other asset. Protocol signals are independent of copyright: explicit
 community/Indigenous, ceremonial, sacred-object, human-remains, or similar
 use cautions are retained as restrictions, and missing or ambiguous protocol
-information remains unresolved rather than automatically cleared. A
+information remains unresolved rather than automatically cleared. The
+byte-capped response is scanned for cautions beyond the first few notes; only
+one short signal is retained. A
 protocol-unclear candidate must satisfy PR B's deterministic cultural-protocol
 gate before readiness.
 

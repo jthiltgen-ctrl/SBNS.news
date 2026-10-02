@@ -60,6 +60,10 @@ function fixtureFetch(body, capture = []) {
 }
 function locRecord(overrides = {}) { return normalizeLocResult({ ...LOC_ITEM, ...overrides }, AT); }
 function smithRecord(overrides = {}) { return normalizeSmithsonianResult({ ...SMITH_ITEM, ...overrides }, AT); }
+function smithItemWithNotes(notes) {
+  return { ...SMITH_ITEM, content: { ...SMITH_ITEM.content,
+    freetext: { ...SMITH_ITEM.content.freetext, notes } } };
+}
 
 function check() {
   eq(SOURCE_RECORD_SCHEMA, "echo-source-record-v1");
@@ -141,10 +145,55 @@ function check() {
   eq(historicalSource.canonicalIdentifier, loc.canonicalIdentifier);
   eq(verifyLocContext(loc, { item: { ...LOC_ITEM, summary: [] } }, AT).context.status, "insufficient");
   throws(() => verifyLocContext(loc, { item: { ...LOC_ITEM, id: "https://www.loc.gov/item/other/" } }, AT), "IDENTITY_MISMATCH");
+  const lateLocLabels = [
+    ...Array.from({ length: 10 }, (_, index) => `Routine catalog label ${index + 1}`),
+    "Traditional Knowledge label: community protocol applies",
+  ];
+  eq(locRecord({ traditional_knowledge_labels: lateLocLabels }).culturalProtocol.status, "indicated");
+  eq(verifyLocContext(loc, { item: LOC_ITEM, traditional_knowledge_labels: lateLocLabels }, AT).culturalProtocol.status, "indicated");
   const verifiedSmith = verifySmithsonianContext(smith, { response: SMITH_ITEM }, AT);
   eq(verifiedSmith.context.status, "source_supported");
+  eq(verifiedSmith.context.originalContext, SMITH_ITEM.content.freetext.notes[1].content);
   eq(verifiedSmith.context.contextAuthority, "limited");
+  eq(verifiedSmith.context.creatorIntentStatus, "not_claimed");
   eq(verifiedSmith.culturalProtocol.status, "indicated");
+  const paddedContext = verifySmithsonianContext(smith, { response: smithItemWithNotes([
+    { label: "  hIsToRiCaL cOnTeXt  ", content: SMITH_ITEM.content.freetext.notes[1].content },
+  ]) }, AT);
+  eq(paddedContext.context.status, "source_supported");
+  eq(paddedContext.context.originalContext, SMITH_ITEM.content.freetext.notes[1].content);
+  const rightsNote = "Rights information applies to reuse and reproduction of this fictional collection item; it does not describe its original historical setting.";
+  const rightsOnly = verifySmithsonianContext(smith, { response: smithItemWithNotes([
+    { label: "Rights", content: rightsNote },
+  ]) }, AT);
+  ok(rightsNote.length > 40);
+  eq(rightsOnly.context.status, "insufficient");
+  eq(rightsOnly.context.originalContext, null);
+  eq(rightsOnly.context.contextAuthority, "limited");
+  eq(rightsOnly.context.creatorIntentStatus, "not_claimed");
+  ok(!JSON.stringify(rightsOnly.context).includes(rightsNote));
+  throws(() => toEchoHistoricalSource(rightsOnly), "CONTEXT_NOT_VERIFIED");
+  const administrativeNote = "Administrative catalog note for internal filing and record maintenance; this note provides no historical account of the fictional object.";
+  const administrativeOnly = verifySmithsonianContext(smith, { response: smithItemWithNotes([
+    { label: "Administrative Note", content: administrativeNote },
+  ]) }, AT);
+  ok(administrativeNote.length > 40);
+  eq(administrativeOnly.context.status, "insufficient");
+  eq(administrativeOnly.context.originalContext, null);
+  const trivialContext = verifySmithsonianContext(smith, { response: smithItemWithNotes([
+    { label: "Historical context", content: "Original setting unknown." },
+  ]) }, AT);
+  eq(trivialContext.context.status, "insufficient");
+  eq(trivialContext.context.originalContext, null);
+  const ordinaryNotes = Array.from({ length: 10 }, (_, index) =>
+    ({ label: "General note", content: `Routine catalog note ${index + 1}.` }));
+  const unflaggedSmith = smithRecord({ content: smithItemWithNotes(ordinaryNotes).content });
+  eq(unflaggedSmith.culturalProtocol.status, "unclear");
+  const lateProtocolItem = smithItemWithNotes([...ordinaryNotes,
+    { label: "Cultural sensitivity", content: "Community protocol applies to this fictional ceremonial record." },
+  ]);
+  eq(normalizeSmithsonianResult(lateProtocolItem, AT).culturalProtocol.status, "indicated");
+  eq(verifySmithsonianContext(unflaggedSmith, { response: lateProtocolItem }, AT).culturalProtocol.status, "indicated");
   eq(verifySmithsonianContext(smith, { response: { ...SMITH_ITEM,
     content: { ...SMITH_ITEM.content, freetext: { ...SMITH_ITEM.content.freetext,
       notes: [{ label: "Description", content: "A short description." }] } } } }, AT).context.status, "insufficient");
