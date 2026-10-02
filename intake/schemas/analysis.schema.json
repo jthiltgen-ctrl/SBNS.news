@@ -279,6 +279,18 @@
     "do_not_claim": { "$ref": "#/$defs/stringArray" },
     "proposed_headline": { "$ref": "#/$defs/nullableString" },
     "proposed_summary": { "$ref": "#/$defs/nullableString" },
+    "proposed_body": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "claim_refs"],
+        "properties": {
+          "text": { "$ref": "#/$defs/nonEmptyString" },
+          "claim_refs": { "$ref": "#/$defs/stringArray" }
+        }
+      }
+    },
     "proposed_fml_kicker": { "$ref": "#/$defs/nullableString" },
     "proposed_topic_tags": { "$ref": "#/$defs/stringArray" },
     "proposed_sources": {

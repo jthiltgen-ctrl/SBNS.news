@@ -65,6 +65,7 @@ export function validateAnalysisSemantics(request, analysis) {
   if (request.schema_version !== analysis.schema_version) fail("fixture: request and analysis schema_version values must match");
   const sourceIds = unique(analysis.sources, "source_id", "analysis.sources");
   const claimIds = unique(analysis.claims, "claim_id", "analysis.claims");
+  for (const paragraph of analysis.proposed_body || []) for (const ref of paragraph.claim_refs) if (!claimIds.has(ref)) fail(`analysis.proposed_body: nonexistent claim ${ref}`);
   for (const claim of analysis.claims) for (const ref of claim.source_refs) if (!sourceIds.has(ref)) fail(`analysis.claims: claim ${claim.claim_id} references nonexistent source ${ref}`);
   for (const source of analysis.sources) for (const ref of source.claims_supported) if (!claimIds.has(ref)) fail(`analysis.sources: source ${source.source_id} references nonexistent claim ${ref}`);
   for (const conflict of analysis.source_conflicts) for (const ref of conflict.source_refs) if (!sourceIds.has(ref)) fail(`analysis.source_conflicts: conflict ${conflict.conflict_id} references nonexistent source ${ref}`);

@@ -4,6 +4,7 @@ import {
   markAnalysisFailed, markAnalysisRetrying, markIntakeAnalyzing,
 } from "./persistence.js";
 import { AnalysisFailure, retrieveSource, sha256 } from "./source-retrieval.js";
+import { expandPrimaryRecords } from "./primary-source-expansion.js";
 
 const MAIN_QUEUE = "sbns-analysis-staging";
 const DLQ = "sbns-analysis-dlq-staging";
@@ -21,6 +22,7 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
   if (!validMessage(message.body)) { message.ack(); return { outcome: "invalid_message" }; }
   const { job_id: jobId, intake_id: intakeId } = message.body;
   const retrieve = dependencies.retrieveSource ?? retrieveSource;
+  const expand = dependencies.expandPrimaryRecords ?? expandPrimaryRecords;
   const analyze = dependencies.analyzeIntake ?? analyzeIntake;
   const job = await getAnalysisJob(env, jobId);
   if (!job || job.intake_id !== intakeId || ["complete", "dead_letter", "failed"].includes(job.state)) { message.ack(); return { outcome: "noop" }; }
@@ -31,20 +33,29 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
   if (!intake) { await markAnalysisFailed(env, jobId, intakeId, timestamp(), "missing_intake", "Intake no longer exists."); message.ack(); return { outcome: "failed" }; }
   try {
     const evidence = await retrieve(intake.submitted_url, env, dependencies.retrievalOptions);
-    const source = { id: id("source"), intake_id: intakeId, url: evidence.finalUrl, normalized_url: evidence.normalizedUrl, name: evidence.title || new URL(evidence.finalUrl).hostname, source_type: "other", verification_status: "unverified", fetched_at: timestamp(), content_hash: await sha256(evidence.text), source_title: evidence.title, extracted_text: evidence.text, extraction_format: evidence.extractionFormat === "markdown" ? "text" : evidence.extractionFormat, created_at: timestamp() };
-    const analysis = await analyze({ intake, source: { ...evidence, sourceId: "source-1" }, evidence, env });
-    const materialClaims = analysis.claims.filter((claim) => claim.material);
-    if (materialClaims.some((claim) => claim.verification_status === "disputed")) source.verification_status = "disputed";
-    else if (materialClaims.length && materialClaims.every((claim) => ["verified", "verified_with_qualification"].includes(claim.verification_status))) {
-      source.verification_status = materialClaims.some((claim) => claim.verification_status === "verified_with_qualification")
-        ? "verified_with_qualification" : "verified";
-    }
+    const expansion = await expand(evidence, env, dependencies.retrievalOptions);
+    const materials = [evidence, ...expansion.records];
+    const analysis = await analyze({ intake, source: { ...evidence, sourceId: "source-1" }, evidence, additionalSources: expansion.records, env });
+    const sourceMap = new Map();
+    const sources = await Promise.all(materials.map(async (material, index) => {
+      const reference = `source-${index + 1}`;
+      const linkedClaims = analysis.claims.filter((claim) => claim.material && claim.source_refs.includes(reference));
+      const status = linkedClaims.some((claim) => claim.verification_status === "disputed") ? "disputed"
+        : linkedClaims.length && linkedClaims.every((claim) => ["verified", "verified_with_qualification"].includes(claim.verification_status))
+          ? linkedClaims.some((claim) => claim.verification_status === "verified_with_qualification") ? "verified_with_qualification" : "verified"
+          : "unverified";
+      const row = { id: id("source"), intake_id: intakeId, url: material.finalUrl, normalized_url: material.normalizedUrl, name: material.title || new URL(material.finalUrl).hostname,
+        source_type: analysis.sources.find((item) => item.source_id === reference)?.source_type || "other", verification_status: status, fetched_at: timestamp(), content_hash: await sha256(material.text),
+        source_title: material.title, extracted_text: material.text, extraction_format: material.extractionFormat === "markdown" ? "text" : material.extractionFormat, created_at: timestamp() };
+      sourceMap.set(reference, row.id);
+      return row;
+    }));
     const analysisId = id("analysis");
     const claimMap = new Map(analysis.claims.map((claim) => [claim.claim_id, id("claim")]));
     const claims = analysis.claims.map((claim) => ({ id: claimMap.get(claim.claim_id), claim_text: claim.claim_text, material: claim.material, verification_status: claim.verification_status, qualification: claim.qualification }));
-    const links = analysis.claims.flatMap((claim) => claim.source_refs.includes("source-1") ? [{ claim_id: claimMap.get(claim.claim_id) }] : []);
+    const links = analysis.claims.flatMap((claim) => claim.source_refs.map((ref) => ({ claim_id: claimMap.get(claim.claim_id), source_id: sourceMap.get(ref) })).filter((link) => link.source_id));
     const completedAt = timestamp();
-    await completeAnalysis(env, { intakeId, jobId, source, analysisRow: { id: analysisId, schema_version: analysis.schema_version, recommendation: analysis.recommendation, recommendation_confidence: analysis.recommendation_confidence, category: analysis.category, severity: analysis.severity, systemic_failure: analysis.systemic_failure, raw_analysis_json: JSON.stringify(analysis) }, claims, links, timestamp: completedAt });
+    await completeAnalysis(env, { intakeId, jobId, source: sources[0], sources, analysisRow: { id: analysisId, schema_version: analysis.schema_version, recommendation: analysis.recommendation, recommendation_confidence: analysis.recommendation_confidence, category: analysis.category, severity: analysis.severity, systemic_failure: analysis.systemic_failure, raw_analysis_json: JSON.stringify({ ...analysis, source_expansion: { attempted: expansion.attempted, retrieved: expansion.records.map((item) => item.finalUrl), failures: expansion.failures } }) }, claims, links, timestamp: completedAt });
     message.ack(); log("analysis_completed", { job_id: jobId, intake_id: intakeId, recommendation: analysis.recommendation, attempt: job.attempt + 1 });
     return { outcome: "complete", analysis };
   } catch (caught) {

@@ -28,18 +28,19 @@ function resolveMaxTokens(value) {
   return parsed;
 }
 
-export async function analyzeIntake({ intake, source, evidence, env }) {
+export async function analyzeIntake({ intake, source, evidence, additionalSources = [], env }) {
   if (!env.AI_MODEL || !env.AI_GATEWAY_ID) throw new AnalysisFailure("analysis_configuration", "AI_MODEL and AI_GATEWAY_ID are required.", { safeMessage: "Analyzer configuration is incomplete." });
   const maxTokens = resolveMaxTokens(env.AI_MAX_TOKENS);
   let result;
-  try { result = await env.AI.run(env.AI_MODEL, { messages: buildAnalysisMessages({ intake, source, evidence }), response_format: { type: "json_schema", json_schema: analysisSchema }, max_tokens: maxTokens }, { gateway: { id: env.AI_GATEWAY_ID, skipCache: true } }); }
+  try { result = await env.AI.run(env.AI_MODEL, { messages: buildAnalysisMessages({ intake, source, evidence, additionalSources }), response_format: { type: "json_schema", json_schema: analysisSchema }, max_tokens: maxTokens }, { gateway: { id: env.AI_GATEWAY_ID, skipCache: true } }); }
   catch { throw new AnalysisFailure("model_unavailable", "Workers AI request failed.", { retryable: true, safeMessage: "The analyzer is temporarily unavailable." }); }
   const analysis = normalizeModelResponse(result);
-  if (Array.isArray(analysis?.sources) && (analysis.sources.some((item) => item.source_id !== "source-1" || item.url !== source.finalUrl) || analysis.claims?.some((claim) => claim.source_refs?.some((ref) => ref !== "source-1")) || analysis.source_conflicts?.some((conflict) => conflict.source_refs?.some((ref) => ref !== "source-1")))) throw new AnalysisFailure("invented_source_reference", "Analyzer referenced a source that was not supplied.", { safeMessage: "Analyzer returned an invalid source reference." });
+  const allowedSources = new Map([["source-1", source.finalUrl], ...additionalSources.map((item, index) => [`source-${index + 2}`, item.finalUrl])]);
+  if (Array.isArray(analysis?.sources) && (analysis.sources.some((item) => allowedSources.get(item.source_id) !== item.url) || analysis.claims?.some((claim) => claim.source_refs?.some((ref) => !allowedSources.has(ref))) || analysis.source_conflicts?.some((conflict) => conflict.source_refs?.some((ref) => !allowedSources.has(ref))) || analysis.proposed_sources?.some((item) => ![...allowedSources.values()].includes(item.url)))) throw new AnalysisFailure("invented_source_reference", "Analyzer referenced a source that was not supplied.", { safeMessage: "Analyzer returned an invalid source reference." });
   const request = { schema_version: "1.0", submitted_url: intake.submitted_url, submitted_at: intake.submitted_at };
   try { validateAnalysis(request, analysis, analysisSchema, "analysis"); }
   catch (error) { throw new AnalysisFailure("invalid_model_output", error.message, { safeMessage: "Analyzer returned invalid structured output." }); }
   if (analysis.intake_id !== intake.id || analysis.intake_origin !== intake.origin) throw new AnalysisFailure("invalid_model_output", "Analyzer did not preserve intake metadata.", { safeMessage: "Analyzer returned invalid structured output." });
-  if (evidence.truncated && !analysis.qualification_required) throw new AnalysisFailure("semantic_validation", "Truncated evidence requires qualification.", { safeMessage: "Analyzer did not preserve required qualifications." });
+  if ((evidence.truncated || evidence.text.length > 35_000 || additionalSources.some((item) => item.truncated || item.text.length > 12_000)) && !analysis.qualification_required) throw new AnalysisFailure("semantic_validation", "Truncated evidence requires qualification.", { safeMessage: "Analyzer did not preserve required qualifications." });
   return analysis;
 }

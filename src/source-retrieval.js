@@ -65,9 +65,10 @@ function boundedEvidence(text) {
   return { text: `${text.slice(0, 180_000)}${marker}${text.slice(-(EVIDENCE_LIMIT - 180_000 - marker.length))}`, truncated: true };
 }
 
-export async function retrieveSource(submittedUrl, env, { fetchImpl = fetch, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
+export async function retrieveSource(submittedUrl, env, { fetchImpl = fetch, timeoutMs = FETCH_TIMEOUT_MS, allowHost = null } = {}) {
   let current = validateSourceUrl(submittedUrl); let redirects = 0; let response;
   while (true) {
+    if (allowHost && !allowHost(current.hostname)) throw new AnalysisFailure("source_host_not_allowed", "Source host is outside the approved retrieval scope.", { safeMessage: "The linked source redirected outside the approved public-record scope." });
     const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
     try { response = await fetchImpl(current.href, { method: "GET", headers: { Accept: "text/html,text/plain,application/pdf,application/xml,text/xml,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.oasis.opendocument.text,application/vnd.oasis.opendocument.spreadsheet", "User-Agent": "SBNS-Editorial-Research/1.0" }, cache: "no-store", redirect: "manual", signal: controller.signal }); }
     catch (error) { if (error?.name === "AbortError") throw new AnalysisFailure("source_timeout", "Source fetch timed out.", { retryable: true, safeMessage: "Source timed out." }); throw new AnalysisFailure("source_network", "Source fetch failed.", { retryable: true, safeMessage: "The source is temporarily unavailable." }); }

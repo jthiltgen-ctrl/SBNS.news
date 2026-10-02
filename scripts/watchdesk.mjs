@@ -286,6 +286,11 @@ async function test() {
 
   const strongCase = fixture(data, "strong-gao-style-candidate");
   const strong = await buildCandidate(strongCase.item, source(strongCase.source_id), FIXED_NOW, "run_test");
+  const longPrefix = `${strongCase.item.record_summary} ${"Synthetic supporting detail. ".repeat(70)}`;
+  const longerA = await buildCandidate({ ...strongCase.item, record_summary: `${longPrefix} First later note.` }, source(strongCase.source_id), FIXED_NOW, "run_test");
+  const longerB = await buildCandidate({ ...strongCase.item, record_summary: `${longPrefix} Different later note.` }, source(strongCase.source_id), FIXED_NOW, "run_test");
+  pass(longerA.content_fingerprint === longerB.content_fingerprint && longerA.record_summary !== longerB.record_summary,
+    "longer Discovery display must not change established Watchdesk dedupe identity for trailing text");
   pass(strong.publication_date === "2026-09-20T00:00:00.000Z", "candidate must retain publication date");
   pass(strong.original_url.includes("utm_source=test") && !strong.normalized_url.includes("utm_"), "candidate must retain original URL while storing a normalized URL");
   pass(strong.primary_record_status === "PRIMARY RECORD REVIEWED" && strong.evidence_review_state === "REVIEWED" && Boolean(strong.primary_record_url), "reviewed record must have a distinct location and review state");

@@ -1,5 +1,8 @@
 import { verifyAccessRequest, verifyAccessServiceRequest } from "./access-auth.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON } from "./watchdesk-operations.js";
+import { DiscoveryQueryError, searchPublicDiscovery } from "./editorial-search.js";
+import { normalizeStoryUrl } from "./storyqueue.js";
+import { findLatestIntakeBySubmittedUrl } from "./storyqueue-persistence.js";
 import { WATCHDESK_SOURCES } from "../watchdesk/source-registry.js";
 import {
   createDecisionWithAudit,
@@ -100,10 +103,12 @@ function audit(actor, action, entityId, createdAt, metadata = {}) {
 
 async function createIntake(request, env, actor) {
   const body = await readJson(request);
-  const submittedUrl = validateUrl(body.submitted_url);
+  const submittedUrl = normalizeStoryUrl(validateUrl(body.submitted_url));
   const submitterNote = optionalString(body.submitter_note, "submitter_note", MAX_NOTE);
   const context = await idempotencyContext(request, env, actor, "intake.create", { submitted_url: submittedUrl, submitter_note: submitterNote });
   if (context.replay) return context.replay;
+  const existing = await findLatestIntakeBySubmittedUrl(env, submittedUrl);
+  if (existing) return json({ ok: true, intake: existing, duplicate: true, queued: existing.analysis_status === "queued", message: "This URL already has a Story File. Open the existing record instead of creating a duplicate." });
   const createdAt = now();
   const intake = { id: opaqueId("intake"), origin: "editor", submitted_url: submittedUrl, submitted_at: createdAt, submitter_note: submitterNote, status: "submitted", analysis_status: "not_started", created_at: createdAt, updated_at: createdAt };
   const job = { id: opaqueId("job"), intake_id: intake.id, job_type: "intake_analysis", state: "pending_enqueue", attempt: 0, created_at: createdAt, updated_at: createdAt };
@@ -275,6 +280,13 @@ async function route(request, env, actor, executeWatchdesk) {
   if (request.method === "GET" && url.pathname === "/api/admin/session") return json({ ok: true, actor: { role: "editor", email: actor.email } });
   if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/status") return json({ ok: true, schedule_configured: true, cron_utc: WATCHDESK_CRON, ...await getWatchdeskStatus(env) });
   if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/sources") return json({ ok: true, ...await listWatchdeskSources(env) });
+  if (request.method === "GET" && url.pathname === "/api/admin/discovery/search") {
+    try { return json({ ok: true, authority: "discovery_lead_only", results: await searchPublicDiscovery(url.searchParams.get("q")) }); }
+    catch (error) {
+      if (error instanceof DiscoveryQueryError) throw new ApiError(400, "INVALID_DISCOVERY_QUERY", error.message);
+      throw new ApiError(503, "DISCOVERY_UNAVAILABLE", "Public discovery search is unavailable; no intake was created.");
+    }
+  }
   if (request.method === "POST" && url.pathname === "/api/admin/watchdesk/runs") return runWatchdesk(request, env, actor, executeWatchdesk);
   const sourceDecision = url.pathname.match(/^\/api\/admin\/watchdesk\/source-candidates\/([^/]+)\/decision$/);
   if (sourceDecision && request.method === "POST") return decideWatchdeskSource(request, env, actor, decodeURIComponent(sourceDecision[1]));
