@@ -197,10 +197,112 @@ The suite uses only isolated SQLite memory migrated through v5 and fabricated
 fixtures; `npm run echo:check` exercises pure contracts and `npm run echo:test`
 exercises the full orchestration. Both are included in `npm run check`.
 
-## Next boundary
+## PR B handoff boundary
 
-PR C may add bounded public-source discovery and historical-context adapters
-that produce these validated inputs. Live source access, model use, scheduling,
-and any production Echo execution each require separate authorization. PR B
-adds no migration 0006, remote D1 operation, Cloudflare resource, or live
-Newsroom integration.
+PR C was the separately authorized next step for bounded public-source
+discovery and historical-context adapters. PR B itself added no migration 0006,
+remote D1 operation, Cloudflare resource, or live Newsroom integration. Its
+deterministic candidate, hash, gate, retry, and human-authority contracts remain
+unchanged by the adapter layer described below.
+
+## PR C — development-only public-source adapters
+
+PR C adds small, source-specific adapters for the [Library of Congress (LOC)
+JSON API](https://www.loc.gov/apis/json-and-yaml/requests/endpoints/) and the
+[Smithsonian Open Access API](https://www.si.edu/openaccess/devtools). The
+purpose is to demonstrate a narrow sequence: public catalog search → bounded
+normalized discovery record → separately checked historical/context metadata →
+inputs compatible with `echo-candidate-v1`. Neither catalog search nor a
+verified metadata record is a complete Echo candidate. The adapters do not
+judge the analogy, establish contemporary evidence, clear rights for a proposed
+use, make a human FEATURE/HOLD/REJECT decision, or publish anything.
+
+### Source authority and limits of proof
+
+| Adapter | Why it is present and what it can establish | What it cannot establish |
+| --- | --- | --- |
+| LOC | Finds music, manuscripts, photographs, newspapers, posters, and other historical objects. An item record can support identity, cataloged creator/date, collection provenance, and original-context details **when the record actually supplies them**. LOC documents separate [search and item responses](https://www.loc.gov/apis/json-and-yaml/responses/item-and-resource/). | A search hit is not a checked context source. Sparse catalog metadata cannot establish creator intent, a modern analogy, or rights to reproduce the work. LOC documents [request/page limits and incomplete search-hit metadata](https://www.loc.gov/apis/json-and-yaml/working-within-limits/); absence from its API is not evidence that an artifact does not exist. |
+| Smithsonian | Finds art, objects, photography, and cultural/historical collection records. A detailed collection record can support identity, curator-supplied context, accession/provenance, and explicit reuse metadata when present. Its [developer tools](https://www.si.edu/openaccess/devtools) describe the public API and key registration. | An Open Access search result does not prove an interpretation, a modern analogy, creator intent, or unrestricted reuse of every associated asset. Smithsonian [terms](https://www.si.edu/termsofuse) and [FAQ](https://www.si.edu/openaccess/faq) caution that third-party and other rights can survive even where a record or asset carries a CC0 designation. |
+
+`contextAuthority` is attached only to a source's support for an **original
+historical-context claim**. These first adapters conservatively assign
+`limited` to catalog descriptions, even when the institution holds the original
+artifact. A later, claim-specific primary work or reliable scholarly source
+could justify `primary` or `scholarly`; the adapter does not award a global
+authority grade to an artifact or candidate. Creator intent stays
+`not_claimed`: catalog description does not prove it. Missing creator, date, or
+original context is kept missing, never filled by inference. A record without
+sufficient historical context is marked insufficient for the downstream
+context gate.
+
+### Retrieval and normalization boundary
+
+The query input is one to three concise caller-supplied search terms (at most
+80 characters each) plus optional record-ID exclusions. It is not the full newsroom brief,
+and PR C uses no model to generate search terms. Each source adapter makes
+metadata-first requests to its own explicit HTTPS API family. It does not
+follow arbitrary result links, retrieve full books, articles, lyrics,
+transcripts, high-resolution images, audio, or video, or offer a general URL
+fetcher. Requests have a maximum of 10 returned records per adapter/query,
+one search-results page, at most 20 normalized results for the combined LOC and
+Smithsonian pass, an eight-second timeout, and capped response bytes. Redirects
+outside the fixed approved endpoint contract are rejected rather than
+followed; non-HTTPS, credentialed, localhost/private-network, and alternate
+host requests are not accepted; all HTTP redirects are rejected. Catalog
+links to `*.si.edu` are normalized as metadata with query/fragment removed,
+but never followed or fetched. LOC newspaper item IDs may contain up to four
+bounded path segments under `/item/`; they cannot select another endpoint.
+A rate limit or outage stops that source's
+attempt rather than beginning an aggressive retry or wider crawl.
+
+Normalized discovery records retain only concise catalog metadata: adapter,
+stable record ID/canonical URL, title, known creator/date, artifact type, a
+short description, source/provenance identity, retrieval time, explicit
+rights/license statement if supplied, and cultural-protocol signal. They do
+not persist source-native response blobs or complete works. Cross-adapter
+deduplication uses strong canonical record IDs/URLs or a clearly shared stable
+identifier, not fuzzy title similarity. Uncertain matches remain separate.
+Verification is a distinct item-detail step: an unverified search hit must not
+be passed off as an editor-ready historical source. Smithsonian original
+context requires a substantive note explicitly labeled `historical context`,
+`curatorial description`, or `context`; a long rights or administrative note
+does not qualify.
+
+Rights normalization is conservative. Explicit public-domain or open-license
+catalog statements are preserved as record-scoped hints, not blanket rights for
+every image, excerpt, or proposed use; a missing statement
+is `unknown` or `link_metadata_only`, never assumed public domain. No adapter
+decides fair use or reproduction permission for a proposed excerpt, image, or
+other asset. Protocol signals are independent of copyright: explicit
+community/Indigenous, ceremonial, sacred-object, human-remains, or similar
+use cautions are retained as restrictions, and missing or ambiguous protocol
+information remains unresolved rather than automatically cleared. The
+byte-capped response is scanned for cautions beyond the first few notes; only
+one short signal is retained. A
+protocol-unclear candidate must satisfy PR B's deterministic cultural-protocol
+gate before readiness.
+
+### Tests, live smoke, and downstream handoff
+
+`echo:sources:check` and `echo:sources:test` run deterministic offline fixtures
+inside `npm run check`. The separate, opt-in `echo:sources:smoke` command is a
+small development-time read-only query against the approved public endpoints;
+it is not part of ordinary validation or deployment CI. The Smithsonian API
+uses a development API key registered through its public developer portal; if
+none is available, the Smithsonian live smoke is skipped rather than placing a
+credential in source, logs, or a repository file. Smoke output is concise
+metadata/status only, with no persistence, full-content dump, or live Echo
+orchestration.
+
+Captured normalized records can supply artifact identity and a claim-specific
+historical/context source for a **local synthetic** `echo-candidate-v1` handoff.
+They cannot supply the Analogy Truth Test, linked contemporary evidence,
+independent rights review, prior-use judgment, or human decision. In short:
+
+> Search result ≠ verified context ≠ valid analogy ≠ publication decision.
+
+PR C adds no migration, production D1 access, Queue, Worker, API, UI, schedule,
+model call, live Newsroom integration, public `WE WERE WARNED` route, or
+publication authority. After source-adapter review, a bounded execution
+service and Newsroom integration are separate decisions, not an automatic
+consequence of these adapters.
