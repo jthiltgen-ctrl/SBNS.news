@@ -42,7 +42,7 @@
             <label for="queue-search">Search loaded assignments</label>
             <input id="queue-search" type="search" autocomplete="off" placeholder="Title, institution, topic, URL…">
             <label for="status-filter">Workflow state</label>
-            <select id="status-filter"><option value="">All states</option><option value="submitted">Submitted</option><option value="queued">Queued</option><option value="analyzing">Analyzing</option><option value="review_ready">Review ready</option><option value="failed">Failed</option><option value="held">Held</option><option value="rejected">Rejected</option><option value="approved">Approved</option></select>
+            <select id="status-filter"><option value="active" selected>Active · except rejected</option><option value="">All states</option><option value="submitted">Submitted</option><option value="queued">Queued</option><option value="analyzing">Analyzing</option><option value="review_ready">Review ready</option><option value="failed">Failed</option><option value="held">Held</option><option value="rejected">Rejected</option><option value="approved">Approved</option></select>
             <label for="origin-filter">Origin</label>
             <select id="origin-filter"><option value="">All origins</option><option value="editor">Editor</option><option value="visitor">Visitor</option><option value="monitor">Monitor</option><option value="discovery">Discovery</option></select>
           </div>
@@ -63,6 +63,11 @@
           <div class="wire-cadence"><span>Scheduled cadence</span><strong id="watchdesk-cadence">—</strong></div>
           <div class="watchdesk-controls"><button id="watchdesk-dry" class="diagnostic-action" type="button">TEST SCAN <small>Dry run · no intake writes</small></button><button id="watchdesk-live" class="live-action" type="button">RUN WATCHDESK LIVE <small>Up to five discovery intakes</small></button></div>
           <div id="watchdesk-result" role="status" aria-live="polite"></div>
+          <details class="wire-details"><summary>Search beyond the monitored cohort</summary>
+            <p>Search results are discovery leads, not verified evidence or approved Watchdesk sources. An editor may add a selected public URL to the existing Story File pipeline.</p>
+            <form id="discovery-search-form"><label for="discovery-search-query">Public accountability search terms</label><input id="discovery-search-query" type="search" minlength="4" maxlength="120" required placeholder="institution and accountability issue"><button type="submit">Search public reporting</button></form>
+            <div id="discovery-search-status" role="status" aria-live="polite"></div><div id="discovery-search-results"></div>
+          </details>
           <details class="wire-details"><summary>Source health &amp; run metrics</summary><div id="watchdesk-metrics"></div><div id="watchdesk-sources"></div></details>
           <details class="wire-details" open><summary>Source portfolio &amp; learned candidates</summary><div id="watchdesk-source-portfolio"></div></details>
           <details class="wire-details" open><summary>Story Queue email</summary><div id="storyqueue-email-status">Loading Story Queue status…</div></details>

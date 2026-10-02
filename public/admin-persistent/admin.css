@@ -149,6 +149,10 @@ textarea { min-height: 8rem; resize: vertical; }
 .field-grid .wide { grid-column: 1 / -1; }
 .discovery-panel { border-left: 5px solid var(--wire); }
 .discovery-panel .section-label { color: var(--wire); }
+.discovery-inspected, .editorial-read { margin: 1rem 0; padding: .85rem; background: var(--paper); border-top: 2px solid var(--wire); }
+.discovery-inspected details summary { cursor: pointer; font-weight: 700; min-height: 44px; }
+.inspected-full { white-space: pre-wrap; overflow-wrap: anywhere; }
+.editorial-read { border-top-color: var(--red); }
 .warning { border-left: 4px solid var(--red); background: #f9e9e6; color: #751218; padding: .7rem .8rem; font-size: .93rem; font-weight: 700; }
 .analysis-panel { border-left: 5px solid var(--red); }
 .analysis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; }
@@ -170,6 +174,10 @@ textarea { min-height: 8rem; resize: vertical; }
 .proposal-panel .section-label { color: var(--muted); }
 .draft-card { border-left: 4px solid var(--ink); background: #fff; margin: .7rem 0; padding: .85rem; }
 .draft-card.latest { border-left-color: var(--red); }
+.draft-zero { border: 2px dashed var(--red); background: #fff; padding: .9rem; margin: .8rem 0; }
+.draft-zero h4 { font: 600 1.2rem Lora, Georgia, serif; margin: .5rem 0; }
+.draft-citations { display: flex; flex-wrap: wrap; gap: .6rem; }
+.claim-provenance { border-top: 1px solid var(--rule); padding-top: .35rem; }
 .draft-card h3 { margin: .25rem 0; font: 600 1.2rem Lora, Georgia, serif; letter-spacing: normal; text-transform: none; }
 .revision-label { color: var(--red); font-size: .78rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .copy-editor { background: #f8f3e9; }
@@ -256,3 +264,6 @@ textarea { min-height: 8rem; resize: vertical; }
 .source-learning-card button { width: 100%; border: 1px solid #8f8274; background: #f2ede3; color: #201c19; padding: .45rem .55rem; font: 700 .82rem 'Barlow Condensed', Arial, sans-serif; text-align: left; }
 .semantics-panel { border-top: 5px solid var(--wire); }
 .semantics-panel .warning { border-left-color: var(--wire); }
+.echo-panel { border-top: 5px solid var(--amber); }
+.echo-candidate { border-top: 1px solid var(--rule); padding: .8rem 0; overflow-wrap: anywhere; }
+.echo-candidate h3 { margin: .2rem 0 .6rem; }

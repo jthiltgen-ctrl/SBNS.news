@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { verifyConsumer, verifyVersion } from "./verify-analysis-deployment.mjs";
+
+const workflow = await readFile(new URL("../.github/workflows/deploy-analysis.yml", import.meta.url), "utf8");
+const config = JSON.parse(await readFile(new URL("../wrangler.analysis.jsonc", import.meta.url), "utf8"));
+const sha = "a".repeat(40);
+const deployment = { id: "new-deployment", versions: [{ version_id: "version-1", percentage: 100 }] };
+const version = { id: "version-1", resources: { bindings: [{ name: "SBNS_ANALYSIS_BUILD_SHA", type: "plain_text", text: sha }] } };
+assert.equal(verifyVersion({ beforeId: "old-deployment", deployment, version, expectedSha: sha }), "version-1");
+assert.throws(() => verifyVersion({ beforeId: "new-deployment", deployment, version, expectedSha: sha }), /No new analysis deployment/);
+assert.throws(() => verifyVersion({ beforeId: "old-deployment", deployment, version, expectedSha: "b".repeat(40) }), /build SHA/);
+assert.throws(() => verifyVersion({ beforeId: "old-deployment", deployment: { ...deployment, versions: [{ version_id: "version-1", percentage: 50 }] }, version, expectedSha: sha }), /100%/);
+assert.equal(verifyVersion({ beforeId: "old-deployment", deployment, version: { ...version, resources: { bindings: { SBNS_ANALYSIS_BUILD_SHA: { type: "plain_text", text: sha } } } }, expectedSha: sha }), "version-1");
+verifyConsumer([{ script_name: "sbns-analysis" }]);
+assert.throws(() => verifyConsumer([{ script_name: "unrelated" }]), /not attached/);
+assert.match(workflow, /push:\s*\n\s*branches:\s*\n\s*- main/);
+assert.match(workflow, /environment: staging/);
+assert.match(workflow, /wrangler deploy --config wrangler\.analysis\.jsonc --dry-run/);
+assert.match(workflow, /SBNS_ANALYSIS_BUILD_SHA:\$\{GITHUB_SHA\}/);
+assert.match(workflow, /verify-analysis-deployment\.mjs verify/);
+assert.match(workflow, /queues consumer worker list sbns-analysis-staging --json/);
+assert.doesNotMatch(workflow, /migrations apply|watchdesk:dry-run|storyqueue:smoke|publish:prepare/);
+assert.doesNotMatch(workflow, /public\/styles\.css|public\/admin-persistent\/\*\*/);
+assert.equal(config.name, "sbns-analysis");
+assert.ok(config.queues.consumers.some((item) => item.queue === "sbns-analysis-staging"));
+assert.ok(config.queues.producers.some((item) => item.binding === "ANALYSIS_QUEUE" && item.queue === "sbns-analysis-staging"));
+console.log("Analysis deployment contract passed: main-only scoped workflow, dry-run, build-SHA readback, queue consumer checks, and no migration step.");

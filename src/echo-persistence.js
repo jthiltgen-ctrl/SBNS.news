@@ -45,13 +45,55 @@ export async function createEchoPacket(env, { id, issueKey, evidenceSnapshotHash
   statements.push(db.prepare(`UPDATE echo_packets SET superseded_at = ?, updated_at = ?
     WHERE issue_key = ? AND id != ? AND superseded_at IS NULL`).bind(at, at, issueKey, id));
   statements.push(auditStatement(db, { action: "echo.issue_brief_created", entityType: "echo_packet", entityId: id,
-    actorType: "editor", actorId: createdBy, at, metadata: { issue_key: issueKey, evidence_snapshot_hash: evidenceSnapshotHash } }));
+    actorType: createdBy.startsWith("system:") ? "system" : "editor", actorId: createdBy, at,
+    metadata: { issue_key: issueKey, evidence_snapshot_hash: evidenceSnapshotHash } }));
   await db.batch(statements);
   return db.prepare("SELECT * FROM echo_packets WHERE id = ?").bind(id).first();
 }
 
 export async function getEchoPacket(env, packetId) {
   return database(env).prepare("SELECT * FROM echo_packets WHERE id = ?").bind(packetId).first();
+}
+
+export async function getEchoStoryState(env, intakeId) {
+  const db = database(env);
+  const packet = await db.prepare(`SELECT packet.* FROM echo_packets AS packet
+    JOIN echo_packet_intakes AS linked ON linked.packet_id = packet.id
+    WHERE linked.intake_id = ? AND linked.intake_role = 'primary' AND packet.superseded_at IS NULL
+    ORDER BY packet.created_at DESC, packet.id DESC LIMIT 1`).bind(intakeId).first();
+  if (!packet) return null;
+  const rows = async (sql) => (await db.prepare(sql).bind(packet.id).all()).results;
+  return { packet,
+    package_binding: await db.prepare(`SELECT id, created_at FROM audit_events
+      WHERE action = 'echo.candidate_package_bound' AND entity_type = 'echo_packet' AND entity_id = ?
+      ORDER BY created_at, id LIMIT 1`).bind(packet.id).first(),
+    jobs: await rows("SELECT * FROM echo_jobs WHERE packet_id = ? ORDER BY created_at, id"),
+    candidates: await rows("SELECT * FROM echo_candidates WHERE packet_id = ? ORDER BY editor_ready_slot, id"),
+    assessments: await rows("SELECT * FROM echo_candidate_assessments WHERE packet_id = ? ORDER BY candidate_id, revision"),
+    sources: await rows("SELECT * FROM echo_candidate_sources WHERE packet_id = ? ORDER BY candidate_id, id"),
+    rights: await rows("SELECT * FROM echo_rights_assessments WHERE packet_id = ? ORDER BY candidate_id, revision"),
+    decisions: await rows("SELECT * FROM echo_decisions WHERE packet_id = ? ORDER BY decided_at, id"),
+    evaluations: await rows(`SELECT audit.* FROM audit_events AS audit JOIN echo_candidates AS candidate
+      ON candidate.id = audit.entity_id WHERE candidate.packet_id = ?
+      AND audit.entity_type = 'echo_candidate' AND audit.action = 'echo.candidate_evaluated' ORDER BY audit.created_at, audit.id`),
+  };
+}
+
+// Search only other issues: a partially persisted attempt for the current
+// issue must not change its own candidate-package digest on retry.
+export async function getEchoPriorUse(env, canonicalArtifactId, issueKey) {
+  const row = await database(env).prepare(`SELECT COUNT(*) AS considered,
+    COALESCE(SUM(EXISTS(SELECT 1 FROM echo_decisions AS decision
+      WHERE decision.candidate_id = candidate.id AND decision.decision = 'feature')), 0) AS featured,
+    COALESCE(SUM(EXISTS(SELECT 1 FROM echo_decisions AS decision
+      WHERE decision.candidate_id = candidate.id AND decision.decision = 'reject')), 0) AS rejected
+    FROM echo_candidates AS candidate JOIN echo_packets AS packet ON packet.id = candidate.packet_id
+    WHERE candidate.canonical_artifact_id = ? AND packet.issue_key <> ?`)
+    .bind(canonicalArtifactId, issueKey).first();
+  if (Number(row?.featured)) return { status: "previously_featured" };
+  if (Number(row?.rejected)) return { status: "previously_rejected" };
+  if (Number(row?.considered)) return { status: "previously_considered" };
+  return { status: "never_seen" };
 }
 
 // Read-only views for the synthetic orchestrator. Writes still pass through the
@@ -247,7 +289,7 @@ export async function createEchoRightsAssessment(env, rights) {
         rights.candidateId, rights.assetType, rights.assetIdentifier, rights.proposedUse, at,
         rights.candidateId, rights.assetType, rights.assetIdentifier, rights.proposedUse),
     auditStatement(db, { action: "echo.rights_checked", entityType: "echo_candidate", entityId: rights.candidateId,
-      actorType: "editor", actorId: rights.reviewedBy, at,
+      actorType: rights.reviewedBy.startsWith("system:") ? "system" : "editor", actorId: rights.reviewedBy, at,
       metadata: { rights_id: rights.id, asset_type: rights.assetType, status: rights.status } }),
   ]);
   return db.prepare("SELECT * FROM echo_rights_assessments WHERE id = ?").bind(rights.id).first();

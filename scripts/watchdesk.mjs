@@ -95,7 +95,7 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     const realD1Options = { registry: registryFor(strongCase.source_id), discoverSource: discovery(strongCase.item), now: () => FIXED_NOW };
     const realFirst = await runWatchdeskOperation(env, { runId: "ops_real_d1", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:10.000Z", scanOptions: realD1Options });
     pass(realFirst.metrics.submitted_to_newsroom === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1, "live path must create exactly one discovery intake using D1");
-    pass(sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs").get().count === 0, "Watchdesk live path must not start formal analysis");
+    pass(sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs WHERE state = 'pending_enqueue'").get().count === 1, "a submission-ready Watchdesk intake durably creates an analysis job; an unavailable queue leaves it retryable");
     const ignoredDuplicate = await runWatchdeskOperation(env, { runId: "ops_ignored_duplicate", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: { ...realD1Options, lookupDiscovery: async () => [] } });
     const ignoredLedger = sqlite.prepare("SELECT submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = 'ops_ignored_duplicate'").get();
     pass(ignoredDuplicate.metrics.submitted_to_newsroom === 0 && ignoredDuplicate.metrics.duplicates_known === 1 && ignoredLedger.submitted_count === 0 && ignoredLedger.submitted_ids_json === "[]" && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE action = 'watchdesk.candidate_submitted'").get().count === 1, "ignored duplicate insert must not create an intake or audit or change the ledger");
@@ -286,6 +286,11 @@ async function test() {
 
   const strongCase = fixture(data, "strong-gao-style-candidate");
   const strong = await buildCandidate(strongCase.item, source(strongCase.source_id), FIXED_NOW, "run_test");
+  const longPrefix = `${strongCase.item.record_summary} ${"Synthetic supporting detail. ".repeat(70)}`;
+  const longerA = await buildCandidate({ ...strongCase.item, record_summary: `${longPrefix} First later note.` }, source(strongCase.source_id), FIXED_NOW, "run_test");
+  const longerB = await buildCandidate({ ...strongCase.item, record_summary: `${longPrefix} Different later note.` }, source(strongCase.source_id), FIXED_NOW, "run_test");
+  pass(longerA.content_fingerprint === longerB.content_fingerprint && longerA.record_summary !== longerB.record_summary,
+    "longer Discovery display must not change established Watchdesk dedupe identity for trailing text");
   pass(strong.publication_date === "2026-09-20T00:00:00.000Z", "candidate must retain publication date");
   pass(strong.original_url.includes("utm_source=test") && !strong.normalized_url.includes("utm_"), "candidate must retain original URL while storing a normalized URL");
   pass(strong.primary_record_status === "PRIMARY RECORD REVIEWED" && strong.evidence_review_state === "REVIEWED" && Boolean(strong.primary_record_url), "reviewed record must have a distinct location and review state");
@@ -432,7 +437,7 @@ async function test() {
   pass(invalidResponse.status === 400, "on-demand API must reject capabilities outside its bounded contract");
 
   const implementation = await readFile(path.join(ROOT, "src", "watchdesk.js"), "utf8");
-  pass(!/ANALYSIS_QUEUE|insertPublicationAttempt|sendEmail|mailto:|content\/stories/.test(implementation), "Watchdesk must not queue formal analysis, publish, contact subjects, or write story source files");
+  pass(/ANALYSIS_QUEUE/.test(implementation) && !/insertPublicationAttempt|sendEmail|mailto:|content\/stories/.test(implementation), "only submitted Watchdesk intakes may enter formal analysis; Watchdesk must not publish, contact subjects, or write story files");
   const adminUi = await readFile(path.join(ROOT, "public", "admin-persistent", "admin.js"), "utf8");
   pass(["Evidence review state", "Primary-record location", "Topic", "Accountable institution", "Job / expectation", "Observed condition", "Accountability gap", "Submission readiness", "Accountability pathway", "accountableInstitution(candidate)"].every((label) => adminUi.includes(label)), "admin candidate view must expose evidence, actor, optional classic-gap elements, readiness, and accountability pathway separately");
   pass(adminUi.includes('candidate.schema_version==="1.2"') && adminUi.includes("Unverified (legacy candidate)"), "legacy topic-like institution metadata must not be relabeled as a verified accountable actor");

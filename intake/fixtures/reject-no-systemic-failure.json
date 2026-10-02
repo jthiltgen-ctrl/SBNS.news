@@ -55,6 +55,9 @@
         "conflict": false
       }
     ],
+    "claim_source_relationships": [
+      { "claim_id": "claim-isolated-rudeness", "source_id": "synthetic-incident-account", "relation": "supports", "explanation": "The synthetic account describes the isolated interaction only." }
+    ],
     "source_conflicts": [],
     "observed_condition": "One synthetic public employee behaved rudely in one isolated incident.",
     "attributable_failure": null,
@@ -72,6 +75,10 @@
     "kicker_target": null,
     "kicker_safety": "not_applicable",
     "why_sbns": "The isolated conduct does not establish a broader institutional nexus, recurring pattern, displaced burden, public-resource issue, accountability gap, or other consequential SBNS accountability condition.",
+    "echo_eligible": false,
+    "echo_rationale": "Rejected material cannot initiate cultural research.",
+    "echo_search_terms": [],
+    "echo_issue": null,
     "do_not_claim": [
       "Do not generalize one employee’s synthetic isolated conduct into a policy, practice, or supervisory failure."
     ],

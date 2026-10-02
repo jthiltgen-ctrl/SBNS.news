@@ -1,6 +1,11 @@
 import { verifyAccessRequest, verifyAccessServiceRequest } from "./access-auth.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON } from "./watchdesk-operations.js";
+import { DiscoveryQueryError, searchPublicDiscovery } from "./editorial-search.js";
+import { normalizeStoryUrl } from "./storyqueue.js";
+import { findLatestIntakeBySubmittedUrl } from "./storyqueue-persistence.js";
 import { WATCHDESK_SOURCES } from "../watchdesk/source-registry.js";
+import { createEchoDecision, getEchoStoryState } from "./echo-persistence.js";
+import { echoEligible } from "./echo-runtime.js";
 import {
   createDecisionWithAudit,
   createDraftWithAudit,
@@ -19,6 +24,7 @@ import {
   decideWatchdeskSourceCandidate,
   markAnalysisJobQueued,
   recordAnalysisRetryWithAudit,
+  recordEchoRequestWithAudit,
   updateIdempotencyResponse,
 } from "./persistence.js";
 
@@ -100,10 +106,12 @@ function audit(actor, action, entityId, createdAt, metadata = {}) {
 
 async function createIntake(request, env, actor) {
   const body = await readJson(request);
-  const submittedUrl = validateUrl(body.submitted_url);
+  const submittedUrl = normalizeStoryUrl(validateUrl(body.submitted_url));
   const submitterNote = optionalString(body.submitter_note, "submitter_note", MAX_NOTE);
   const context = await idempotencyContext(request, env, actor, "intake.create", { submitted_url: submittedUrl, submitter_note: submitterNote });
   if (context.replay) return context.replay;
+  const existing = await findLatestIntakeBySubmittedUrl(env, submittedUrl);
+  if (existing) return json({ ok: true, intake: existing, duplicate: true, queued: existing.analysis_status === "queued", message: "This URL already has a Story File. Open the existing record instead of creating a duplicate." });
   const createdAt = now();
   const intake = { id: opaqueId("intake"), origin: "editor", submitted_url: submittedUrl, submitted_at: createdAt, submitter_note: submitterNote, status: "submitted", analysis_status: "not_started", created_at: createdAt, updated_at: createdAt };
   const job = { id: opaqueId("job"), intake_id: intake.id, job_type: "intake_analysis", state: "pending_enqueue", attempt: 0, created_at: createdAt, updated_at: createdAt };
@@ -142,6 +150,60 @@ async function retryAnalysis(request, env, actor, intakeId) {
   if (job === latest) await recordAnalysisRetryWithAudit(env, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
   else await createRetryJobWithAudit(env, job, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
   return json(await enqueueJob(env, intake, job, actor, operation, context.key, pendingBody), 201);
+}
+
+async function requestEchoResearch(request, env, actor, intakeId) {
+  const detail = await getIntakeDetail(env, intakeId);
+  if (!detail) throw new ApiError(404, "NOT_FOUND", "Story File not found.");
+  const analysisRow = detail.analyses.at(-1);
+  const analysis = analysisRow ? JSON.parse(analysisRow.raw_analysis_json) : null;
+  if (detail.intake.status !== "review_ready" || !echoEligible(analysis)) throw new ApiError(409, "ECHO_NOT_ELIGIBLE", "A completed, evidence-backed, Echo-eligible analysis is required.");
+  const currentEcho = await getEchoStoryState(env, intakeId);
+  if (currentEcho?.packet.state === "ready" || currentEcho?.packet.state === "no_echo") throw new ApiError(409, "ECHO_ALREADY_COMPLETED", "The current Echo packet has a terminal result.");
+  if (currentEcho?.packet.state === "open" && currentEcho.jobs.some((job) => job.state !== "failed")) throw new ApiError(409, "ECHO_ALREADY_RUNNING", "An Echo research job is already active.");
+  if (currentEcho?.package_binding) throw new ApiError(409, "ECHO_BOUND_PACKAGE_RETRY", "A failed packet with a frozen candidate package needs forward repair, not a new live search.");
+  const body = await readJson(request);
+  if (Object.keys(body).length) throw new ApiError(400, "VALIDATION_ERROR", "Echo research request body must be empty.");
+  const operation = `echo.research:${intakeId}:${analysisRow.id}`;
+  const context = await idempotencyContext(request, env, actor, operation, {});
+  if (context.replay) return context.replay;
+  const runKey = `manual:${await hash(`${actor.actorId}:${context.key}`)}`;
+  try { await env.ANALYSIS_QUEUE.send({ schema_version: "1", type: "echo_research", intake_id: intakeId,
+    analysis_id: analysisRow.id, run_key: runKey, requested_by: actor.actorId, trigger_type: "manual" }); }
+  catch { throw new ApiError(503, "ECHO_QUEUE_UNAVAILABLE", "Echo research could not be queued; the Story File remains available."); }
+  const createdAt = now();
+  const responseBody = { ok: true, queued: true, run_key: runKey };
+  await recordEchoRequestWithAudit(env, audit(actor, "echo.research_requested", intakeId, createdAt, { analysis_id: analysisRow.id, run_key: runKey }),
+    records(actor, operation, context, 202, responseBody, createdAt));
+  return json(responseBody, 202);
+}
+
+async function decideEcho(request, env, actor, intakeId) {
+  const body = await readJson(request);
+  if (Object.keys(body).sort().join(",") !== "assessment_id,candidate_id,decision,rationale" ||
+      !["feature", "hold", "reject"].includes(body.decision)) throw new ApiError(400, "VALIDATION_ERROR", "Echo decision must be FEATURE, HOLD, or REJECT with an exact candidate and assessment.");
+  const candidateId = requiredString(body.candidate_id, "candidate_id", 160);
+  const assessmentId = requiredString(body.assessment_id, "assessment_id", 160);
+  const rationale = requiredString(body.rationale, "rationale", 500);
+  const echo = await getEchoStoryState(env, intakeId);
+  if (!echo || echo.packet.state !== "ready" || echo.packet.superseded_at) throw new ApiError(409, "ECHO_NOT_READY", "No current editor-ready Echo packet exists.");
+  const candidate = echo.candidates.find((item) => item.id === candidateId && item.editor_ready_assessment_id === assessmentId);
+  if (!candidate) throw new ApiError(409, "ECHO_ASSESSMENT_MISMATCH", "The candidate and reviewed assessment do not match.");
+  const key = requiredString(request.headers.get("Idempotency-Key"), "Idempotency-Key", 200);
+  const decisionId = `echo_decision_${(await hash(`${actor.actorId}:${key}:${candidateId}`)).slice(0, 32)}`;
+  const existing = echo.decisions.find((item) => item.id === decisionId);
+  if (existing) {
+    if (existing.decision !== body.decision || existing.assessment_id !== assessmentId || existing.rationale !== rationale) throw new ApiError(409, "IDEMPOTENCY_CONFLICT", "This Echo decision key was used for different input.");
+    return json({ ok: true, decision: existing, duplicate: true });
+  }
+  try {
+    const decision = await createEchoDecision(env, { id: decisionId, packetId: echo.packet.id, candidateId,
+      assessmentId, decision: body.decision, decidedBy: actor.actorId, rationale, decidedAt: now() });
+    return json({ ok: true, decision }, 201);
+  } catch (error) {
+    if (/constraint|conflict/i.test(error?.message || "")) throw new ApiError(409, "ECHO_DECISION_CONFLICT", "Echo state changed; reload before deciding.");
+    throw error;
+  }
 }
 
 function validateDraft(body) {
@@ -275,6 +337,13 @@ async function route(request, env, actor, executeWatchdesk) {
   if (request.method === "GET" && url.pathname === "/api/admin/session") return json({ ok: true, actor: { role: "editor", email: actor.email } });
   if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/status") return json({ ok: true, schedule_configured: true, cron_utc: WATCHDESK_CRON, ...await getWatchdeskStatus(env) });
   if (request.method === "GET" && url.pathname === "/api/admin/watchdesk/sources") return json({ ok: true, ...await listWatchdeskSources(env) });
+  if (request.method === "GET" && url.pathname === "/api/admin/discovery/search") {
+    try { return json({ ok: true, authority: "discovery_lead_only", results: await searchPublicDiscovery(url.searchParams.get("q")) }); }
+    catch (error) {
+      if (error instanceof DiscoveryQueryError) throw new ApiError(400, "INVALID_DISCOVERY_QUERY", error.message);
+      throw new ApiError(503, "DISCOVERY_UNAVAILABLE", "Public discovery search is unavailable; no intake was created.");
+    }
+  }
   if (request.method === "POST" && url.pathname === "/api/admin/watchdesk/runs") return runWatchdesk(request, env, actor, executeWatchdesk);
   const sourceDecision = url.pathname.match(/^\/api\/admin\/watchdesk\/source-candidates\/([^/]+)\/decision$/);
   if (sourceDecision && request.method === "POST") return decideWatchdeskSource(request, env, actor, decodeURIComponent(sourceDecision[1]));
@@ -288,8 +357,11 @@ async function route(request, env, actor, executeWatchdesk) {
   if (match && request.method === "GET" && !match[2]) {
     const detail = await getIntakeDetail(env, decodeURIComponent(match[1]));
     if (!detail) throw new ApiError(404, "NOT_FOUND", "Intake not found.");
-    return json({ ok: true, ...detail });
+    return json({ ok: true, ...detail, echo: await getEchoStoryState(env, detail.intake.id) });
   }
+  const echoMatch = url.pathname.match(/^\/api\/admin\/intakes\/([^/]+)\/echo(?:\/(decision))?$/);
+  if (echoMatch && request.method === "POST" && !echoMatch[2]) return requestEchoResearch(request, env, actor, decodeURIComponent(echoMatch[1]));
+  if (echoMatch && request.method === "POST" && echoMatch[2] === "decision") return decideEcho(request, env, actor, decodeURIComponent(echoMatch[1]));
   if (match && request.method === "POST" && match[2] === "drafts") return createDraft(request, env, actor, decodeURIComponent(match[1]));
   if (match && request.method === "POST" && match[2] === "decisions") return createDecision(request, env, actor, decodeURIComponent(match[1]));
   if (match && request.method === "POST" && match[2] === "analyze") return retryAnalysis(request, env, actor, decodeURIComponent(match[1]));

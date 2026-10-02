@@ -27,6 +27,17 @@
         "recommendation": { "enum": ["publish", "hold", "reject"] }
       }
     },
+    "featured_echo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packet_id", "candidate_id", "assessment_id", "decision_id"],
+      "properties": {
+        "packet_id": { "type": "string", "pattern": "^echo_packet_[a-z0-9]+$" },
+        "candidate_id": { "type": "string", "pattern": "^echo_candidate_[a-z0-9]+$" },
+        "assessment_id": { "type": "string", "pattern": "^echo_assessment_[a-z0-9]+$" },
+        "decision_id": { "type": "string", "pattern": "^echo_decision_[a-z0-9]+$" }
+      }
+    },
     "story": {
       "type": "object",
       "additionalProperties": false,

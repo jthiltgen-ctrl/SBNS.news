@@ -29,7 +29,7 @@ export async function getIntake(env, id) {
 export async function listIntakes(env, { status = null, origin = null, limit = 50 } = {}) {
   const clauses = [];
   const values = [];
-  if (status) { clauses.push("status = ?"); values.push(status); }
+  if (status) { clauses.push(status === "active" ? "status <> ?" : "status = ?"); values.push(status === "active" ? "rejected" : status); }
   if (origin) { clauses.push("origin = ?"); values.push(origin); }
   values.push(limit);
   const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
@@ -179,11 +179,11 @@ function auditStatement(env, event) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(event.id, event.actor_type, event.actor_id, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
 }
 
-export async function storeDiscoveryCandidate(env, intake, audit, runId, checkedAt = null) {
+export async function storeDiscoveryCandidate(env, intake, audit, runId, checkedAt = null, job = null) {
   const db = database(env);
   // D1 batch is one SQLite transaction. No lease takeover can interleave with
   // this conditional insert and its audit/ledger statements.
-  return db.batch([
+  const statements = [
     db.prepare(`INSERT OR IGNORE INTO intakes
       (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -199,6 +199,12 @@ export async function storeDiscoveryCandidate(env, intake, audit, runId, checked
     db.prepare(`INSERT INTO audit_events
       (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(audit.id, audit.actor_type, audit.actor_id ?? null, audit.action, audit.entity_type, audit.entity_id, audit.metadata_json, audit.created_at),
+  ];
+  if (job) statements.push(db.prepare(`INSERT INTO analysis_jobs
+    (id, intake_id, job_type, state, attempt, created_at, updated_at)
+    SELECT ?, ?, 'intake_analysis', 'pending_enqueue', 0, ?, ? WHERE changes() = 1`)
+    .bind(job.id, intake.id, job.created_at, job.updated_at));
+  statements.push(
     // Recheck database time before the final statement. If the lease expired
     // while the batch ran, the existing count CHECK aborts the whole batch.
     db.prepare(`UPDATE watchdesk_runs
@@ -209,7 +215,8 @@ export async function storeDiscoveryCandidate(env, intake, audit, runId, checked
         ) THEN submitted_count + 1 ELSE -1 END,
         submitted_ids_json = json_insert(submitted_ids_json, '$[#]', ?)
       WHERE id = ? AND changes() = 1`).bind(runId, checkedAt, intake.id, runId),
-  ]);
+  );
+  return db.batch(statements);
 }
 
 export async function createIntakeWithAudit(env, intake, audit, idempotency) {
@@ -259,6 +266,10 @@ export async function recordAnalysisRetryWithAudit(env, audit, idempotency) {
   return database(env).batch([auditStatement(env, audit), idempotencyStatement(env, idempotency)]);
 }
 
+export async function recordEchoRequestWithAudit(env, audit, idempotency) {
+  return database(env).batch([auditStatement(env, audit), idempotencyStatement(env, idempotency)]);
+}
+
 export async function claimAnalysisJob(env, jobId, intakeId, timestamp) {
   const result = await run(env, "UPDATE analysis_jobs SET state='running', attempt=attempt+1, started_at=?, updated_at=? WHERE id=? AND intake_id=? AND state IN ('queued','retrying')", [timestamp, timestamp, jobId, intakeId]);
   return (result.meta?.changes ?? result.meta?.rows_written ?? 0) === 1;
@@ -283,13 +294,13 @@ export async function markAnalysisFailed(env, jobId, intakeId, timestamp, code, 
   ]);
 }
 
-export async function completeAnalysis(env, { intakeId, jobId, source, analysisRow, claims, links, timestamp }) {
+export async function completeAnalysis(env, { intakeId, jobId, source, sources = [source], analysisRow, claims, links, timestamp }) {
   const hostname = sourceHostname(source.normalized_url || source.url);
   const qualifiesForSourceLearning = analysisRow.recommendation !== "reject" && source.verification_status !== "unverified";
   const statements = [
-    database(env).prepare(`INSERT INTO sources
+    ...sources.map((record) => database(env).prepare(`INSERT INTO sources
       (id,intake_id,url,normalized_url,name,source_type,verification_status,fetched_at,content_hash,source_title,published_at,updated_at,extracted_text,extraction_format,created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(source.id, intakeId, source.url, source.normalized_url, source.name, source.source_type, source.verification_status, source.fetched_at, source.content_hash, source.source_title, null, null, source.extracted_text, source.extraction_format, source.created_at),
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(record.id, intakeId, record.url, record.normalized_url, record.name, record.source_type, record.verification_status, record.fetched_at, record.content_hash, record.source_title, null, null, record.extracted_text, record.extraction_format, record.created_at)),
     database(env).prepare(`INSERT INTO analyses
       (id,intake_id,schema_version,recommendation,recommendation_confidence,category,severity,systemic_failure,raw_analysis_json,created_at,superseded_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,NULL)`).bind(analysisRow.id, intakeId, analysisRow.schema_version, analysisRow.recommendation, analysisRow.recommendation_confidence, analysisRow.category, analysisRow.severity, analysisRow.systemic_failure ? 1 : 0, analysisRow.raw_analysis_json, timestamp),
@@ -318,7 +329,7 @@ export async function completeAnalysis(env, { intakeId, jobId, source, analysisR
     intakeId, qualifiesForSourceLearning ? 1 : 0, qualifiesForSourceLearning ? 1 : 0
   ));
   for (const claim of claims) statements.push(database(env).prepare("INSERT INTO claims (id,intake_id,analysis_id,claim_text,material,verification_status,qualification,created_at) VALUES (?,?,?,?,?,?,?,?)").bind(claim.id, intakeId, analysisRow.id, claim.claim_text, claim.material ? 1 : 0, claim.verification_status, claim.qualification, timestamp));
-  for (const link of links) statements.push(database(env).prepare("INSERT INTO claim_sources (claim_id,source_id,intake_id) VALUES (?,?,?)").bind(link.claim_id, source.id, intakeId));
+  for (const link of links) statements.push(database(env).prepare("INSERT INTO claim_sources (claim_id,source_id,intake_id) VALUES (?,?,?)").bind(link.claim_id, link.source_id || source.id, intakeId));
   statements.push(
     database(env).prepare("UPDATE analysis_jobs SET state='complete', source_id=?, analysis_id=?, completed_at=?, updated_at=?, last_error_code=NULL, last_error_message=NULL WHERE id=? AND intake_id=? AND state='running'").bind(source.id, analysisRow.id, timestamp, timestamp, jobId, intakeId),
     database(env).prepare("UPDATE intakes SET status='review_ready', analysis_status='complete', updated_at=? WHERE id=?").bind(timestamp, intakeId),

@@ -27,6 +27,7 @@
     "institution_response_present",
     "sources",
     "claims",
+    "claim_source_relationships",
     "source_conflicts",
     "observed_condition",
     "attributable_failure",
@@ -44,6 +45,10 @@
     "kicker_target",
     "kicker_safety",
     "why_sbns",
+    "echo_eligible",
+    "echo_rationale",
+    "echo_search_terms",
+    "echo_issue",
     "do_not_claim",
     "proposed_headline",
     "proposed_summary",
@@ -153,6 +158,17 @@
         "conflict": { "type": "boolean" }
       }
     },
+    "claimSourceRelationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["claim_id", "source_id", "relation", "explanation"],
+      "properties": {
+        "claim_id": { "$ref": "#/$defs/nonEmptyString" },
+        "source_id": { "$ref": "#/$defs/nonEmptyString" },
+        "relation": { "enum": ["supports", "qualifies", "contradicts", "institutional_response", "chronology", "quantitative", "context"] },
+        "explanation": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
     "sourceConflict": {
       "type": "object",
       "additionalProperties": false,
@@ -249,6 +265,10 @@
       "minItems": 1,
       "items": { "$ref": "#/$defs/claim" }
     },
+    "claim_source_relationships": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/claimSourceRelationship" }
+    },
     "source_conflicts": {
       "type": "array",
       "items": { "$ref": "#/$defs/sourceConflict" }
@@ -276,9 +296,38 @@
       "enum": ["acceptable", "rewrite", "not_applicable"]
     },
     "why_sbns": { "$ref": "#/$defs/nonEmptyString" },
+    "echo_eligible": { "type": "boolean" },
+    "echo_rationale": { "$ref": "#/$defs/nonEmptyString" },
+    "echo_search_terms": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/nonEmptyString" } },
+    "echo_issue": { "anyOf": [
+      { "type": "null" },
+      { "type": "object", "additionalProperties": false,
+        "required": ["institution", "jurisdiction", "expectation", "accountability_question", "mechanism", "affected_interests"],
+        "properties": {
+          "institution": { "$ref": "#/$defs/nonEmptyString" },
+          "jurisdiction": { "$ref": "#/$defs/nonEmptyString" },
+          "expectation": { "$ref": "#/$defs/nonEmptyString" },
+          "accountability_question": { "$ref": "#/$defs/nonEmptyString" },
+          "mechanism": { "$ref": "#/$defs/nonEmptyString" },
+          "affected_interests": { "$ref": "#/$defs/stringArray" }
+        }
+      }
+    ] },
     "do_not_claim": { "$ref": "#/$defs/stringArray" },
     "proposed_headline": { "$ref": "#/$defs/nullableString" },
     "proposed_summary": { "$ref": "#/$defs/nullableString" },
+    "proposed_body": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "claim_refs"],
+        "properties": {
+          "text": { "$ref": "#/$defs/nonEmptyString" },
+          "claim_refs": { "$ref": "#/$defs/stringArray" }
+        }
+      }
+    },
     "proposed_fml_kicker": { "$ref": "#/$defs/nullableString" },
     "proposed_topic_tags": { "$ref": "#/$defs/stringArray" },
     "proposed_sources": {

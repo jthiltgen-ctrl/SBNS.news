@@ -16,7 +16,7 @@ export function assignmentSearchText(item) {
 export function filterAssignments(items, { query = "", status = "", origin = "" } = {}) {
   const needle = query.trim().toLocaleLowerCase();
   return items.filter((item) =>
-    (!status || item.status === status) &&
+    (!status || (status === "active" ? item.status !== "rejected" : item.status === status)) &&
     (!origin || item.origin === origin) &&
     (!needle || assignmentSearchText(item).includes(needle))
   );

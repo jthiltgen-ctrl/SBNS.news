@@ -1,3 +1,5 @@
+import { validateSourceUrl } from "./source-retrieval.js";
+
 export const STORYQUEUE_ADDRESS = "storyqueue@shockedbutnotsurprised.news";
 export const STORYQUEUE_SCHEMA_VERSION = "1";
 export const MAX_STORYQUEUE_TEXT = 12_000;
@@ -12,7 +14,9 @@ function clean(value, max) {
 }
 
 export function normalizeStoryUrl(value) {
-  const url = new URL(String(value));
+  // Admission and retrieval share the same public-host safety boundary.
+  // A private/local URL must not create a queued Story File through email.
+  const url = validateSourceUrl(String(value));
   if (!new Set(["http:", "https:"]).has(url.protocol) || url.username || url.password) throw new Error("Story URL must be credential-free HTTP or HTTPS.");
   url.hostname = url.hostname.toLowerCase();
   if ((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80")) url.port = "";

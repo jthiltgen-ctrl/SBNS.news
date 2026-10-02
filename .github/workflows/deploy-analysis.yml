@@ -1,0 +1,88 @@
+name: Deploy analysis Worker
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/deploy-analysis.yml
+      - package.json
+      - package-lock.json
+      - wrangler.analysis.jsonc
+      - intake/schemas/analysis.schema.json
+      - src/analysis-index.js
+      - src/analyzer.js
+      - src/analysis-prompt.js
+      - src/source-retrieval.js
+      - src/primary-source-expansion.js
+      - src/intake-validation.js
+      - src/persistence.js
+      - src/echo-*.js
+      - scripts/analysis.mjs
+      - scripts/analysis-deployment.mjs
+      - scripts/echo-*.mjs
+      - scripts/verify-analysis-deployment.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analysis-staging-worker
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate and deploy sbns-analysis
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate analysis runtime
+        run: |
+          npm run analysis:check
+          npm run analysis:test
+          npm run analysis:deployment:test
+          npm run persistence:check
+          npm run echo:persistence:check
+          npm run echo:check
+          npm run echo:test
+          npm run echo:sources:check
+          npm run echo:sources:test
+          node --check src/analysis-index.js
+          node --check src/analyzer.js
+          node --check src/analysis-prompt.js
+          node --check src/source-retrieval.js
+          node --check src/primary-source-expansion.js
+          node --check scripts/verify-analysis-deployment.mjs
+          npx wrangler deploy --config wrangler.analysis.jsonc --dry-run --keep-vars --var "SBNS_ANALYSIS_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Record previous analysis deployment
+        run: node scripts/verify-analysis-deployment.mjs snapshot > "$RUNNER_TEMP/analysis-before.txt"
+
+      - name: Deploy analysis Worker
+        run: npx wrangler deploy --config wrangler.analysis.jsonc --keep-vars --var "SBNS_ANALYSIS_BUILD_SHA:${GITHUB_SHA}"
+
+      - name: Verify deployed analysis version
+        run: node scripts/verify-analysis-deployment.mjs verify "$RUNNER_TEMP/analysis-before.txt"
+
+      - name: Verify queue consumers remain attached
+        shell: bash
+        run: |
+          npx wrangler queues consumer worker list sbns-analysis-staging --json | node scripts/verify-analysis-deployment.mjs consumer
+          npx wrangler queues consumer worker list sbns-analysis-dlq-staging --json | node scripts/verify-analysis-deployment.mjs consumer

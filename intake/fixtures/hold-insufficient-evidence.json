@@ -53,6 +53,9 @@
         "conflict": false
       }
     ],
+    "claim_source_relationships": [
+      { "claim_id": "claim-repeated-review-bypass", "source_id": "synthetic-news-report", "relation": "context", "explanation": "The report raises the allegation but supplies no independently verified record." }
+    ],
     "source_conflicts": [],
     "observed_condition": "A synthetic report alleges repeated bypassing of required municipal contract review.",
     "attributable_failure": null,
@@ -70,6 +73,10 @@
     "kicker_target": null,
     "kicker_safety": "not_applicable",
     "why_sbns": "The alleged repeated control bypass could fit SBNS, but the systemic failure is not established by available evidence.",
+    "echo_eligible": false,
+    "echo_rationale": "The current allegation lacks sufficient evidence for Echo research.",
+    "echo_search_terms": [],
+    "echo_issue": null,
     "do_not_claim": [
       "Do not claim that the municipality repeatedly bypassed required review unless primary records verify the allegation.",
       "Do not imply an institutional response that has not been obtained."

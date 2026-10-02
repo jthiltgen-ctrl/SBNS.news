@@ -1,7 +1,7 @@
 import publishedFeed from "../public/stories.json" with { type: "json" };
 import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
-import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, storeDiscoveryCandidate } from "./persistence.js";
+import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, markAnalysisJobQueued, storeDiscoveryCandidate } from "./persistence.js";
 
 export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
@@ -178,14 +178,19 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
   const reviewedMaterial = concise(item.reviewed_material, 300);
   const reviewState = hasPrimary && REVIEW_STATES.has(item.evidence_review_state) && item.evidence_review_state !== "NOT REVIEWED"
     && reviewedMaterial && concise(item.record_summary) ? item.evidence_review_state : "NOT REVIEWED";
-  const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 1_500)) || (source.primary_record
+  const inspectedText = typeof item.record_summary === "string" ? item.record_summary.replace(/\s+/g, " ").trim() : "";
+  const recordSummaryTruncated = reviewState !== "NOT REVIEWED" && inspectedText.length > 20_000;
+  const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 20_000)) || (source.primary_record
     ? `${source.name} publicly listed “${concise(item.title, 500)}”${item.published_at ? ` with a release date of ${iso(item.published_at)}` : ""}. The underlying record has not yet been reviewed by Watchdesk.`
     : `${source.name} published “${concise(item.title, 500)}.” This is a discovery signal; the underlying primary record has not yet been established.`);
   const evidence = reviewState === "NOT REVIEWED" ? null : accountabilityFromReviewedText(recordSummary, concise(item.institution, 300));
+  const fingerprintEvidence = reviewState === "NOT REVIEWED" ? null : accountabilityFromReviewedText(concise(item.record_summary, 1_500), concise(item.institution, 300));
   const keySources = [{ url: normalizedUrl, role: source.primary_record ? "located primary record URL; contents not necessarily reviewed" : "discovery signal" }];
   if (primaryUrl && primaryUrl !== normalizedUrl) keySources.push({ url: primaryUrl, role: "identified primary record" });
   const titleFingerprint = await digest(`${source.id}\n${concise(item.title, 500)?.toLowerCase()}\n${item.document_id || ""}`);
-  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl, reviewState, reviewedMaterial, evidence }));
+  // Keep the established dedupe identity stable. Changing this fingerprint
+  // solely to expose longer Discovery text would replay old Watchdesk intakes.
+  const contentFingerprint = await digest(JSON.stringify({ normalizedUrl, title: concise(item.title, 500), published_at: iso(item.published_at), summary: concise(item.summary, 2_000), record: concise(item.record_summary, 1_500), primaryUrl, reviewState, reviewedMaterial, evidence: fingerprintEvidence }));
   return {
     schema_version: WATCHDESK_VERSION,
     discovered_title: concise(item.title, 500),
@@ -200,6 +205,7 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     why_this_may_belong: concise(item.why_this_may_belong, 1_000) || `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`,
     apparent_job: concise(evidence?.expectation, 1_000),
     record_summary: recordSummary,
+    record_summary_truncated: recordSummaryTruncated,
     observed_condition: concise(evidence?.condition, 1_000),
     accountability_gap: concise(evidence?.gap, 1_000),
     accountability_question: concise(evidence?.question, 1_000),
@@ -322,10 +328,17 @@ async function defaultSubmit(env, candidate, requestedBy, runId, leaseNow) {
     metadata_json: JSON.stringify({ candidate, requested_by: requestedBy || null, authority_note: "Automated Watchdesk triage is not an editorial decision." }),
     created_at: timestamp,
   };
+  const job = { id: `job_watchdesk_${candidate.content_fingerprint.slice(0, 32)}`, intake_id: intake.id, created_at: timestamp, updated_at: timestamp };
   const checkedAt = leaseNow ? leaseNow() : null;
-  const writes = await storeDiscoveryCandidate(env, intake, audit, runId, checkedAt);
+  const writes = await storeDiscoveryCandidate(env, intake, audit, runId, checkedAt, job);
   if (writes[0]?.meta?.changes === 1) {
-    if (writes[1]?.meta?.changes !== 1 || writes[2]?.meta?.changes !== 1) throw new Error("WATCHDESK_SUBMISSION_STATE_CONFLICT");
+    if (writes[1]?.meta?.changes !== 1 || writes[2]?.meta?.changes !== 1 || writes[3]?.meta?.changes !== 1) throw new Error("WATCHDESK_SUBMISSION_STATE_CONFLICT");
+    try {
+      await env.ANALYSIS_QUEUE.send({ schema_version: "1", job_id: job.id, intake_id: intake.id });
+      await markAnalysisJobQueued(env, job.id, intake.id, new Date().toISOString());
+    } catch {
+      // The durable pending_enqueue job remains available to the editor's retry control.
+    }
     return intake;
   }
   const holder = await env.SBNS_DB.prepare(`SELECT lock.run_id, lock.expires_at, run.status, run.submitted_count

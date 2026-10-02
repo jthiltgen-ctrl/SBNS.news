@@ -70,9 +70,19 @@ function conservativeRights(statements, { metadataAccess = null, mediaAccess = n
   };
 }
 function protocolSignal(values) {
-  const caution = values.find((entry) =>
+  // Only an explicit catalog statement can establish that no special protocol
+  // was identified. Silence (including an unrestricted copyright license) is
+  // still unclear, and any caution takes precedence over such a statement.
+  const explicitNone = (entry) => /^no (?:known )?(?:special )?(?:cultural|community|traditional knowledge) (?:protocols?|(?:use |protocol )?restrictions?) (?:have been |were |are )?identified(?: for (?:this |the )?(?:item|work|object))?\.?$/i.test(entry.trim());
+  const caution = values.find((entry) => !explicitNone(entry) &&
     /traditional knowledge|cultur(?:al|ally) sensitiv|indigen|tribal|ceremonial|sacred|human remains|restricted access|community protocol/i.test(entry));
-  return { status: caution ? "indicated" : "unclear", basis: text(caution, 250) };
+  const clear = values.find(explicitNone);
+  return { status: caution ? "indicated" : clear ? "none_identified" : "unclear", basis: text(caution ?? clear, 250) };
+}
+function mergeProtocolSignals(...signals) {
+  return signals.find((signal) => signal?.status === "indicated") ??
+    signals.find((signal) => signal?.status === "none_identified") ??
+    { status: "unclear", basis: null };
 }
 function baseRecord({ adapter, id, url, title, creators, date, artifactType, description, authorityBasis, rights, protocol, retrievedAt, versionId }) {
   return {
@@ -166,7 +176,7 @@ export function verifyLocContext(record, response, retrievedAt) {
     ...labeledPhrases(response.item.rights_advisory), ...labeledPhrases(response.item.rights)]);
   const detailRights = conservativeRights([...strings(response.item.rights_advisory), ...strings(response.item.rights), ...strings(response.item.rights_information)]);
   const merged = { ...normalized,
-    culturalProtocol: detailProtocol.status === "indicated" ? detailProtocol : record.culturalProtocol.status === "indicated" ? record.culturalProtocol : detailProtocol,
+    culturalProtocol: mergeProtocolSignals(detailProtocol, normalized.culturalProtocol, record.culturalProtocol),
     rights: detailRights.status !== "unknown" || detailRights.statement ? detailRights : record.rights };
   return contextFromDetail(merged, response.item, retrievedAt);
 }
@@ -175,7 +185,7 @@ export function verifySmithsonianContext(record, response, retrievedAt) {
   const normalized = normalizeSmithsonianResult(response.response, retrievedAt);
   if (!normalized || normalized.canonicalIdentifier !== record.canonicalIdentifier) fail("IDENTITY_MISMATCH", "Smithsonian detail does not match discovery identity");
   const merged = { ...normalized,
-    culturalProtocol: normalized.culturalProtocol.status === "indicated" ? normalized.culturalProtocol : record.culturalProtocol.status === "indicated" ? record.culturalProtocol : normalized.culturalProtocol };
+    culturalProtocol: mergeProtocolSignals(normalized.culturalProtocol, record.culturalProtocol) };
   return contextFromDetail(merged, response.response, retrievedAt);
 }
 

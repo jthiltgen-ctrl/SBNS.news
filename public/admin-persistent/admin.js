@@ -1,4 +1,5 @@
 import { filterAssignments, queueCounts } from "./desk-state.js";
+import { draftZero, evidenceLedger } from "./editorial-production.js";
 
 const views = [...document.querySelectorAll("main > section")];
 const queue = document.querySelector("#queue");
@@ -13,6 +14,9 @@ const watchdeskHistory = document.querySelector("#watchdesk-history");
 const watchdeskSourcePortfolio = document.querySelector("#watchdesk-source-portfolio");
 const watchdeskDry = document.querySelector("#watchdesk-dry");
 const watchdeskLive = document.querySelector("#watchdesk-live");
+const discoverySearchForm = document.querySelector("#discovery-search-form");
+const discoverySearchStatus = document.querySelector("#discovery-search-status");
+const discoverySearchResults = document.querySelector("#discovery-search-results");
 const jobLabels = {
   pending_enqueue: "Waiting to queue", queued: "Queued", running: "Analyzing evidence",
   retrying: "Retrying analysis", complete: "Review ready",
@@ -146,7 +150,8 @@ function renderQueue() {
 async function loadQueue() {
   show("queue-view");
   queueStatus.textContent = "Loading queue…";
-  const data = await api("/api/admin/intakes?limit=100");
+  const selectedStatus = document.querySelector("#status-filter").value;
+  const data = await api("/api/admin/intakes?limit=100" + (selectedStatus ? "&status=" + encodeURIComponent(selectedStatus) : ""));
   loadedAssignments = data.intakes || [];
   updateQueueSummary();
   renderQueue();
@@ -167,7 +172,6 @@ function renderDiscovery(candidate) {
     ["Job / expectation (if established)", candidate.apparent_job || "Not yet established", true],
     ["Observed condition (if established)", candidate.observed_condition || "Not yet established", true],
     ["Accountability gap (if established)", candidate.accountability_gap || "Not yet established", true],
-    ["What the inspected material establishes", candidate.record_summary, true],
     ["Accountability question", candidate.accountability_question || "Not yet established", true],
     ["Research prompt (not evidence)", candidate.research_prompt, true],
     ["Material qualification / counterevidence", candidate.material_qualification, true],
@@ -179,6 +183,28 @@ function renderDiscovery(candidate) {
     ["Published-story relationship", candidate.published_story_relationship?.story_id],
     ["Related discovery intake", candidate.related_intake_id]
   ]));
+  const inspected = el("div", null, "discovery-inspected");
+  inspected.append(el("h3", "What the inspected material establishes"));
+  if (candidate.record_summary?.length > 320) {
+    inspected.append(el("p", candidate.record_summary.slice(0, 320) + "…", "inspected-preview"));
+    const full = el("details");
+    full.append(el("summary", "Read complete inspected-material analysis"), el("p", candidate.record_summary, "inspected-full"));
+    inspected.append(full);
+  } else inspected.append(el("p", candidate.record_summary || "Not yet established.", "inspected-full"));
+  if (candidate.record_summary_truncated) inspected.append(el("p", "The source supplied more than the bounded 20,000-character Discovery record. Review the linked original before relying on omitted material.", "warning"));
+  node.append(inspected);
+  const editorial = el("section", null, "editorial-read");
+  editorial.append(el("h3", "Editorial Read"), el("p", "Internal interpretation and research opportunity—not evidence established by the source.", "warning"));
+  editorial.append(fieldGrid([
+    ["Potential SBNS angle", candidate.why_this_may_belong || "Not yet assessed", true],
+    ["Accountability pathway", candidate.submission_readiness?.mode || "Unresolved"],
+    ["Research burden", candidate.research_burden],
+    ["Stronger original record to inspect", candidate.primary_record_url && candidate.primary_record_url !== candidate.normalized_url ? candidate.primary_record_url : "Not identified", true],
+    ["Framing to avoid", candidate.remains_unproven || "Do not assert unresolved claims as fact.", true],
+    ["Missing context / counterevidence", candidate.material_qualification || "Not yet assessed", true],
+    ["Triage rationale", candidate.triage?.rationale || "Not yet assessed", true]
+  ]));
+  node.append(editorial);
   node.append(el("h3", "Discovered source"), safeLink(candidate.normalized_url));
   const sources = el("div");
   sources.append(el("h3", "Key sources"));
@@ -189,25 +215,25 @@ function renderDiscovery(candidate) {
 }
 
 function renderSemanticControl(data, analysis, candidate) {
-  const node = panel("story-semantics", "Semantics & editorial aperture", "semantics-panel");
-  node.append(el("p", "Diagnostic control only. It surfaces semantic risk and missing evidence; it does not decide whether to publish.", "warning"));
+  const node = panel("story-semantics", "Editorial Frame", "semantics-panel");
+  node.append(el("p", "This is an internal interpretation of the evidence, not a publication decision.", "warning"));
   const latestDraft = data.drafts.at(-1);
   const publicCopy = [latestDraft?.headline, latestDraft?.summary, analysis?.proposed_headline, analysis?.proposed_summary].filter(Boolean).join(" ");
   const highRisk = ["fraud","corruption","theft","illegal","illegality","cover-up","scandal","caused","discrimination","discriminatory"].filter((term) => new RegExp("\\b" + term.replace("-", "\\-") + "\\b","i").test(publicCopy));
   const sourceStates = data.sources.map((source) => source.verification_status);
   const unresolvedSources = sourceStates.filter((state) => !["verified","verified_with_qualification"].includes(state));
-  const pathway = candidate?.submission_readiness?.mode || (analysis ? "formal analysis" : "not established");
+  const pathway = candidate?.submission_readiness?.mode === "gap" ? "Classic institutional gap" : candidate?.submission_readiness?.mode === "editorial_aperture" ? "Broader editorial aperture" : analysis ? (analysis.attributable_failure ? "Classic institutional gap" : "Broader accountability question or unresolved") : "Unresolved";
   node.append(fieldGrid([
-    ["Discovery / accountability pathway", pathway],
-    ["Evidence state", unresolvedSources.length ? "CLARIFY — unresolved/disputed source state present" : data.sources.length ? "PASS — reviewed source records present" : "RESEARCH — no normalized source recorded"],
-    ["Qualification control", analysis?.qualification_required ? "CLARIFY — qualification required" : "No explicit qualification flag"],
-    ["Observed condition", analysis?.observed_condition || candidate?.observed_condition || "Not yet established", true],
-    ["Institutional nexus / attributable failure", analysis?.attributable_failure || candidate?.accountability_gap || "Not yet established", true],
-    ["Specific-harm causation", analysis?.specific_harm_causation || "Not established in current record", true],
-    ["Public-copy risk terms", highRisk.length ? "REVIEW — " + highRisk.join(", ") : "No monitored high-risk term detected", true]
+    ["What kind of accountability story is this?", pathway],
+    ["What is actually established?", analysis?.observed_condition || candidate?.observed_condition || "Not yet established", true],
+    ["Who or what is connected?", candidate?.institution_or_system || analysis?.attributable_failure || "Institutional nexus not yet established", true],
+    ["Are we claiming institutional failure?", analysis?.attributable_failure ? "Established only to the extent stated in analysis: " + analysis.attributable_failure : analysis ? "Not established; may not be necessary to this story" : "Unresolved", true],
+    ["Are we claiming a specific harm was caused?", analysis?.causation_supported ? analysis.specific_harm_causation || "Review exact causal claim" : "Not established or unresolved", true],
+    ["Source-evidence state", unresolvedSources.length ? "Clarify unresolved or disputed source state" : data.sources.length ? "Reviewed source records present" : "No normalized source recorded"],
+    ["Public-copy risk terms", highRisk.length ? "Review: " + highRisk.join(", ") : "No monitored high-risk term detected", true]
   ]));
   node.append(list("DO NOT CLAIM boundaries", analysis?.do_not_claim));
-  node.append(list("Material qualifications / unresolved questions", [
+  node.append(list("What remains unresolved? Qualifications and evidence gaps", [
     candidate?.material_qualification,
     candidate?.remains_unproven,
     ...(analysis?.hold_reasons || []),
@@ -267,10 +293,12 @@ function renderAnalysis(data) {
   const node = panel("story-analysis", "Analysis", "analysis-panel");
   const job = data.analysis_jobs.at(-1);
   node.append(field("Analysis state", jobLabels[job?.state] || data.intake.analysis_status));
-  const retryable = ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
+  const discoveryNeedsAnalysis = !job && data.intake.origin === "discovery";
+  const retryable = discoveryNeedsAnalysis || ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
   if (retryable) {
+    if (discoveryNeedsAnalysis) node.append(el("p", "Watchdesk discovery is not automatically formal analysis. Start it only after selecting this lead for a full Story File review.", "warning"));
     if (job?.last_error_message) node.append(el("p", job.last_error_message, "warning"));
-    const retry = el("button", "Retry analysis");
+    const retry = el("button", discoveryNeedsAnalysis ? "Analyze selected discovery" : "Retry analysis");
     retry.type = "button";
     retry.addEventListener("click", async () => {
       try { await api("/api/admin/intakes/" + data.intake.id + "/analyze", { method: "POST", body: "{}" }); await loadDetail(data.intake.id, "Analysis queued."); }
@@ -286,7 +314,14 @@ function renderAnalysis(data) {
   const grid = el("div", null, "analysis-grid");
   const read = el("section", null, "analysis-block");
   read.append(el("h3", "Editorial read"), el("p", analysis.recommendation || "No recommendation", "recommendation " + (analysis.recommendation || "")));
-  read.append(fieldGrid([["Confidence", analysis.recommendation_confidence], ["Category", analysis.category], ["Severity", analysis.severity], ["Why SBNS", analysis.why_sbns, true]]), list("Recommendation reasons", analysis.recommendation_reasons));
+  const disposition = analysis.recommendation === "publish" ? "REVIEW READY" : analysis.recommendation === "reject" ? "NO ACTION" : analysis.primary_source_available ? "DEVELOP" : "EXPLORE";
+  read.append(fieldGrid([["Suggested disposition", disposition], ["Confidence", analysis.recommendation_confidence], ["Category", analysis.category], ["Severity", analysis.severity], ["Factual situation", analysis.observed_condition, true], ["Why SBNS", analysis.why_sbns, true], ["Consequence / significance", analysis.consequence_significance, true], ["Institutional response in supplied material", analysis.institution_response_present ? "Present; inspect claim-specific evidence below" : "Not found in supplied material"]]), list("Recommendation reasons", analysis.recommendation_reasons));
+  if (analysis.source_expansion) {
+    const expansion = el("section", null, "analysis-block");
+    expansion.append(el("h3", "Underlying-source expansion"), fieldGrid([["Public-record links examined", analysis.source_expansion.attempted?.length || 0], ["Records retrieved", analysis.source_expansion.retrieved?.length || 0]]));
+    (analysis.source_expansion.failures || []).forEach((failure) => expansion.append(field("Unresolved linked record", failure.url + " · " + failure.message)));
+    read.append(expansion);
+  }
   const truth = el("section", null, "analysis-block truth-test");
   truth.append(el("h3", "Truth test"), el("p", "Observed condition is not attributable failure; attributable failure is not proven specific-harm causation."));
   truth.append(fieldGrid([["Observed condition", analysis.observed_condition], ["Attributable failure", analysis.attributable_failure], ["Specific-harm causation", analysis.specific_harm_causation], ["Qualification required", analysis.qualification_required ? "Yes" : "No"]]));
@@ -300,7 +335,8 @@ function renderAnalysis(data) {
   return { analysis: node, evidence: renderEvidence(data, analysis), proposal, parsed: analysis };
 }
 function renderEvidence(data, analysis) {
-  const node = panel("story-evidence", "Evidence & claims");
+  const node = panel("story-evidence", "Evidence ledger");
+  node.append(el("p", "Claims are linked to the specific supplied source and its stated authority. Repetition is not independent corroboration.", "warning"));
   if (!data.sources.length && !analysis?.claims?.length) node.append(el("p", "No extracted sources or claims recorded."));
   data.sources.forEach((source, index) => {
     const card = el("article", null, "source-card");
@@ -311,13 +347,82 @@ function renderEvidence(data, analysis) {
     card.append(disclosure);
     node.append(card);
   });
-  (analysis?.claims || []).forEach((claim) => {
+  evidenceLedger(analysis).forEach((claim) => {
     const card = el("article", null, "claim-card");
-    card.append(el("p", "CLAIM " + text(claim.claim_id), "revision-label"), el("h3", claim.claim_text));
-    card.append(fieldGrid([["Material", claim.material ? "Yes" : "No"], ["Verification", claim.verification_status], ["Qualification", claim.qualification], ["Conflict", claim.conflict ? "Yes" : "No"]]));
+    card.append(el("p", "CLAIM " + text(claim.id), "revision-label"), el("h3", claim.text));
+    card.append(fieldGrid([["Material", claim.material ? "Yes" : "No"], ["Evidence state", claim.status], ["Qualification", claim.qualification], ["Locator / section", claim.locator]]));
+    if (!claim.sources.length) card.append(el("p", "No claim-specific supporting source is recorded.", "warning"));
+    claim.sources.forEach((source) => {
+      const provenance = el("p", null, "claim-provenance");
+      provenance.append(safeLink(source.url, source.name), document.createTextNode(" · " + text(source.relation) + " — " + text(source.explanation) + " · " + text(source.role) + " · " + text(source.authority) + (source.locator ? " · " + source.locator : "")));
+      card.append(provenance);
+    });
     node.append(card);
   });
   node.append(list("Source conflicts", (analysis?.source_conflicts || []).map((conflict) => (conflict.statements || []).join(" / "))));
+  return node;
+}
+function renderEcho(data, analysis) {
+  const node = panel("story-echo", "Cultural Echo / We Were Warned", "echo-panel");
+  node.append(el("p", "Internal cultural research only. A candidate is not a story decision or publication permission.", "warning"));
+  const echo = data.echo;
+  const eligible = analysis?.recommendation === "publish" && analysis.echo_eligible === true && analysis.echo_issue && analysis.echo_search_terms?.length;
+  if (!eligible) { node.append(el("p", "Not yet eligible: complete an evidence-backed, review-ready analysis first.")); return node; }
+  const latestAudit = [...data.audit].reverse().find((event) => event.action.startsWith("echo.research_"));
+  if (!echo && latestAudit?.action === "echo.research_failed") node.append(el("p", "Echo research failed. The story analysis and Draft 0 remain available; retry is editor-initiated.", "warning"));
+  else if (!echo && latestAudit) node.append(el("p", "Echo research queued or running."));
+  else if (!echo) node.append(el("p", "No Echo research has been recorded for this Story File."));
+  const failedBoundPacket = echo?.packet.state === "open" && echo.jobs.at(-1)?.state === "failed" && echo.package_binding;
+  if (failedBoundPacket) node.append(el("p", "Research failed after its candidate package was frozen. A fresh live search cannot safely retry this packet with changed inputs; retain the reporting draft and request a forward repair.", "warning"));
+  if (!echo || echo.packet.state === "open" && echo.jobs.at(-1)?.state === "failed" && !echo.package_binding) {
+    const run = el("button", echo?.jobs.at(-1)?.state === "failed" ? "Retry Echo Research" : "Run Echo Research");
+    run.type = "button";
+    run.addEventListener("click", async () => {
+      run.disabled = true;
+      try { await api("/api/admin/intakes/" + data.intake.id + "/echo", { method: "POST", body: "{}" }); await loadDetail(data.intake.id, "Echo research requested."); }
+      catch (error) { node.append(el("p", error.message, "warning")); run.disabled = false; }
+    });
+    node.append(run);
+  }
+  if (!echo) return node;
+  node.append(fieldGrid([["Packet state", echo.packet.state === "no_echo" ? "NO CULTURAL ECHO WARRANTED" : echo.packet.state], ["Latest research job", echo.jobs.at(-1)?.state || "Pending"], ["No-Echo reason", echo.packet.no_echo_reason_code]]));
+  if (echo.packet.state === "no_echo") { node.append(el("p", "No cultural comparison passed the current context, analogy, rights, and protocol gates. This is a successful outcome.")); return node; }
+  for (const candidate of echo.candidates) {
+    const card = el("article", null, "echo-candidate");
+    card.append(el("h3", candidate.title), fieldGrid([["Creator / date", [candidate.creator, candidate.creation_date].filter(Boolean).join(" · ")], ["Research state", candidate.state], ["Gate result", candidate.gate_reason_code]]));
+    const assessment = echo.assessments.find((item) => item.id === candidate.editor_ready_assessment_id) || echo.assessments.filter((item) => item.candidate_id === candidate.id).at(-1);
+    if (assessment) card.append(fieldGrid([
+      ["Original context", assessment.original_context, true], ["What echoes", assessment.what_echoes, true],
+      ["Where comparison breaks", assessment.comparison_breaks, true], ["Uncertainty", assessment.remains_uncertain, true],
+      ["Tempted overclaim", assessment.tempted_overclaim, true], ["Present-day evidence", assessment.present_day_evidence, true],
+      ["Editorial value", assessment.editorial_value, true], ["Creator intent", assessment.creator_intent_status],
+    ]));
+    const evaluation = safeJson(echo.evaluations?.find((item) => item.entity_id === candidate.id)?.metadata_json, {});
+    card.append(fieldGrid([["Cultural protocol", candidate.gate_reason_code === "CULTURAL_PROTOCOL_UNRESOLVED" ? "Unresolved — do not feature" : candidate.state === "editor_ready" ? "No flagged protocol in reviewed packet; editor must verify" : "Review required"], ["Prior SBNS use", evaluation.prior_use_status || "Not established"]]));
+    const sourceList = el("div"); sourceList.append(el("h4", "Context and contemporary sources"));
+    echo.sources.filter((source) => source.candidate_id === candidate.id).forEach((source) => sourceList.append(el("p", source.source_role + ": "), safeLink(source.url, source.title || source.canonical_identifier || source.intake_source_id)));
+    card.append(sourceList);
+    const rights = echo.rights.filter((item) => item.candidate_id === candidate.id).at(-1);
+    card.append(field("Rights / proposed use", rights ? rights.status + " · " + rights.permitted_use : "No review recorded"));
+    const latestDecision = echo.decisions.filter((item) => item.candidate_id === candidate.id).at(-1);
+    if (latestDecision) card.append(field("Human Echo decision", latestDecision.decision.toUpperCase() + " · " + date(latestDecision.decided_at)));
+    if (candidate.state === "editor_ready" && assessment?.id === candidate.editor_ready_assessment_id) {
+      const controls = el("div", null, "decision-row");
+      [["feature", "FEATURE THIS ECHO"], ["hold", "HOLD"], ["reject", "REJECT"]].forEach(([value, label]) => {
+        const button = el("button", label, value); button.type = "button";
+        button.addEventListener("click", async () => {
+          const rationale = window.prompt("Human editorial rationale for " + label);
+          if (!rationale?.trim()) return;
+          button.disabled = true;
+          try { await api("/api/admin/intakes/" + data.intake.id + "/echo/decision", { method: "POST",
+            body: JSON.stringify({ candidate_id: candidate.id, assessment_id: assessment.id, decision: value, rationale: rationale.trim() }) });
+            await loadDetail(data.intake.id, "Human Echo decision recorded. Story approval and publication remain separate."); }
+          catch (error) { card.append(el("p", error.message, "warning")); button.disabled = false; }
+        }); controls.append(button);
+      }); card.append(controls);
+    }
+    node.append(card);
+  }
   return node;
 }
 function draftForm(intakeId, latest, proposal) {
@@ -369,6 +474,23 @@ function draftForm(intakeId, latest, proposal) {
 }
 function renderDrafts(data, analysis) {
   const node = panel("story-drafts", "Editorial drafts");
+  const draft0 = draftZero(analysis);
+  const generated = el("section", null, "draft-zero");
+  generated.append(el("h3", "Draft 0 — AI Editorial Proposal"), el("p", "Generated from the evidence ledger; not a saved draft, human approval, or publication decision."));
+  if (draft0.state === "withheld") {
+    generated.append(el("strong", "DRAFT WITHHELD — EVIDENCE GAPS REMAIN"));
+    generated.append(list("Minimum missing issues", draft0.missing));
+  } else {
+    generated.append(el("h4", draft0.headline), el("p", draft0.summary));
+    draft0.paragraphs.forEach((paragraph) => {
+      generated.append(el("p", paragraph.text + (paragraph.qualification ? " Qualification: " + paragraph.qualification : "")));
+      const refs = el("p", null, "draft-citations");
+      paragraph.sources.forEach((source) => refs.append(safeLink(source.url, source.name)));
+      generated.append(refs);
+    });
+    generated.append(el("p", draft0.kicker, "kicker"), fieldGrid([["Category", draft0.category], ["Severity", draft0.severity], ["Tags", draft0.tags.join(", ")]]));
+  }
+  node.append(generated);
   const latest = data.drafts.at(-1);
   const lastApprovedDraftId = data.decisions.filter((item) => item.decision === "approve").at(-1)?.draft_id;
   if (!data.drafts.length) node.append(el("p", "No saved draft revision. AI proposals do not count as saved copy."));
@@ -443,7 +565,7 @@ async function loadDetail(id, notice = "") {
   header.append(context);
   const nav = el("nav", null, "file-nav");
   nav.setAttribute("aria-label", "Story file sections");
-  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-semantics", "Semantics"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
+  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-semantics", "Editorial Frame"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-echo", "Cultural Echo"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
   sections.filter(([section]) => section !== "story-discovery" || candidate).forEach(([section, label]) => {
     const link = el("a", label); link.href = "#" + section; nav.append(link);
   });
@@ -456,7 +578,7 @@ async function loadDetail(id, notice = "") {
   const discovery = renderDiscovery(candidate);
   if (discovery) detail.append(discovery);
   const rendered = renderAnalysis(data);
-  detail.append(renderSemanticControl(data, rendered.parsed, candidate), rendered.analysis, rendered.evidence);
+  detail.append(renderSemanticControl(data, rendered.parsed, candidate), rendered.analysis, rendered.evidence, renderEcho(data, rendered.parsed));
   if (rendered.proposal) detail.append(rendered.proposal);
   detail.append(renderDrafts(data, rendered.parsed), renderDecisions(data), renderAudit(data));
   fileTitle.focus({ preventScroll: true });
@@ -521,9 +643,38 @@ async function runWatchdeskNow(dryRun) {
 
 watchdeskDry.addEventListener("click", () => runWatchdeskNow(true));
 watchdeskLive.addEventListener("click", () => runWatchdeskNow(false));
+discoverySearchForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submit = discoverySearchForm.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  const term = document.querySelector("#discovery-search-query").value.trim();
+  discoverySearchStatus.textContent = "Searching bounded public metadata…";
+  discoverySearchResults.replaceChildren();
+  try {
+    const result = await api("/api/admin/discovery/search?q=" + encodeURIComponent(term));
+    discoverySearchStatus.textContent = result.results.length + " discovery leads. No source has been verified or enrolled for monitoring.";
+    result.results.forEach((item) => {
+      const card = el("article", null, "source-learning-card");
+      card.append(el("strong", item.title), el("p", item.domain + (item.seen_at ? " · " + item.seen_at : "")), safeLink(item.url));
+      const add = el("button", "Add URL to Story File");
+      add.type = "button";
+      add.addEventListener("click", async () => {
+        add.disabled = true;
+        try {
+          const created = await api("/api/admin/intakes", { method: "POST", body: JSON.stringify({ submitted_url: item.url, submitter_note: "Editor selected this public-search discovery lead for ordinary intake. Search metadata is not evidence." }) });
+          await loadDetail(created.intake.id, created.duplicate ? "Existing Story File opened; no duplicate intake created." : created.queued ? "Discovery URL saved and analysis queued." : created.message);
+        } catch (error) { discoverySearchStatus.textContent = error.message; add.disabled = false; }
+      });
+      card.append(add); discoverySearchResults.append(card);
+    });
+  } catch (error) { discoverySearchStatus.textContent = error.message; }
+  finally { submit.disabled = false; }
+});
 document.querySelector("#new-intake").addEventListener("click", () => show("new-view", "#new-heading"));
 document.querySelectorAll(".back").forEach((button) => button.addEventListener("click", () => loadQueue().then(() => document.querySelector("#assignment-heading").focus()).catch((error) => { queueStatus.textContent = error.message; })));
-["#queue-search", "#status-filter", "#origin-filter"].forEach((selector) => document.querySelector(selector).addEventListener(selector === "#queue-search" ? "input" : "change", renderQueue));
+document.querySelector("#queue-search").addEventListener("input", renderQueue);
+document.querySelector("#origin-filter").addEventListener("change", renderQueue);
+document.querySelector("#status-filter").addEventListener("change", () => loadQueue().catch((error) => { queueStatus.textContent = error.message; }));
 document.querySelector("#new-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(event.currentTarget));

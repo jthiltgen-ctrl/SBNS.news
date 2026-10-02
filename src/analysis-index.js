@@ -1,26 +1,34 @@
 import { analyzeIntake } from "./analyzer.js";
 import {
-  claimAnalysisJob, completeAnalysis, getAnalysisJob, getIntake,
+  claimAnalysisJob, completeAnalysis, getAnalysisJob, getIntake, getIntakeDetail, insertAuditEvent,
   markAnalysisFailed, markAnalysisRetrying, markIntakeAnalyzing,
 } from "./persistence.js";
 import { AnalysisFailure, retrieveSource, sha256 } from "./source-retrieval.js";
+import { expandPrimaryRecords } from "./primary-source-expansion.js";
+import { echoEligible, runEchoResearch } from "./echo-runtime.js";
 
 const MAIN_QUEUE = "sbns-analysis-staging";
 const DLQ = "sbns-analysis-dlq-staging";
 
 function timestamp() { return new Date().toISOString(); }
 function id(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
-function validMessage(body) { return body && body.schema_version === "1" && typeof body.job_id === "string" && body.job_id.startsWith("job_") && typeof body.intake_id === "string" && body.intake_id.startsWith("intake_"); }
+function validMessage(body) { return body && body.schema_version === "1" && (body.type === undefined || body.type === "intake_analysis") && typeof body.job_id === "string" && body.job_id.startsWith("job_") && typeof body.intake_id === "string" && body.intake_id.startsWith("intake_"); }
 function safeError(error) {
   if (error instanceof AnalysisFailure) return error;
   return new AnalysisFailure("transient_internal", "Transient analysis failure.", { retryable: true, safeMessage: "Analysis temporarily failed." });
 }
 function log(event, fields) { console.log(JSON.stringify({ event, ...fields })); }
+async function echoAudit(env, intakeId, action, metadata) {
+  try { await insertAuditEvent(env, { id: id("audit"), actor_type: "system", actor_id: null, action,
+    entity_type: "intake", entity_id: intakeId, metadata_json: JSON.stringify(metadata), created_at: timestamp() }); }
+  catch { log("echo_audit_write_failed", { intake_id: intakeId, action }); }
+}
 
 export async function processAnalysisMessage(message, env, dependencies = {}) {
   if (!validMessage(message.body)) { message.ack(); return { outcome: "invalid_message" }; }
   const { job_id: jobId, intake_id: intakeId } = message.body;
   const retrieve = dependencies.retrieveSource ?? retrieveSource;
+  const expand = dependencies.expandPrimaryRecords ?? expandPrimaryRecords;
   const analyze = dependencies.analyzeIntake ?? analyzeIntake;
   const job = await getAnalysisJob(env, jobId);
   if (!job || job.intake_id !== intakeId || ["complete", "dead_letter", "failed"].includes(job.state)) { message.ack(); return { outcome: "noop" }; }
@@ -31,20 +39,37 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
   if (!intake) { await markAnalysisFailed(env, jobId, intakeId, timestamp(), "missing_intake", "Intake no longer exists."); message.ack(); return { outcome: "failed" }; }
   try {
     const evidence = await retrieve(intake.submitted_url, env, dependencies.retrievalOptions);
-    const source = { id: id("source"), intake_id: intakeId, url: evidence.finalUrl, normalized_url: evidence.normalizedUrl, name: evidence.title || new URL(evidence.finalUrl).hostname, source_type: "other", verification_status: "unverified", fetched_at: timestamp(), content_hash: await sha256(evidence.text), source_title: evidence.title, extracted_text: evidence.text, extraction_format: evidence.extractionFormat === "markdown" ? "text" : evidence.extractionFormat, created_at: timestamp() };
-    const analysis = await analyze({ intake, source: { ...evidence, sourceId: "source-1" }, evidence, env });
-    const materialClaims = analysis.claims.filter((claim) => claim.material);
-    if (materialClaims.some((claim) => claim.verification_status === "disputed")) source.verification_status = "disputed";
-    else if (materialClaims.length && materialClaims.every((claim) => ["verified", "verified_with_qualification"].includes(claim.verification_status))) {
-      source.verification_status = materialClaims.some((claim) => claim.verification_status === "verified_with_qualification")
-        ? "verified_with_qualification" : "verified";
-    }
+    const expansion = await expand(evidence, env, dependencies.retrievalOptions);
+    const materials = [evidence, ...expansion.records];
+    const analysis = await analyze({ intake, source: { ...evidence, sourceId: "source-1" }, evidence, additionalSources: expansion.records, env });
+    const sourceMap = new Map();
+    const sources = await Promise.all(materials.map(async (material, index) => {
+      const reference = `source-${index + 1}`;
+      const linkedClaims = analysis.claims.filter((claim) => claim.material && claim.source_refs.includes(reference));
+      const status = linkedClaims.some((claim) => claim.verification_status === "disputed") ? "disputed"
+        : linkedClaims.length && linkedClaims.every((claim) => ["verified", "verified_with_qualification"].includes(claim.verification_status))
+          ? linkedClaims.some((claim) => claim.verification_status === "verified_with_qualification") ? "verified_with_qualification" : "verified"
+          : "unverified";
+      const row = { id: id("source"), intake_id: intakeId, url: material.finalUrl, normalized_url: material.normalizedUrl, name: material.title || new URL(material.finalUrl).hostname,
+        source_type: analysis.sources.find((item) => item.source_id === reference)?.source_type || "other", verification_status: status, fetched_at: timestamp(), content_hash: await sha256(material.text),
+        source_title: material.title, extracted_text: material.text, extraction_format: material.extractionFormat === "markdown" ? "text" : material.extractionFormat, created_at: timestamp() };
+      sourceMap.set(reference, row.id);
+      return row;
+    }));
     const analysisId = id("analysis");
     const claimMap = new Map(analysis.claims.map((claim) => [claim.claim_id, id("claim")]));
     const claims = analysis.claims.map((claim) => ({ id: claimMap.get(claim.claim_id), claim_text: claim.claim_text, material: claim.material, verification_status: claim.verification_status, qualification: claim.qualification }));
-    const links = analysis.claims.flatMap((claim) => claim.source_refs.includes("source-1") ? [{ claim_id: claimMap.get(claim.claim_id) }] : []);
+    const links = analysis.claims.flatMap((claim) => claim.source_refs.map((ref) => ({ claim_id: claimMap.get(claim.claim_id), source_id: sourceMap.get(ref) })).filter((link) => link.source_id));
     const completedAt = timestamp();
-    await completeAnalysis(env, { intakeId, jobId, source, analysisRow: { id: analysisId, schema_version: analysis.schema_version, recommendation: analysis.recommendation, recommendation_confidence: analysis.recommendation_confidence, category: analysis.category, severity: analysis.severity, systemic_failure: analysis.systemic_failure, raw_analysis_json: JSON.stringify(analysis) }, claims, links, timestamp: completedAt });
+    await completeAnalysis(env, { intakeId, jobId, source: sources[0], sources, analysisRow: { id: analysisId, schema_version: analysis.schema_version, recommendation: analysis.recommendation, recommendation_confidence: analysis.recommendation_confidence, category: analysis.category, severity: analysis.severity, systemic_failure: analysis.systemic_failure, raw_analysis_json: JSON.stringify({ ...analysis, source_expansion: { attempted: expansion.attempted, retrieved: expansion.records.map((item) => item.finalUrl), failures: expansion.failures } }) }, claims, links, timestamp: completedAt });
+    if (echoEligible(analysis)) {
+      try {
+        await env.ANALYSIS_QUEUE.send({ schema_version: "1", type: "echo_research", intake_id: intakeId, analysis_id: analysisId,
+          run_key: `analysis:${analysisId}`, requested_by: "system:analysis", trigger_type: "review_ready" });
+        await echoAudit(env, intakeId, "echo.research_queued", { analysis_id: analysisId });
+        log("echo_research_queued", { intake_id: intakeId, analysis_id: analysisId });
+      } catch { await echoAudit(env, intakeId, "echo.research_enqueue_failed", { analysis_id: analysisId }); log("echo_research_enqueue_failed", { intake_id: intakeId, analysis_id: analysisId }); }
+    }
     message.ack(); log("analysis_completed", { job_id: jobId, intake_id: intakeId, recommendation: analysis.recommendation, attempt: job.attempt + 1 });
     return { outcome: "complete", analysis };
   } catch (caught) {
@@ -54,7 +79,37 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
   }
 }
 
+export async function processEchoMessage(message, env, dependencies = {}) {
+  const body = message.body;
+  if (!body || body.schema_version !== "1" || body.type !== "echo_research" ||
+      !/^intake_[a-zA-Z0-9_-]+$/.test(body.intake_id || "") ||
+      !/^analysis_[a-zA-Z0-9_-]+$/.test(body.analysis_id || "") ||
+      typeof body.run_key !== "string" || body.run_key.length > 200 ||
+      !["manual", "review_ready"].includes(body.trigger_type)) {
+    message.ack(); return { outcome: "invalid_message" };
+  }
+  const detail = await getIntakeDetail(env, body.intake_id);
+  const latest = detail?.analyses.at(-1);
+  if (!latest || latest.id !== body.analysis_id || detail.intake.status !== "review_ready") { message.ack(); return { outcome: "stale" }; }
+  let analysis;
+  try { analysis = JSON.parse(latest.raw_analysis_json); } catch { message.ack(); return { outcome: "invalid_analysis" }; }
+  if (!echoEligible(analysis)) { message.ack(); return { outcome: "ineligible" }; }
+  try {
+    const research = dependencies.runEchoResearch ?? runEchoResearch;
+    const result = await research(env, { intake: detail.intake, analysis, sources: detail.sources,
+      runKey: body.run_key, requestedBy: body.requested_by || "system:analysis", triggerType: body.trigger_type });
+    message.ack(); log("echo_research_completed", { intake_id: body.intake_id, status: result.status });
+    return { outcome: "complete", result };
+  } catch (error) {
+    // Optional cultural research cannot rewrite or block the completed story analysis.
+    await echoAudit(env, body.intake_id, "echo.research_failed", { analysis_id: body.analysis_id, code: String(error?.code || error?.message || "ECHO_FAILED").slice(0, 80) });
+    message.ack(); log("echo_research_failed", { intake_id: body.intake_id, code: String(error?.code || error?.message || "ECHO_FAILED").slice(0, 80) });
+    return { outcome: "failed", error };
+  }
+}
+
 export async function processDeadLetterMessage(message, env) {
+  if (message.body?.type === "echo_research") { message.ack(); return { outcome: "echo_dead_letter" }; }
   if (!validMessage(message.body)) { message.ack(); return { outcome: "invalid_message" }; }
   const job = await getAnalysisJob(env, message.body.job_id);
   if (!job || ["complete", "dead_letter"].includes(job.state)) { message.ack(); return { outcome: "noop" }; }
@@ -66,6 +121,7 @@ export default {
   async queue(batch, env) {
     for (const message of batch.messages) {
       if (batch.queue === DLQ) await processDeadLetterMessage(message, env);
+      else if (batch.queue === MAIN_QUEUE && message.body?.type === "echo_research") await processEchoMessage(message, env);
       else if (batch.queue === MAIN_QUEUE) await processAnalysisMessage(message, env);
       else message.ack();
     }
