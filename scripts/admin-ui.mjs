@@ -47,6 +47,7 @@ assert.match(js, /Draft 0 — AI Editorial Proposal/);
 assert.match(js, /DRAFT WITHHELD — EVIDENCE GAPS REMAIN/);
 assert.match(js, /Read complete inspected-material analysis/);
 assert.match(js, /Editorial Frame/);
+assert.match(js, /Analyze selected discovery/);
 for (const label of ["Intake", "Discovery", "Analysis", "Evidence", "Drafts", "Decision", "Audit"]) assert.match(js, new RegExp('"' + label + '"'));
 assert.match(js, /AI proposal — not saved \/ not approved/);
 assert.match(js, /LAST APPROVED/);

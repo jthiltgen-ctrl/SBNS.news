@@ -293,10 +293,12 @@ function renderAnalysis(data) {
   const node = panel("story-analysis", "Analysis", "analysis-panel");
   const job = data.analysis_jobs.at(-1);
   node.append(field("Analysis state", jobLabels[job?.state] || data.intake.analysis_status));
-  const retryable = ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
+  const discoveryNeedsAnalysis = !job && data.intake.origin === "discovery";
+  const retryable = discoveryNeedsAnalysis || ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
   if (retryable) {
+    if (discoveryNeedsAnalysis) node.append(el("p", "Watchdesk discovery is not automatically formal analysis. Start it only after selecting this lead for a full Story File review.", "warning"));
     if (job?.last_error_message) node.append(el("p", job.last_error_message, "warning"));
-    const retry = el("button", "Retry analysis");
+    const retry = el("button", discoveryNeedsAnalysis ? "Analyze selected discovery" : "Retry analysis");
     retry.type = "button";
     retry.addEventListener("click", async () => {
       try { await api("/api/admin/intakes/" + data.intake.id + "/analyze", { method: "POST", body: "{}" }); await loadDetail(data.intake.id, "Analysis queued."); }
