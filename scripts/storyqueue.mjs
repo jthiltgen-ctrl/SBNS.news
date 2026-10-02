@@ -5,12 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   STORYQUEUE_ADDRESS,
+  STORYQUEUE_ROUTING_ADDRESS,
   extractStoryUrls,
   normalizeStoryUrl,
   normalizeStoryqueuePayload,
   senderAllowed,
   storyqueueMessageKey,
 } from "../src/storyqueue.js";
+import { MAX_STORYQUEUE_RAW_BYTES, parseStoryqueueEmail } from "../src/storyqueue-email.js";
 import adminEntry from "../src/admin-entry.js";
 import { processAnalysisMessage } from "../src/analysis-index.js";
 
@@ -40,51 +42,73 @@ class LocalD1 {
 }
 
 async function check() {
-  const relay = await readFile(path.join(ROOT, "integrations/storyqueue/greengeeks-pipe.php"), "utf8");
   const wrapper = await readFile(path.join(ROOT, "src/admin-entry.js"), "utf8");
   const persistence = await readFile(path.join(ROOT, "src/storyqueue-persistence.js"), "utf8");
   const wrangler = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
-  assert.match(relay, /No raw MIME or attachment bytes leave the mail host/);
-  assert.match(relay, /MAX_URLS = 10/);
-  assert.match(wrapper, /\/api\/internal\/storyqueue\/email/);
-  assert.match(wrapper, /SENDER_NOT_AUTHORIZED/);
+  const ui = await readFile(path.join(ROOT, "public/admin-persistent/storyqueue-ui.js"), "utf8");
+  await assert.rejects(() => readFile(path.join(ROOT, "integrations/storyqueue/greengeeks-pipe.php")));
+  assert.match(wrapper, /async email\(message, env\)/);
+  assert.doesNotMatch(wrapper, /api\/internal\/storyqueue\/email|STORYQUEUE_INGEST_TOKEN/);
+  assert.match(wrangler, /"addresses": \["storyqueue@intake\.shockedbutnotsurprised\.news"\]/);
+  assert.match(ui, /Email handler/);
   assert.match(persistence, /storyqueue\.email_received/);
   assert.match(persistence, /entity_type = 'storyqueue_message'/);
-  assert.match(wrangler, /src\/admin-entry\.js/);
-  console.log("Story Queue check passed: bounded email bridge, audit-ledger provenance, relay, and admin wrapper present.");
+  assert.equal(MAX_STORYQUEUE_RAW_BYTES, 262_144);
+  console.log("Story Queue check passed: bounded Email Worker, subdomain route, existing audit/intake persistence, and retired token relay.");
 }
 
-async function bridgeIntegration() {
+function syntheticEmail({ sender = "fixture@example.test", envelopeSender = "forwarder@greengeeks.example", subject = "Synthetic public leads", messageId = "<fixture-message@example.test>", date = "Thu, 01 Oct 2026 18:00:00 +0000", body, recipient = STORYQUEUE_ROUTING_ADDRESS, rawSize } = {}) {
+  const raw = `From: Synthetic Editor <${sender}>\r\nTo: ${STORYQUEUE_ADDRESS}\r\nSubject: ${subject}\r\nDate: ${date}\r\nMessage-ID: ${messageId}\r\nMIME-Version: 1.0\r\n${body}`;
+  const bytes = new TextEncoder().encode(raw);
+  return {
+    from: envelopeSender,
+    to: recipient,
+    rawSize: rawSize ?? bytes.byteLength,
+    headers: new Headers({ from: sender, to: recipient, subject, date, "message-id": messageId }),
+    raw: new Blob([bytes]).stream(),
+  };
+}
+
+const MULTIPART_MESSAGE = `Content-Type: multipart/mixed; boundary="sbns-boundary"\r\n\r\n--sbns-boundary\r\nContent-Type: text/plain; charset="utf-8"\r\nContent-Transfer-Encoding: 8bit\r\n\r\nPlease inspect https://example.test/report-a and https://example.test/report-b. These are invented records.\r\n--sbns-boundary\r\nContent-Type: application/octet-stream; name="harmless.txt"\r\nContent-Disposition: attachment; filename="harmless.txt"\r\nContent-Transfer-Encoding: base64\r\n\r\nc3ludGhldGljIGF0dGFjaG1lbnQgYnl0ZXM=\r\n--sbns-boundary--\r\n`;
+
+async function emailWorkerIntegration() {
   const db = new LocalD1();
   try {
     for (const file of ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql", "0006_watchdesk_source_learning.sql"])
       db.sqlite.exec(await readFile(path.join(ROOT, "migrations", file), "utf8"));
     const sent = [];
-    const env = { SBNS_DB: db, STORYQUEUE_INGEST_TOKEN: "synthetic-bridge-token", STORYQUEUE_ALLOWED_SENDERS: "fixture@example.test",
+    const env = { SBNS_DB: db, STORYQUEUE_ALLOWED_SENDERS: "fixture@example.test",
       ANALYSIS_QUEUE: { send: async (message) => sent.push(message) } };
-    const payload = { schema_version: "1", recipient: STORYQUEUE_ADDRESS, sender: "fixture@example.test",
-      subject: "Synthetic public leads", message_id: "<fixture-message@example.test>", received_at: "2026-10-01T18:00:00Z",
-      plain_text: "Please inspect https://example.test/report-a and https://example.test/report-b. These are invented records.",
-      attachment_count: 1 };
-    const post = (runtime, input = payload, token = "synthetic-bridge-token") => adminEntry.fetch(new Request("https://admin.example/api/internal/storyqueue/email", {
-      method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(input),
-    }), runtime);
-    assert.equal((await post({ ...env, STORYQUEUE_INGEST_TOKEN: undefined })).status, 401, "Missing bridge token must deny ingestion");
-    assert.equal((await post({ ...env, STORYQUEUE_ALLOWED_SENDERS: undefined })).status, 403, "Missing sender policy must deny ingestion");
-    const first = await post(env);
-    assert.equal(first.status, 201);
-    const accepted = await first.json();
-    assert.equal(accepted.new_intake_ids.length, 2);
-    assert.equal(accepted.attachments_ignored, 1);
+    const make = () => syntheticEmail({ body: MULTIPART_MESSAGE });
+    const parsed = await parseStoryqueueEmail(make());
+    assert.equal(parsed.sender, "fixture@example.test", "Policy uses the RFC 5322 From header, not a rewritten envelope sender");
+    assert.equal(parsed.envelope_sender, "forwarder@greengeeks.example", "Forwarder envelope provenance remains distinct");
+    assert.equal(parsed.recipient, STORYQUEUE_ROUTING_ADDRESS);
+    assert.deepEqual(parsed.urls, ["https://example.test/report-a", "https://example.test/report-b"]);
+    assert.equal(parsed.attachment_count, 1);
+    assert.doesNotMatch(parsed.plain_text, /synthetic attachment bytes/);
+
+    await adminEntry.email(make(), env, {});
+    const accepted = db.sqlite.prepare("SELECT * FROM intakes ORDER BY submitted_url").all();
+    assert.equal(accepted.length, 2, "One qualifying forwarded email creates one intake per unique public URL");
     assert.equal(sent.length, 2);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, 2);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM analysis_jobs WHERE state='queued'").get().n, 2);
-    assert.equal((await (await post(env)).json()).duplicate, true, "Duplicate message must replay its original intake IDs");
+    const acceptedMessage = db.sqlite.prepare("SELECT metadata_json FROM audit_events WHERE action='storyqueue.email_received'").get();
+    assert.equal(JSON.parse(acceptedMessage.metadata_json).envelope_sender, "forwarder@greengeeks.example");
+    assert.equal(JSON.parse(acceptedMessage.metadata_json).recipient_email, STORYQUEUE_ROUTING_ADDRESS);
+    const intakeAudit = db.sqlite.prepare("SELECT metadata_json FROM audit_events WHERE action='storyqueue.email_intake_created' LIMIT 1").get();
+    assert.equal(JSON.parse(intakeAudit.metadata_json).attachment_count_ignored, 1);
+
+    await adminEntry.email(make(), env, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='storyqueue.email_received'").get().n, 1, "Duplicate Message-ID reuses the original message audit");
     assert.equal(sent.length, 2, "Duplicate message must not enqueue again");
-    const repeatedUrl = await post(env, { ...payload, message_id: "<second-message@example.test>",
-      plain_text: "A second note about https://example.test/report-a" });
-    assert.equal((await repeatedUrl.json()).new_intake_ids.length, 0, "A second message about an existing URL must not create a new intake");
-    const intake = db.sqlite.prepare("SELECT * FROM intakes WHERE id=?").get(accepted.new_intake_ids[0]);
+    const repeatedUrl = syntheticEmail({ messageId: "<second-message@example.test>", date: "Thu, 01 Oct 2026 18:01:00 +0000",
+      body: "Content-Type: text/plain; charset=utf-8\r\n\r\nA second note about https://example.test/report-a\r\n" });
+    await adminEntry.email(repeatedUrl, env, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, 2, "A second message about an existing URL must not create a duplicate intake");
+    assert.equal(sent.length, 2, "A duplicate URL cannot create a parallel analysis job");
+    const intake = db.sqlite.prepare("SELECT * FROM intakes ORDER BY submitted_url LIMIT 1").get();
     const fixture = JSON.parse(await readFile(path.join(ROOT, "intake", "fixtures", "publish-story-005.json"), "utf8"));
     const analysis = structuredClone(fixture.analysis);
     Object.assign(analysis, { intake_id: intake.id, submitted_url: intake.submitted_url, submitted_at: intake.submitted_at, intake_origin: intake.origin });
@@ -108,7 +132,27 @@ async function bridgeIntegration() {
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM analyses WHERE intake_id=?").get(intake.id).n, 1);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM claim_sources WHERE intake_id=?").get(intake.id).n, analysis.claims.length);
     assert.equal(db.sqlite.prepare("PRAGMA foreign_key_check").all().length, 0);
-    console.log("Story Queue bridge integration passed: deny-by-default, two admitted URLs, attachment exclusion, message/URL dedupe, queued analysis, completed Story File, zero FK violations.");
+
+    const beforeUnauthorized = db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n;
+    await adminEntry.email(syntheticEmail({ sender: "outsider@example.net", messageId: "<unauthorized@example.test>",
+      body: "Content-Type: text/plain; charset=utf-8\r\n\r\nhttps://example.test/unauthorized" }), env, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, beforeUnauthorized, "Unauthorized From header cannot create an intake");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='storyqueue.email_received'").get().n, 2, "Unauthorized senders create no Story Queue message audit");
+
+    await adminEntry.email(syntheticEmail({ messageId: "<no-url@example.test>", date: "Thu, 01 Oct 2026 18:02:00 +0000",
+      body: "Content-Type: text/plain; charset=utf-8\r\n\r\nNo qualifying public URL in this ordinary email." }), env, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, beforeUnauthorized, "Allowed no-URL email creates no intake");
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM analysis_jobs").get().n, 2, "No-URL email creates no analysis job");
+
+    await adminEntry.email(syntheticEmail({ messageId: "<no-policy@example.test>", body: MULTIPART_MESSAGE }), { ...env, STORYQUEUE_ALLOWED_SENDERS: undefined }, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, beforeUnauthorized, "Missing sender policy denies ingestion");
+    await adminEntry.email(syntheticEmail({ messageId: "<oversize@example.test>", rawSize: MAX_STORYQUEUE_RAW_BYTES + 1, body: MULTIPART_MESSAGE }), env, {});
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM intakes").get().n, beforeUnauthorized, "Oversized forwarded message is ignored before parsing or persistence");
+
+    const oldEndpoint = await adminEntry.fetch(new Request("https://admin.example/api/internal/storyqueue/email", { method: "POST" }), env);
+    assert.equal(oldEndpoint.status, 404, "The shared-token HTTP bridge is no longer an active ingress path");
+    assert.equal(db.sqlite.prepare("PRAGMA foreign_key_check").all().length, 0);
+    console.log("Story Queue Email Worker integration passed: forwarded MIME parsing, From-header allowlist, attachment exclusion, message/URL dedupe, analysis enqueue, no-URL/unauthorized denial, bounded size, retired HTTP bridge, completed Story File, zero FK violations.");
   } finally { db.close(); }
 }
 
@@ -124,6 +168,11 @@ async function test() {
   assert.equal(senderAllowed("reporter@news.org", "*@news.org"), true);
   assert.equal(senderAllowed("stranger@example.net", "trusted@example.com"), false);
   assert.equal(senderAllowed("anyone@example.net", ""), false);
+  const approvedPolicy = "*@shockedbutnotsurprised.news,jthiltgen@gmail.com,justin@jthiltgen.com";
+  assert.equal(senderAllowed("editor@shockedbutnotsurprised.news", approvedPolicy), true);
+  assert.equal(senderAllowed("jthiltgen@gmail.com", approvedPolicy), true);
+  assert.equal(senderAllowed("justin@jthiltgen.com", approvedPolicy), true);
+  assert.equal(senderAllowed("outsider@example.net", approvedPolicy), false);
 
   const payload = normalizeStoryqueuePayload({
     schema_version: "1",
@@ -152,7 +201,7 @@ async function test() {
     plain_text: "No public link in this note.",
   });
   assert.deepEqual(noLinks.urls, []);
-  await bridgeIntegration();
+  await emailWorkerIntegration();
   console.log("Story Queue tests passed: normalization, tracking removal, sender policy, dedupe key, attachment exclusion metadata, and no-link handling.");
 }
 

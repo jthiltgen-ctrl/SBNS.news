@@ -1,6 +1,7 @@
 import { validateSourceUrl } from "./source-retrieval.js";
 
 export const STORYQUEUE_ADDRESS = "storyqueue@shockedbutnotsurprised.news";
+export const STORYQUEUE_ROUTING_ADDRESS = "storyqueue@intake.shockedbutnotsurprised.news";
 export const STORYQUEUE_SCHEMA_VERSION = "1";
 export const MAX_STORYQUEUE_TEXT = 12_000;
 export const MAX_STORYQUEUE_URLS = 10;
@@ -60,7 +61,7 @@ export function normalizeStoryqueuePayload(input = {}) {
   if (input.schema_version !== STORYQUEUE_SCHEMA_VERSION) throw new Error("Unsupported storyqueue schema version.");
   const recipient = clean(input.recipient, 320)?.toLowerCase();
   const sender = clean(input.sender, 320)?.toLowerCase();
-  if (recipient !== STORYQUEUE_ADDRESS) throw new Error("Unexpected storyqueue recipient.");
+  if (![STORYQUEUE_ADDRESS, STORYQUEUE_ROUTING_ADDRESS].includes(recipient)) throw new Error("Unexpected storyqueue recipient.");
   if (!sender || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sender)) throw new Error("Valid sender email is required.");
   const subject = clean(input.subject, 500);
   const messageId = clean(input.message_id, 500);
@@ -72,6 +73,7 @@ export function normalizeStoryqueuePayload(input = {}) {
   return {
     recipient,
     sender,
+    envelope_sender: clean(input.envelope_sender, 320)?.toLowerCase() || null,
     subject,
     message_id: messageId,
     received_at: received.toISOString(),
@@ -93,15 +95,4 @@ export async function storyqueueMessageKey(payload) {
   });
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
   return [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-export async function bearerMatches(value, expected) {
-  const token = String(value || "").replace(/^Bearer\s+/i, "").trim();
-  if (!token || !expected) return false;
-  const digest = async (text) => new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
-  const [left, right] = await Promise.all([digest(token), digest(String(expected))]);
-  if (left.length !== right.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < left.length; i += 1) mismatch |= left[i] ^ right[i];
-  return mismatch === 0;
 }

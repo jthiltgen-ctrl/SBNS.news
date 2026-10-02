@@ -29,7 +29,7 @@ approved stories.
 
 The authenticated admin Worker also exposes the bounded Watchdesk discovery
 run contract, governed source-learning controls, semantics/editorial-aperture
-diagnostics, and the prepared Story Queue email bridge. See
+diagnostics, and the retained-mailbox Story Queue Email Worker integration. See
 [WATCHDESK.md](WATCHDESK.md) for public-source discovery boundaries and
 [docs/NEWSROOM-CONTROL-PLANE.md](docs/NEWSROOM-CONTROL-PLANE.md) for the
 relationship among intake, discovery, semantics, source learning, and human
@@ -54,7 +54,7 @@ the publication's standards.
 - [docs/SEMANTICS-CONTROL.md](docs/SEMANTICS-CONTROL.md) — control for research, editorial, and search-language drift.
 - [docs/WATCHDESK-SOURCE-PORTFOLIO.md](docs/WATCHDESK-SOURCE-PORTFOLIO.md) — discovery-source balance, authority boundaries, and public-whistleblower source governance.
 - [docs/NEWSROOM-CONTROL-PLANE.md](docs/NEWSROOM-CONTROL-PLANE.md) — living Newsroom intake, semantics, source-learning, and human-authority control plane.
-- [docs/STORYQUEUE-EMAIL-INTAKE.md](docs/STORYQUEUE-EMAIL-INTAKE.md) — prepared ordinary-email Story Queue integration and post-merge GreenGeeks activation contract.
+- [docs/STORYQUEUE-EMAIL-INTAKE.md](docs/STORYQUEUE-EMAIL-INTAKE.md) — ordinary-email Story Queue, retained GreenGeeks mailbox, and isolated Cloudflare intake-subdomain contract.
 
 ## Local development
 
@@ -120,7 +120,7 @@ without the field remain unchanged.
 ## Deployment boundary
 
 Deployment, remote migrations, production DNS, nameservers, public visitor
-submissions, Story Queue mail-host activation, and automated repository
+submissions, Story Queue mail-host forwarding, and automated repository
 publication require separate authorization. Qualifying pushes or merges to
 `main` automatically start the scoped public and/or admin Worker deployment
 workflows. The public `sbns-news` Worker uses `.github/workflows/deploy.yml` and

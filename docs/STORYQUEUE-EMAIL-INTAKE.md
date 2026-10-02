@@ -1,182 +1,62 @@
 # SBNS Story Queue Email Intake
 
-Status: implementation present; draft PR #48 closes release-readiness gaps, while production secrets and mail-host activation remain external
-Address: `storyqueue@shockedbutnotsurprised.news`
-Purpose: ordinary-email submission of public story links into the authenticated Newsroom queue.
+Story Queue is ordinary editorial email intake, not a publication path or confidential-source system.
 
-## 1. Role
+Public mailbox: `storyqueue@shockedbutnotsurprised.news`<br>
+Private Cloudflare ingress: `storyqueue@intake.shockedbutnotsurprised.news`
 
-Story Queue email is another Newsroom intake surface, not a publication path.
+## Mail path
 
-The intended flow is:
+`GreenGeeks retained mailbox → cPanel forwarder → Cloudflare Email Routing on the intake subdomain → sbns-admin Email Worker → existing Story Queue intake/dedupe/audit/analysis path`
 
-`email -> bounded mail-host relay -> authenticated Newsroom bridge -> dedupe -> visitor intake -> existing analysis queue -> human editorial review`
+The publisher-facing mailbox remains a real GreenGeeks mailbox. The cPanel forwarder sends a copy to the private intake address; it must not replace the mailbox or discard its retained copy. Cloudflare Email Routing is configured only for `intake.shockedbutnotsurprised.news`. Do not enable Email Routing for the apex domain or change apex MX, ordinary editorial mail, or other mail records.
 
-After analysis, an intake may also contribute to the Watchdesk learned-source candidate list. A source is never silently promoted into scheduled monitoring merely because someone emailed one of its links.
+The admin Worker parses bounded RFC 5322/MIME input in its native Email Worker handler. It extracts only sender/recipient metadata, subject, message ID/date, bounded plain text, and attachment count. It does not retain or forward raw MIME, HTML, or attachment bytes. The private intake address is not a public submission mailbox and should not be advertised.
 
-## 2. Channel classification
+The prior shared-token HTTP bridge and GreenGeeks PHP pipe are retired. Do not restore them, retrieve their former token, or reuse that credential. Production ingress no longer depends on `STORYQUEUE_INGEST_TOKEN`.
 
-`storyqueue@shockedbutnotsurprised.news` is ordinary editorial email.
+## Channel and authority boundaries
 
-It is **not**:
+`storyqueue@shockedbutnotsurprised.news` is ordinary editorial email. It is not anonymous, confidential, Secure Source/GlobaLeaks, or authorization to send unpublished sensitive material. Confidential-source material remains outside ordinary email automation.
 
-- anonymous;
-- a confidential-source channel;
-- Secure Source / GlobaLeaks;
-- an encrypted dropbox;
-- authorization to send unpublished sensitive material;
-- authorization for automatic publication.
+The sender policy is exactly:
 
-Secure Source remains a separate human-governed system with no automatic transfer of raw confidential material into AI, Watchdesk, analytics, GitHub, or ordinary email workflows.
+`*@shockedbutnotsurprised.news,jthiltgen@gmail.com,justin@jthiltgen.com`
 
-## 3. Existing mail-provider boundary
+The policy is a routing/noise control, not proof of identity or truth. The worker checks the RFC 5322 From address while retaining the mail transport envelope sender as separate provenance. Missing policy denies ingestion. Do not broaden the policy or place sender addresses in repository secrets/configuration files.
 
-SBNS mail remains hosted through GreenGeeks. Do not enable Cloudflare Email Routing for the apex domain merely to automate Story Queue: Cloudflare Email Routing requires its own MX records and would conflict with the existing external mail provider.
+An allowed email addressed to the public mailbox may create intakes only for qualifying public HTTP(S) URLs. No safe URL means no intake and no analysis job. Relevance, reliability, and accuracy are handled downstream by normal retrieval, analysis, evidence, and human review; the mail layer is not an accuracy detector.
 
-The integration therefore preserves GreenGeeks mail delivery and uses GreenGeeks/cPanel's supported **Pipe to a program** capability for the Story Queue address/filter.
+## Bounded processing
 
-The repository includes:
+- Maximum raw email: 256 KiB.
+- Maximum normalized plain text: 12,000 characters.
+- Maximum retained intake note: 2,000 characters.
+- Maximum URLs per email: 10.
+- Only credential-free public HTTP(S) URLs qualify; local/private hosts are rejected.
+- Common tracking parameters, fragments, default ports, and duplicate normalized URLs are removed.
+- Attachments are counted for provenance and ignored; attachment bytes never enter intake or AI analysis.
+- HTML-only or attachment-only content does not become text/source ingestion.
 
-`integrations/storyqueue/greengeeks-pipe.php`
+Message and URL dedupe reuse the existing persistence path. Each new URL creates a normal intake and analysis job. Existing URLs are linked rather than duplicated. Email provenance is recorded through the existing append-only audit ledger; raw MIME and attachment contents are not stored.
 
-The relay reads a single RFC 5322 message from standard input, extracts only bounded ordinary-email metadata, a plain-text note, and public HTTP(S) links, then sends a signed JSON payload to the Newsroom bridge.
+## Status and acceptance
 
-Raw MIME and attachment bytes are not sent to the Newsroom.
+The authenticated `GET /api/admin/storyqueue/status` reports whether the Email Worker handler and sender policy are configured, bounded operational counts, and recent intake identifiers. It does not reveal secrets. The Story Queue panel explicitly states that attachments are not processed and the channel is not Secure Source.
 
-## 4. Newsroom bridge
+Production activation and verification are separate from code deployment:
 
-The admin Worker wrapper handles:
+1. Confirm the deployed admin Worker is healthy and the real GreenGeeks mailbox still receives and retains ordinary mail.
+2. Configure Cloudflare Email Routing only for the `intake` subdomain and the exact private address above; verify apex MX and other mail records remain unchanged.
+3. Add a cPanel forwarder from the existing public mailbox to the private intake address while retaining normal mailbox delivery.
+4. Verify the exact sender policy is active and status reports the Email Worker configured.
+5. Test inbound allowed one-URL email, duplicate, multiple URLs/notes, harmless attachment exclusion, unauthorized sender denial, and an allowed no-URL message.
+6. Verify one admitted URL follows email → intake → analysis job → Story File, and verify the source email remains in the GreenGeeks mailbox.
+7. Separately test outbound email from the real Story Queue mailbox through GreenGeeks.
+8. Once the new route is verified, remove the retired HTTP-bridge secret and any installed PHP relay/configuration. Never display, retrieve, or reuse the former credential.
 
-`POST /api/internal/storyqueue/email`
+Do not publish a test story. Retain controlled acceptance records if there is no safe auditable cleanup operation.
 
-Authentication uses a bearer token stored as the admin Worker secret:
+## Stop conditions
 
-`STORYQUEUE_INGEST_TOKEN`
-
-The endpoint is intentionally outside the human Cloudflare Access session path because the GreenGeeks relay is a machine client. It is protected by the dedicated high-entropy bearer secret and a sender policy.
-
-The normal authenticated Newsroom status endpoint is:
-
-`GET /api/admin/storyqueue/status`
-
-The Newsroom UI shows:
-
-- address;
-- whether the bridge secret is configured;
-- whether a sender policy is configured;
-- number of email messages received;
-- number of story links received;
-- last received time;
-- attachment-processing boundary;
-- explicit reminder that the channel is not Secure Source.
-
-## 5. Sender policy
-
-The admin Worker secret/variable:
-
-`STORYQUEUE_ALLOWED_SENDERS`
-
-is a comma-separated list of exact addresses or bounded domain wildcards such as:
-
-`editor@example.com,reporter@example.org,*@trusted-newsroom.org`
-
-The safe default is **deny all** when this policy is absent.
-
-A literal `*` is technically supported for a later deliberate public-opening decision, but it is not the initial recommended state.
-
-This preserves the previously approved authorized-sender-first rollout while leaving room for a future public story-suggestion channel if editorial experience supports it.
-
-## 6. Intake limits
-
-Per email:
-
-- maximum raw message accepted by the GreenGeeks relay: 256 KiB;
-- maximum plain-text note sent onward: 12,000 bytes;
-- maximum Newsroom note excerpt retained on each intake: 2,000 characters;
-- maximum public story URLs: 10;
-- only credential-free public-host `http` and `https` URLs qualify; private/local hosts are rejected before intake creation;
-- common tracking parameters and URL fragments are removed before dedupe;
-- attachments are counted for provenance but ignored;
-- HTML-only/attachment-only content does not become attachment ingestion.
-
-If an authorized email contains no public story link, the email is recorded in the audit ledger as handled but no Newsroom story intake is created.
-
-## 7. Dedupe and provenance
-
-Story Queue uses the existing append-only `audit_events` ledger rather than a new message table.
-
-Each accepted email creates one `storyqueue.email_received` audit event whose entity ID is a deterministic SHA-256 message key derived from:
-
-- Message-ID when available;
-- sender;
-- recipient;
-- received timestamp;
-- subject;
-- normalized public URLs.
-
-The audit metadata stores bounded ordinary-email provenance and the resulting intake IDs. It does not store raw MIME or attachment bytes.
-
-Each new story URL creates a normal `visitor` intake and pending analysis job. If the normalized URL already exists in the Newsroom, the email records the existing intake relationship rather than creating a duplicate intake.
-
-## 8. Analysis and source learning
-
-A Story Queue intake enters the same analysis path as other ordinary editorial submissions.
-
-It does not receive a weaker evidence standard because it arrived by email.
-
-After successful analysis, the existing source-learning control may observe the story host. Only an analyzed intake with a non-reject recommendation and a source state stronger than `unverified` can advance the host into an eligible learned-source candidate.
-
-Even then, scheduled Watchdesk monitoring requires explicit human configuration/approval in the Newsroom.
-
-## 9. GreenGeeks relay configuration
-
-The relay expects a protected configuration file outside the public web root. Default path:
-
-`~/.config/sbns/storyqueue.json`
-
-Example structure:
-
-```json
-{
-  "endpoint": "https://<admin-worker-host>/api/internal/storyqueue/email",
-  "token": "<same high-entropy value as STORYQUEUE_INGEST_TOKEN>"
-}
-```
-
-Protect the configuration file with owner-only permissions.
-
-The cPanel pipe command should point to the installed executable PHP relay. Do not commit the token, mailbox password, server credentials, or real sender allowlist to GitHub.
-
-## 10. Activation sequence
-
-Activation is intentionally separate from merging the code.
-
-1. Confirm the analysis deployment token can edit/read back `sbns-analysis`, then merge and deploy the validated Newsroom changes through the normal workflows. PR #48 adds no migration; schema remains v6.
-2. Publisher supplies one or more exact editor-controlled sender addresses. **RELEASE INPUT REQUIRED — STORYQUEUE_ALLOWED_SENDERS** until that value is supplied; do not guess or hardcode a personal address.
-3. Set a separate high-entropy `STORYQUEUE_INGEST_TOKEN` on the admin Worker.
-4. Set the initially narrow `STORYQUEUE_ALLOWED_SENDERS` policy.
-5. Verify `GET /api/admin/storyqueue/status` reports the bridge and sender policy configured.
-6. Install the GreenGeeks relay outside the public web root.
-7. Create the protected relay configuration file.
-8. Configure the `storyqueue@...` cPanel email rule/forwarder to pipe to the relay while preserving the intended mailbox behavior.
-9. Send one controlled email with one public URL; confirm one intake, one queued analysis, and the append-only message audit.
-10. Resend the same message and URL; confirm no duplicate intake/job.
-11. Send several public URLs with bounded plain-text notes; confirm one normal intake and analysis job per new URL.
-12. Send one message with an attachment; verify only its count is recorded and attachment bytes are ignored.
-13. Confirm the original mailbox still retains ordinary mail, then treat email-to-Newsroom automation as live.
-
-If the GreenGeeks filter/forwarder configuration would unexpectedly eliminate desired mailbox retention, stop and resolve the mail-host behavior before activating the pipe.
-
-## 11. Stop conditions
-
-Disable the pipe or bridge if:
-
-- duplicate email ingestion occurs;
-- unauthorized senders pass the policy;
-- attachments or raw MIME reach the Newsroom;
-- mail delivery for other SBNS addresses changes;
-- GreenGeeks MX/SPF/DKIM/DMARC behavior changes unexpectedly;
-- the bridge creates substantial spam/noise burden;
-- the channel is mistaken for Secure Source.
-
-No change to apex MX records is part of this integration.
+Stop activation if the cPanel forwarder cannot preserve the original mailbox copy, Cloudflare setup would alter apex MX or unrelated records, unauthorized senders can create intakes, attachments/raw MIME are persisted, dedupe fails, or the ordinary mailbox/outbound service is impaired. Keep manual URL intake available if email intake fails.

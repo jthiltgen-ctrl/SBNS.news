@@ -16,7 +16,7 @@ async function load() {
     if (!response.ok) throw new Error(data.error?.message || "Story Queue status unavailable.");
     target.replaceChildren(
       row("Address", data.address),
-      row("Bridge", data.bridge_configured ? "Configured" : "Not activated"),
+      row("Email handler", data.email_worker_configured ? "Deployed" : "Not active"),
       row("Sender policy", data.sender_policy_configured ? `${data.allowed_sender_rule_count} rule(s)` : "Not configured"),
       row("Messages received", data.message_count),
       row("Story links received", data.url_count),

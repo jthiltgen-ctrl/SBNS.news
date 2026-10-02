@@ -51,13 +51,14 @@ export async function storeStoryqueueEmailBatch(env, { message, newRecords }) {
   const statements = [auditStatement(env, {
     id: message.id,
     actor_type: "system",
-    actor_id: "storyqueue-email-bridge",
+    actor_id: "storyqueue-email-worker",
     action: "storyqueue.email_received",
     entity_type: "storyqueue_message",
     entity_id: message.message_key,
     metadata_json: JSON.stringify({
       message_id: message.message_id ?? null,
       sender_email: message.sender_email,
+      envelope_sender: message.envelope_sender ?? null,
       recipient_email: message.recipient_email,
       subject: message.subject ?? null,
       received_at: message.received_at,
