@@ -33,6 +33,12 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
     const evidence = await retrieve(intake.submitted_url, env, dependencies.retrievalOptions);
     const source = { id: id("source"), intake_id: intakeId, url: evidence.finalUrl, normalized_url: evidence.normalizedUrl, name: evidence.title || new URL(evidence.finalUrl).hostname, source_type: "other", verification_status: "unverified", fetched_at: timestamp(), content_hash: await sha256(evidence.text), source_title: evidence.title, extracted_text: evidence.text, extraction_format: evidence.extractionFormat === "markdown" ? "text" : evidence.extractionFormat, created_at: timestamp() };
     const analysis = await analyze({ intake, source: { ...evidence, sourceId: "source-1" }, evidence, env });
+    const materialClaims = analysis.claims.filter((claim) => claim.material);
+    if (materialClaims.some((claim) => claim.verification_status === "disputed")) source.verification_status = "disputed";
+    else if (materialClaims.length && materialClaims.every((claim) => ["verified", "verified_with_qualification"].includes(claim.verification_status))) {
+      source.verification_status = materialClaims.some((claim) => claim.verification_status === "verified_with_qualification")
+        ? "verified_with_qualification" : "verified";
+    }
     const analysisId = id("analysis");
     const claimMap = new Map(analysis.claims.map((claim) => [claim.claim_id, id("claim")]));
     const claims = analysis.claims.map((claim) => ({ id: claimMap.get(claim.claim_id), claim_text: claim.claim_text, material: claim.material, verification_status: claim.verification_status, qualification: claim.qualification }));

@@ -1,0 +1,123 @@
+{
+  "request": {
+    "schema_version": "1.0",
+    "submitted_url": "https://example.com/synthetic-reprocessing-burden",
+    "submitted_at": "2026-10-01T12:00:00Z"
+  },
+  "analysis": {
+    "schema_version": "1.0",
+    "intake_id": "synthetic-publish-accountability-without-systemic-failure",
+    "submitted_url": "https://example.com/synthetic-reprocessing-burden",
+    "submitted_at": "2026-10-01T12:00:00Z",
+    "analysis_status": "review_ready",
+    "intake_origin": "editor",
+    "recommendation": "publish",
+    "recommendation_confidence": "high",
+    "recommendation_reasons": [
+      "The reviewed synthetic record documents recurring administrative reprocessing, measurable public cost, and applicant delay tied to an institutional process.",
+      "The story can be framed as documented waste and displaced stakeholder burden without asserting a violated legal duty or discrete systemic failure."
+    ],
+    "hold_reasons": [],
+    "reject_reasons": [],
+    "category": "National",
+    "category_confidence": "high",
+    "systemic_failure": false,
+    "failure_type": null,
+    "consequence_significance": "The synthetic process required 18,000 claims to be manually reprocessed, adding documented administrative cost and an estimated 21 days of applicant delay.",
+    "primary_source_available": true,
+    "independent_source_available": false,
+    "authoritative_source_available": true,
+    "institution_response_present": true,
+    "sources": [
+      {
+        "source_id": "synthetic-process-review",
+        "name": "Synthetic Administrative Process Review",
+        "url": "https://example.com/synthetic-reprocessing-burden",
+        "source_type": "audit",
+        "authority": "Synthetic first-party review used only as a deterministic fixture",
+        "recency": "Synthetic current-date fixture",
+        "claims_supported": [
+          "claim-reprocessing",
+          "claim-delay",
+          "claim-response"
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "claim_id": "claim-reprocessing",
+        "claim_text": "The synthetic administration manually reprocessed 18,000 claims during the reviewed period.",
+        "material": true,
+        "verification_status": "verified",
+        "source_refs": [
+          "synthetic-process-review"
+        ],
+        "qualification": "The record does not establish that the reprocessing violated a statute, regulation, or mandatory processing standard.",
+        "conflict": false
+      },
+      {
+        "claim_id": "claim-delay",
+        "claim_text": "Applicants affected by the synthetic reprocessing waited an estimated 21 additional days for a decision.",
+        "material": true,
+        "verification_status": "verified_with_qualification",
+        "source_refs": [
+          "synthetic-process-review"
+        ],
+        "qualification": "The estimate describes the reviewed process and does not establish identical delay for every applicant.",
+        "conflict": false
+      },
+      {
+        "claim_id": "claim-response",
+        "claim_text": "The synthetic administration said it was testing a redesigned workflow intended to reduce repeated manual processing.",
+        "material": false,
+        "verification_status": "verified",
+        "source_refs": [
+          "synthetic-process-review"
+        ],
+        "qualification": null,
+        "conflict": false
+      }
+    ],
+    "source_conflicts": [],
+    "observed_condition": "The synthetic administration repeatedly reprocessed 18,000 claims manually, with documented administrative cost and an estimated 21-day applicant delay.",
+    "attributable_failure": null,
+    "causation_supported": false,
+    "specific_harm_causation": null,
+    "qualification_required": true,
+    "sensitive_subject": false,
+    "victim_targeting_risk": "low",
+    "factual_risk": "low",
+    "legal_risk": "low",
+    "duplication_risk": "low",
+    "related_story_ids": [],
+    "severity": 2,
+    "severity_rationale": "The record supports a consequential administrative-waste and stakeholder-burden story without establishing illegality, misconduct, or a discrete systemic failure.",
+    "kicker_target": "The repeated administrative process",
+    "kicker_safety": "acceptable",
+    "why_sbns": "The documented process repeatedly consumes public resources and shifts delay onto applicants; that accountability condition is worth explaining even though the record does not establish a violated legal duty or discrete systemic failure.",
+    "do_not_claim": [
+      "Do not claim that the synthetic administration violated a legal processing deadline.",
+      "Do not claim that every applicant experienced the same delay.",
+      "Do not characterize the documented burden as fraud, misconduct, or intentional harm."
+    ],
+    "proposed_headline": "A Synthetic Benefits Process Reworked 18,000 Claims — and Applicants Waited Longer",
+    "proposed_summary": "A synthetic administrative review documented 18,000 manually reprocessed claims and estimated that affected applicants waited 21 additional days for decisions. The record does not identify a violated statutory deadline or establish misconduct. It does document recurring administrative cost and stakeholder delay, while the synthetic administration says it is testing a redesigned workflow.",
+    "proposed_fml_kicker": "Nothing technically had to be broken for 18,000 claims to need doing twice.",
+    "proposed_topic_tags": [
+      "public administration",
+      "service delivery",
+      "administrative burden",
+      "public spending"
+    ],
+    "proposed_sources": [
+      {
+        "name": "Synthetic Administrative Process Review",
+        "url": "https://example.com/synthetic-reprocessing-burden"
+      }
+    ],
+    "human_decision": null,
+    "human_edits": [],
+    "approved_at": null,
+    "published_at": null
+  }
+}

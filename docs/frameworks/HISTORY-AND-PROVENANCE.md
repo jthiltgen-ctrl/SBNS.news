@@ -611,23 +611,79 @@ Reconstruction:
 
 The project evolved through deliberately bounded increments rather than a single “AI news site” leap. The operating philosophy has been to automate the repeatable work while preserving human authority at the points where meaning, accountability, publication, and historical correction are decided.
 
-## 19. Current status classification
+## 19. Stage 16 — post-launch reader, discovery, newsroom, and durable-state build-out
+
+### September 20–October 1, 2026
+
+After formal public launch, the repository moved through a bounded series of post-launch capabilities rather than one undifferentiated expansion.
+
+The relevant merged pull requests are:
+
+- PR #29 — published the FAA air-traffic modernization accountability story;
+- PR #30 — added canonical story pages;
+- PR #31 — added deterministic branded share cards;
+- PR #32 — aligned the public reader with the SBNS Brand Guide;
+- PR #33 — added the resilient reader-accountability surface;
+- PR #34 — built public Receipt, Number, and Timeline evidence grammar;
+- PR #35 — piloted FAA evidence presentation and refined transparency;
+- PR #36 — built the Watchdesk discovery pipeline;
+- PR #37 — automated protected admin Worker deployment;
+- PR #38 — tightened Watchdesk evidence state and GAO feed handling;
+- PR #39 — operationalized bounded Watchdesk scheduling with durable run/lease state;
+- PR #40 — redesigned the Editorial Desk as a newsroom workspace;
+- PR #41 — added explicit search-indexing readiness;
+- PR #42 — added Echo Desk durable persistence contracts;
+- PR #43 — reconciled transparency and ordinary editorial contact;
+- PR #45 — added the open reporting RSS feed and Follow SBNS control.
+
+Repository main at the October 1 checkpoint is
+`85e262a04c848de43a98cac9fb9f8d3b16fd8917`.
+
+The latest public and admin deployment workflows associated with that main revision reported success.
+
+D1 migrations now run through `0005_echo_durable_contracts.sql`. This supersedes earlier current-state descriptions that stopped at migrations 0001–0003.
+
+The public repository now contains six published reporting stories, six published fictional sample stories segregated as Prototype material, and one reporting draft excluded from the public feed.
+
+PR #44, **Add deterministic Echo Desk orchestration**, remains open and draft at head
+`d7d3d714338bc1d8fb6f2cae904a105ff9c1b354`. At this checkpoint it is two commits ahead of and one commit behind current main. Echo durable persistence is therefore main-line state, while deterministic Echo orchestration remains draft-branch implementation.
+
+This stage does not authorize continued general feature development. The October 1 operating decision is to close the remaining bounded technical work and shift primary attention to editorial production, audience validation, and founder-burden learning.
+
+Later on October 1, PR #44 merged as `676164e7269206bd6b55400422b95fe584c45a0c`, and PR #47's development-only LOC/Smithsonian adapters merged as `1d71ae5c8249cc6396106b8f4976b87655839193`. The preceding PR #44 status describes the earlier checkpoint, not current state. Pre-PR-#46 production remains schema v5. Draft PR #46 is the remaining planned technical closeout; its migration 0006 and Story Queue preparation are not yet deployed or activated.
+
+### October 1 editorial-aperture clarification
+
+During sprint design, the editorial constitution was clarified so that "institutional failure" is not treated as the sole qualifying form of accountability relevance.
+
+The clarification preserves the existing evidence, attribution, causation, qualification, neutrality, and human-authority standards while explicitly recognizing other evidence-supported accountability conditions, including persistent underperformance, foreseeable or accepted risk, waste, displaced stakeholder burdens, inequitable outcomes, contradictory incentives, inadequate recourse, and consequential systems functioning as designed.
+
+The same clarification adds an anti-throttling check for stopped candidates and states that expected or recurring failure is not automatically stale when new evidence establishes failed remediation, normalization, cumulative burden, expanded scale, or another meaningful development.
+
+This is an editorial-aperture clarification, not authorization to manufacture a narrative, lower sourcing requirements, or create a publication quota.
+
+## 20. Current status classification
 
 ### Implemented and active in repository
 
-- repository-managed public stories;
-- deterministic public feed;
-- reporting-first public reader;
-- D1 persistence;
-- migrations 0001–0003;
-- authenticated admin queue code;
-- live editor URL analysis code;
+- repository-managed public stories and deterministic public feed;
+- canonical story pages and branded share assets;
+- reporting-first public reader and Prototype separation;
+- robots, sitemap, search-indexing readiness, RSS, and Follow SBNS;
+- public accountability, attribution, and editorial-contact surfaces;
+- optional Receipt, Number, and Timeline evidence grammar;
+- D1 persistence through migration 0005;
+- authenticated newsroom workspace;
+- live editor URL analysis;
 - Queue and DLQ configuration;
 - source-retrieval safety controls;
 - structured model output validation;
 - draft revisions and human decisions;
-- public staging deploy workflow;
-- staging checklist and baseline.
+- Watchdesk discovery, Rabbit Hole Triage, durable run ledger, lease protections, and bounded scheduling;
+- Echo durable persistence contracts;
+- deterministic synthetic Echo orchestration and development-only LOC/Smithsonian source adapters;
+- scoped public and admin deployment workflows;
+- staging and production baselines.
 
 ### Recorded as formally public-launched
 
@@ -643,13 +699,22 @@ The project evolved through deliberately bounded increments rather than a single
 
 ### Active design or operational plan, not proof of completion
 
+- production Echo execution/Newsroom integration and public WE WERE WARNED;
 - visitor submissions;
-- GitHub App draft-PR publication orchestration;
-- durable live monitoring;
+- controlled repository publication orchestration;
 - immutable public correction history;
+- direct-reader capture;
 - later role expansion.
 
-## 20. Provenance maintenance
+### Current operating direction
+
+- finish draft PR #46 through one reconciled validation and separate merge/migration/deployment authorization;
+- freeze general technical expansion by default;
+- operate October–December 2026 as Audience & Option Validation;
+- use real editorial production to identify bottlenecks;
+- prioritize publish-worthy reporting, evidence quality, distinctiveness, and founder-burden reduction over additional platform breadth.
+
+## 21. Provenance maintenance
 
 When future phases are added, update this document with:
 

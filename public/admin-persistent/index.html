@@ -64,6 +64,8 @@
           <div class="watchdesk-controls"><button id="watchdesk-dry" class="diagnostic-action" type="button">TEST SCAN <small>Dry run · no intake writes</small></button><button id="watchdesk-live" class="live-action" type="button">RUN WATCHDESK LIVE <small>Up to five discovery intakes</small></button></div>
           <div id="watchdesk-result" role="status" aria-live="polite"></div>
           <details class="wire-details"><summary>Source health &amp; run metrics</summary><div id="watchdesk-metrics"></div><div id="watchdesk-sources"></div></details>
+          <details class="wire-details" open><summary>Source portfolio &amp; learned candidates</summary><div id="watchdesk-source-portfolio"></div></details>
+          <details class="wire-details" open><summary>Story Queue email</summary><div id="storyqueue-email-status">Loading Story Queue status…</div></details>
           <details class="wire-details"><summary>Recent run history</summary><div id="watchdesk-history"></div></details>
         </aside>
       </div>
@@ -83,5 +85,6 @@
     </section>
   </main>
   <script type="module" src="admin.js"></script>
+  <script type="module" src="storyqueue-ui.js"></script>
 </body>
 </html>

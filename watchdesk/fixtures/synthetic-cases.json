@@ -232,6 +232,34 @@
       }
     },
     {
+      "id": "aperture-waste-without-discrete-failure",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Benefits Administration Review Documents Repeated Reprocessing Costs",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-reprocessing",
+        "published_at": "2026-09-22T00:00:00.000Z",
+        "record_summary": "The Synthetic Benefits Administration documented that staff manually reprocessed 18,000 claims during the reviewed period, adding repeated administrative cost and delay. The reviewed abstract did not identify a violated processing deadline or a discrete control failure.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only",
+        "material_qualification": "The synthetic record does not establish misconduct or a violated legal deadline.",
+        "remains_unproven": "The cause of the repeated reprocessing and the total stakeholder burden remain unproven."
+      }
+    },
+    {
+      "id": "aperture-recurring-burden-development",
+      "source_id": "gao-reports",
+      "item": {
+        "title": "Synthetic Service Administration Review Finds Delays Recurred After Prior Warning",
+        "url": "https://www.gao.gov/products/gao-26-synthetic-recurring-delays",
+        "published_at": "2026-09-23T00:00:00.000Z",
+        "record_summary": "The Synthetic Service Administration reported repeated processing delays for a fourth consecutive quarter after a prior warning, with applicants waiting an estimated 42 days longer for decisions. The reviewed abstract did not establish a mandatory decision deadline.",
+        "evidence_review_state": "PARTIALLY REVIEWED",
+        "reviewed_material": "Synthetic official report abstract only",
+        "material_qualification": "The synthetic abstract does not establish that every delay was avoidable or unlawful.",
+        "remains_unproven": "The causes of the delays and the effect on individual applicants remain unproven."
+      }
+    },
+    {
       "id": "source-fetch-failure",
       "source_id": "iowa-auditor-reports",
       "failure": "SYNTHETIC_SOURCE_UNAVAILABLE"

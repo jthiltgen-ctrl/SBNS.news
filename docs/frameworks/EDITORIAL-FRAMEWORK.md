@@ -5,11 +5,13 @@ Lineage: EDITORIAL.md, Stories 001–005, ADMIN-INTAKE-SPEC.md, v1.4 fixtures an
 
 ## 1. Mission
 
-ShockedButNotSurprised.news is an accountability publication focused on institutional and systemic failures: the gap between what systems are supposed to do and what documented evidence shows they actually did.
+ShockedButNotSurprised.news is an accountability publication focused on institutional and systemic conditions worth public scrutiny: failures, persistent underperformance, foreseeable or accepted risk, waste, displaced burdens, inequitable or unjust outcomes, perverse incentives, accountability gaps, and other consequential differences between what systems are expected to do and what documented evidence shows they actually do.
 
 Its voice may be weary, dark, dry, or incredulous. Its factual core must remain sober.
 
-The publication is not an outrage generator. The story is not that something sounds absurd. The story is that a consequential institution, policy, process, control, or concentration of power failed in a way the evidence can actually support.
+The publication is not an outrage generator. The story is not that something sounds absurd. The story is that a consequential institution, policy, process, control, allocation of resources, incentive, or concentration of power produces or tolerates an accountability condition the evidence can actually support.
+
+A discrete institutional "failure" is one valid accountability condition, not a universal prerequisite for coverage.
 
 The governing editorial sentence is:
 
@@ -53,7 +55,9 @@ Ask:
 - What actually happened?
 - What consequence, risk, cost, right, service, public resource, or accountability interest is implicated?
 - What is current or newly documented?
-- Is the failure systemic, institutional, policy-level, management-level, or otherwise broader than isolated personal misconduct?
+- What is the institutional nexus: design, policy, authority, resource choice, implementation, management, incentive, control, omission, repeated performance pattern, or allocation of burden?
+- Does the evidence support a discrete failure, persistent poor performance, foreseeable/accepted risk, waste, burden transfer, inequitable outcome, rights or justice concern, accountability gap, perverse incentive, or another consequential institutional tension?
+- Is that accountability condition broader than isolated personal misconduct, or does an isolated event reveal a broader institutional condition?
 - Is the story meaningfully different from what has already been published?
 
 Useful accountability lenses include:
@@ -61,13 +65,24 @@ Useful accountability lenses include:
 - promise versus practice;
 - authority versus accountability;
 - policy versus implementation;
+- design versus lived consequence;
 - incentive versus public cost;
+- repeated poor results versus continued institutional acceptance;
+- known or foreseeable risk versus mitigation;
+- waste, duplication, delay, or opportunity cost;
 - who benefits versus who bears the burden;
+- institutional convenience versus displaced stakeholder burden;
 - formal compliance versus operational reality;
+- legal sufficiency versus practical justice or equity concerns;
 - control design versus control performance;
-- public claim versus documentary record.
+- public claim versus documentary record;
+- concentrated power versus meaningful recourse.
 
-The existence of a bad outcome alone is not enough.
+The existence of a bad outcome alone is not enough. But the absence of a single provable malfunction is not, by itself, a reason to reject a consequential accountability story.
+
+A system may be newsworthy because it repeatedly performs poorly, predictably produces a burden, tolerates known risk, wastes resources, externalizes costs, creates a documented disparity, or works as designed in a way that itself warrants scrutiny. But neither is the absence of a single provable malfunction a reason to reject a consequential accountability story.
+
+A system may be newsworthy because it repeatedly performs poorly, predictably produces a burden, tolerates known risk, wastes resources, externalizes costs, creates a documented disparity, or works as designed in a way that itself warrants scrutiny.
 
 ## 4. Background before conclusion
 
@@ -129,27 +144,33 @@ A proposed story should not be published while a core material claim remains unv
 
 A disputed claim may appear only when the dispute itself is accurately represented and editorially relevant.
 
-## 7. The causation ladder
+## 7. The accountability and causation ladder
 
-Never skip steps in this sequence:
+Do not force every story through the word "failure." Separate these propositions:
 
-1. Observed condition.
-2. Institutionally attributable failure.
-3. Specific harm caused by that failure.
+1. **Observed condition** — what the record shows happened, exists, recurs, costs, delays, burdens, distributes, or risks.
+2. **Institutional nexus** — how a policy, design, authority, decision, omission, incentive, resource allocation, control, implementation choice, or repeated management pattern is connected to that condition.
+3. **Accountability characterization** — what the evidence supports calling that relationship: failure, weakness, persistent underperformance, foreseeable or accepted risk, waste, burden transfer, inequitable outcome, accountability gap, perverse incentive, or another bounded characterization.
+4. **Specific harm or consequence causation** — whether that institutional condition caused a particular harm or consequence.
 
-These are different propositions.
+These are different propositions. A publishable story does not always require Step 3 to be labeled "failure," and it does not always require proof of Step 4.
 
-The five first reporting stories established recurring safeguards:
+Recurring safeguards:
 
-- institutional failure does not equal proven specific-harm causation;
+- an institutional nexus does not equal proven specific-harm causation;
+- repeated poor performance can be accountability-relevant without proving misconduct;
+- a system may warrant scrutiny because foreseeable burdens or risks are accepted as normal;
 - a system-wide policy weakness can coexist with limited field-level sampling;
 - sensitive communities increase the review burden without determining publishability;
 - an observed condition can have multiple causes and must not automatically be attributed to the institution;
-- a clean financial-statement opinion can coexist with statutory, compliance, budget, or control findings.
+- a clean financial-statement opinion can coexist with statutory, compliance, budget, control, waste, or burden-allocation concerns;
+- a system functioning as designed can still produce an accountability-worthy documented outcome.
 
-When evidence supports only Step 1, do not write Step 2.
+Do not write a stronger institutional relationship than the evidence supports.
 
-When evidence supports Steps 1 and 2, do not write Step 3 unless causation is separately supported.
+Do not convert a documented disparity, burden, or poor result into an assertion of unlawful discrimination, intent, injustice, or causation unless the evidence and applicable framework support that characterization.
+
+When specific-harm causation is not established, say what is established and stop there.
 
 ## 8. Qualification is evidence, not clutter
 
@@ -283,7 +304,7 @@ Use when evidence supports a current, consequential, institutionally relevant st
 
 Publication requires:
 
-- a meaningful accountability failure;
+- a meaningful documented public-accountability condition or tension;
 - support for all core material claims;
 - preserved qualifications;
 - acceptable attribution and causation;
@@ -316,7 +337,7 @@ Use when the candidate does not meet the publication's standards.
 
 Typical reasons:
 
-- no meaningful systemic or institutional failure;
+- no meaningful public-accountability relevance after considering the full accountability aperture;
 - isolated misconduct without broader accountability relevance;
 - opinion presented as fact;
 - unsupported speculation;
@@ -331,7 +352,58 @@ Typical reasons:
 
 REJECT is not a failure of the system. It is part of the system.
 
-## 16. Research stoppage
+## 16. Editorial aperture and anti-throttling control
+
+Editorial rigor must not collapse into a single-keyword gate.
+
+Before rejecting, stopping, or withholding a candidate primarily because a discrete institutional "failure" is not established, check whether the evidence instead supports another SBNS accountability frame, including:
+
+- persistent or repeated poor performance;
+- an expected, foreseeable, or previously identified failure mode;
+- institutional tolerance of known risk;
+- waste, duplication, delay, or avoidable public cost;
+- displacement of time, money, risk, administrative burden, or responsibility onto residents, workers, patients, customers, taxpayers, local governments, or other stakeholders;
+- inequitable distribution of benefits, burdens, access, service, or recourse;
+- a documented rights, fairness, or justice concern;
+- a perverse or contradictory incentive;
+- formal compliance paired with materially poor real-world performance;
+- power without proportionate transparency, accountability, or recourse;
+- a system functioning as designed where the design itself produces a consequential documented problem;
+- normalization of a condition that would otherwise warrant public explanation.
+
+This is an **aperture check**, not a lower evidence threshold.
+
+Do not manufacture a frame merely to keep a candidate alive. The record must support the accountability characterization actually used.
+
+Likewise, do not let repeated REJECT, HOLD, or NO ACTION outcomes pressure the system toward either easier publication or narrower screening. Monitor disposition patterns for possible semantic or gate bias, then inspect representative cases.
+
+A high rejection rate may mean the discovery stream is noisy. It may also mean the gate is overfitted to one conception of institutional failure. The rate alone proves neither.
+
+### Recurrence is not automatically staleness
+
+SBNS should not confuse "expected" with "unnewsworthy."
+
+A recurring or unsurprising condition may gain accountability significance when new evidence shows repeated failure after warning, failed remediation, expanding scale or duration, cumulative waste or burden, normalization of a supposedly temporary condition, repeated workarounds, or institutional acceptance of a known failure mode.
+
+Do not publish repetition for repetition's sake. A recurring story still needs a meaningful new development, evidence increment, accountability implication, or cumulative-burden insight.
+
+The site's premise permits a documented pattern to matter precisely because people have reason not to be surprised by it.
+
+### Justice, equity, and burden language
+
+Words such as `unjust`, `inequitable`, `discriminatory`, or `unfair` can carry legal, ethical, empirical, or normative meanings.
+
+When using them:
+
+- identify the factual distribution or burden first;
+- distinguish measured disparity from inferred motive;
+- distinguish legal violation from ethical judgment;
+- identify the standard, right, promise, comparator, or principle being used when material;
+- attribute contested normative characterizations rather than presenting them as source facts.
+
+SBNS may report and analyze documented burdens and disparities without requiring proof of malicious intent.
+
+## 17. Research stoppage
 
 Research is not valuable merely because more of it is possible.
 
@@ -349,21 +421,21 @@ Do not keep searching solely to find support for a narrative the existing record
 
 “No action required” is a valid state.
 
-## 17. Drafting rules
+## 18. Drafting rules
 
 A story should make the strongest claim the evidence supports, not the strongest claim language can carry.
 
 A good ShockedButNotSurprised.news draft should:
 
-- identify the accountable institution quickly;
-- state the documented failure precisely;
+- identify the relevant institution, system, or concentration of power quickly;
+- state the documented accountability condition precisely;
 - include scale and consequence when supported;
 - preserve material context and response;
 - distinguish fact from editorial severity and tone;
 - use a kicker that targets power rather than harm;
 - cite real sources that readers can inspect.
 
-## 18. Publication lifecycle
+## 19. Publication lifecycle
 
 The editorial lifecycle is:
 
@@ -384,7 +456,7 @@ Discovery or watch
 
 No arrow may be assumed merely because the prior step succeeded.
 
-## 19. Corrections, updates, and follow-ups
+## 20. Corrections, updates, and follow-ups
 
 Never silently rewrite published history.
 
@@ -405,7 +477,7 @@ Corrections should preserve:
 - the deciding editor;
 - relevant timestamps.
 
-## 20. Political and ideological neutrality
+## 21. Political and ideological neutrality
 
 Institutional accountability is not partisan loyalty.
 
@@ -415,7 +487,7 @@ Do not use the publication to tell readers how to vote.
 
 When political actors are involved, describe documented actions, policies, records, consequences, and disputes rather than converting editorial accountability into political endorsement.
 
-## 21. Provenance and humility
+## 22. Provenance and humility
 
 For consequential conclusions:
 

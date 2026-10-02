@@ -7,6 +7,7 @@ const EMPTY_METRICS = Object.freeze({
   sources_checked: 0, sources_succeeded: 0, items_discovered: 0,
   deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0,
   failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0,
+  submission_ready_gap: 0, submission_ready_aperture: 0,
   would_submit: 0, submitted_to_newsroom: 0,
 });
 

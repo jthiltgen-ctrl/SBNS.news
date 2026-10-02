@@ -10,7 +10,7 @@ import * as echo from "../src/echo-persistence.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const WRANGLER = path.join(ROOT, "node_modules", "wrangler", "bin", "wrangler.js");
-const MIGRATIONS = ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql"];
+const MIGRATIONS = ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql", "0006_watchdesk_source_learning.sql"];
 const ECHO_TABLES = ["echo_candidate_assessments", "echo_candidate_sources", "echo_candidates", "echo_decisions", "echo_jobs", "echo_packet_intakes", "echo_packets", "echo_rights_assessments"];
 const ECHO_INDEXES = ["idx_echo_assessments_candidate_revision", "idx_echo_candidates_packet_state", "idx_echo_decisions_packet_decided", "idx_echo_jobs_active_packet", "idx_echo_jobs_state_updated", "idx_echo_packet_intakes_intake", "idx_echo_packet_intakes_primary", "idx_echo_packets_issue_revision", "idx_echo_packets_state_updated", "idx_echo_rights_candidate_asset", "idx_echo_sources_assessment_role", "idx_echo_sources_intake_source"];
 const execFileAsync = promisify(execFile);
@@ -74,7 +74,7 @@ async function migratedMemoryDatabase() {
 async function check() {
   await withLocalD1(async (query) => {
     const version = await query("SELECT value FROM sbns_meta WHERE key = 'schema_version'");
-    assert.equal(version[0]?.value, "5");
+    assert.equal(version[0]?.value, "6");
     const tables = (await query("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'echo_%' ORDER BY name")).map((row) => row.name);
     const indexes = (await query("SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'idx_echo_%' ORDER BY name")).map((row) => row.name);
     assert.deepEqual(tables, ECHO_TABLES);
@@ -82,14 +82,14 @@ async function check() {
     assert.equal((await query("PRAGMA foreign_keys"))[0]?.foreign_keys, 1);
     assert.deepEqual(await query("PRAGMA foreign_key_check"), []);
   });
-  console.log(`Echo persistence schema valid in isolated local D1: v5, ${ECHO_TABLES.length} tables, ${ECHO_INDEXES.length} indexes, zero FK violations.`);
+  console.log(`Echo persistence schema valid in isolated local D1: v6, ${ECHO_TABLES.length} tables, ${ECHO_INDEXES.length} indexes, zero FK violations.`);
 }
 
 async function test() {
   // The Wrangler-backed portion ensures this test always starts by applying
-  // the actual five migrations locally, never by using a remote binding.
+  // the actual six migrations locally, never by using a remote binding.
   await withLocalD1(async (query) => {
-    assert.equal((await query("SELECT value FROM sbns_meta WHERE key='schema_version'"))[0]?.value, "5");
+    assert.equal((await query("SELECT value FROM sbns_meta WHERE key='schema_version'"))[0]?.value, "6");
     await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)
       VALUES ('d1-intake','editor','https://example.test/d1','${AT}','review_ready','complete','${AT}','${AT}')`);
     await query(`INSERT INTO intakes (id,origin,submitted_url,submitted_at,status,analysis_status,created_at,updated_at)

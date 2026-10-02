@@ -10,6 +10,7 @@ const watchdeskMetrics = document.querySelector("#watchdesk-metrics");
 const watchdeskSources = document.querySelector("#watchdesk-sources");
 const watchdeskResult = document.querySelector("#watchdesk-result");
 const watchdeskHistory = document.querySelector("#watchdesk-history");
+const watchdeskSourcePortfolio = document.querySelector("#watchdesk-source-portfolio");
 const watchdeskDry = document.querySelector("#watchdesk-dry");
 const watchdeskLive = document.querySelector("#watchdesk-live");
 const jobLabels = {
@@ -96,7 +97,9 @@ function accountableInstitution(candidate) {
   return candidate.schema_version==="1.2" ? (candidate.institution_or_system || "Not yet established") : "Unverified (legacy candidate)";
 }
 function readiness(candidate) {
-  return candidate.submission_readiness?.ready ? "Ready for automated intake" : candidate.submission_readiness ? "Discovery lead — not submission-ready" : "Not recorded (legacy candidate)";
+  if (candidate.submission_readiness?.ready && candidate.submission_readiness?.mode === "editorial_aperture") return "Newsroom intake — editorial aperture";
+  if (candidate.submission_readiness?.ready && candidate.submission_readiness?.mode === "gap") return "Newsroom intake — evidence gap";
+  return candidate.submission_readiness?.ready ? "Ready for Newsroom intake" : candidate.submission_readiness ? "Discovery lead — not submission-ready" : "Not recorded (legacy candidate)";
 }
 function updateQueueSummary() {
   const counts = queueCounts(loadedAssignments);
@@ -159,10 +162,11 @@ function renderDiscovery(candidate) {
     ["Publication / release date", candidate.publication_date], ["Discovered", candidate.discovered_at],
     ["Topic", candidate.topic], ["Accountable institution", accountableInstitution(candidate)],
     ["Jurisdiction", candidate.jurisdiction], ["Submission readiness", readiness(candidate)],
+    ["Accountability pathway", candidate.submission_readiness?.mode || "Not established"],
     ["Why this may belong at SBNS", candidate.why_this_may_belong, true],
-    ["Job / expectation", candidate.apparent_job || "Not yet established", true],
-    ["Observed condition", candidate.observed_condition || "Not yet established", true],
-    ["Accountability gap", candidate.accountability_gap || "Not yet established", true],
+    ["Job / expectation (if established)", candidate.apparent_job || "Not yet established", true],
+    ["Observed condition (if established)", candidate.observed_condition || "Not yet established", true],
+    ["Accountability gap (if established)", candidate.accountability_gap || "Not yet established", true],
     ["What the inspected material establishes", candidate.record_summary, true],
     ["Accountability question", candidate.accountability_question || "Not yet established", true],
     ["Research prompt (not evidence)", candidate.research_prompt, true],
@@ -183,6 +187,82 @@ function renderDiscovery(candidate) {
   node.append(sources);
   return node;
 }
+
+function renderSemanticControl(data, analysis, candidate) {
+  const node = panel("story-semantics", "Semantics & editorial aperture", "semantics-panel");
+  node.append(el("p", "Diagnostic control only. It surfaces semantic risk and missing evidence; it does not decide whether to publish.", "warning"));
+  const latestDraft = data.drafts.at(-1);
+  const publicCopy = [latestDraft?.headline, latestDraft?.summary, analysis?.proposed_headline, analysis?.proposed_summary].filter(Boolean).join(" ");
+  const highRisk = ["fraud","corruption","theft","illegal","illegality","cover-up","scandal","caused","discrimination","discriminatory"].filter((term) => new RegExp("\\b" + term.replace("-", "\\-") + "\\b","i").test(publicCopy));
+  const sourceStates = data.sources.map((source) => source.verification_status);
+  const unresolvedSources = sourceStates.filter((state) => !["verified","verified_with_qualification"].includes(state));
+  const pathway = candidate?.submission_readiness?.mode || (analysis ? "formal analysis" : "not established");
+  node.append(fieldGrid([
+    ["Discovery / accountability pathway", pathway],
+    ["Evidence state", unresolvedSources.length ? "CLARIFY — unresolved/disputed source state present" : data.sources.length ? "PASS — reviewed source records present" : "RESEARCH — no normalized source recorded"],
+    ["Qualification control", analysis?.qualification_required ? "CLARIFY — qualification required" : "No explicit qualification flag"],
+    ["Observed condition", analysis?.observed_condition || candidate?.observed_condition || "Not yet established", true],
+    ["Institutional nexus / attributable failure", analysis?.attributable_failure || candidate?.accountability_gap || "Not yet established", true],
+    ["Specific-harm causation", analysis?.specific_harm_causation || "Not established in current record", true],
+    ["Public-copy risk terms", highRisk.length ? "REVIEW — " + highRisk.join(", ") : "No monitored high-risk term detected", true]
+  ]));
+  node.append(list("DO NOT CLAIM boundaries", analysis?.do_not_claim));
+  node.append(list("Material qualifications / unresolved questions", [
+    candidate?.material_qualification,
+    candidate?.remains_unproven,
+    ...(analysis?.hold_reasons || []),
+    ...(analysis?.source_conflicts || []).map((x) => (x.statements || []).join(" / "))
+  ].filter(Boolean)));
+  return node;
+}
+
+async function decideLearnedSource(candidate, decision) {
+  let body = { decision };
+  if (decision === "approve") {
+    const source_name = window.prompt("Source name", candidate.source_name || candidate.hostname);
+    if (!source_name) return;
+    const discovery_url = window.prompt("Public listing or RSS/Atom URL to monitor", candidate.discovery_url || candidate.representative_url);
+    if (!discovery_url) return;
+    const source_class = window.prompt("Source class: primary_oversight, primary_institutional, secondary_reporting_signal, local_regional, public_whistleblower_signal", candidate.source_class || "secondary_reporting_signal");
+    if (!source_class) return;
+    const jurisdiction = window.prompt("Jurisdiction", candidate.jurisdiction || "United States");
+    if (!jurisdiction) return;
+    const adapter = window.prompt("Adapter: rss_atom or html_links", candidate.adapter || "rss_atom");
+    if (!adapter) return;
+    const source_id = window.prompt("Stable source ID (lowercase letters/numbers/hyphens)", candidate.source_id || ("learned-" + candidate.hostname.replace(/[^a-z0-9]+/g,"-")));
+    if (!source_id) return;
+    const paths = window.prompt("Allowed path prefixes, comma-separated", "/");
+    if (!paths) return;
+    body = { decision, source_name, discovery_url, source_class, jurisdiction, adapter, source_id, allowed_path_prefixes: paths.split(",").map((x)=>x.trim()).filter(Boolean), primary_record: false, enabled: true };
+  }
+  await api("/api/admin/watchdesk/source-candidates/" + encodeURIComponent(candidate.hostname) + "/decision", { method:"POST", body:JSON.stringify(body) });
+  await loadWatchdeskSources();
+}
+
+async function loadWatchdeskSources() {
+  const data = await api("/api/admin/watchdesk/sources");
+  watchdeskSourcePortfolio.replaceChildren();
+  const active = data.static_sources.filter((source) => source.enabled);
+  const disabled = data.static_sources.filter((source) => !source.enabled);
+  watchdeskSourcePortfolio.append(field("Active governed sources", active.length), field("Registered / deferred sources", disabled.length));
+  const candidates = data.learned_candidates || [];
+  const useful = candidates.filter((candidate) => candidate.status !== "rejected").slice(0, 12);
+  if (!useful.length) { watchdeskSourcePortfolio.append(el("p", "No learned source candidates yet.")); return; }
+  useful.forEach((candidate) => {
+    const card = el("div", null, "source-learning-card");
+    card.append(el("strong", candidate.hostname), el("p", candidate.status + " · " + candidate.qualifying_intake_count + " qualifying / " + candidate.observation_count + " analyzed intake(s)"));
+    card.append(safeLink(candidate.representative_url, "Representative story"));
+    if (candidate.status === "eligible" || candidate.status === "observed") {
+      const approve = el("button", "Configure monitoring");
+      approve.type="button"; approve.addEventListener("click",()=>decideLearnedSource(candidate,"approve").catch((error)=>{watchdeskResult.textContent=error.message;}));
+      const reject = el("button", "Do not monitor");
+      reject.type="button"; reject.addEventListener("click",()=>decideLearnedSource(candidate,"reject").catch((error)=>{watchdeskResult.textContent=error.message;}));
+      card.append(approve,reject);
+    } else if (candidate.status === "approved") card.append(el("p", "Approved monitor: " + text(candidate.source_name)));
+    watchdeskSourcePortfolio.append(card);
+  });
+}
+
 function renderAnalysis(data) {
   const node = panel("story-analysis", "Analysis", "analysis-panel");
   const job = data.analysis_jobs.at(-1);
@@ -216,7 +296,7 @@ function renderAnalysis(data) {
   node.append(grid);
   const proposal = panel("story-proposal", "AI proposal — not saved / not approved", "proposal-panel");
   proposal.append(el("p", "Generated suggestions are not established evidence or a human editorial decision.", "warning"));
-  proposal.append(fieldGrid([["Headline", analysis.proposed_headline], ["Summary", analysis.proposed_summary, true], ["FML kicker", analysis.proposed_fml_kicker, true], ["Tags", analysis.proposed_topic_tags?.join(", ")]]));
+  proposal.append(fieldGrid([["Headline", analysis.proposed_headline], ["Summary", analysis.proposed_summary, true], ["SBNS Kicker", analysis.proposed_fml_kicker, true], ["Tags", analysis.proposed_topic_tags?.join(", ")]]));
   return { analysis: node, evidence: renderEvidence(data, analysis), proposal, parsed: analysis };
 }
 function renderEvidence(data, analysis) {
@@ -245,7 +325,7 @@ function draftForm(intakeId, latest, proposal) {
   const node = panel("story-copy-editor", latest ? "Edit copy / save new revision" : proposal ? "Save AI proposal as revision 1" : "Create draft revision", "copy-editor");
   node.append(el("p", latest ? "Editing the latest saved revision. Saving creates a new revision; it does not change an existing approval." : proposal ? "This form is seeded from the unsaved AI proposal. Review every field before saving." : "Create a human-reviewed draft before approval."));
   const form = el("form");
-  const fields = [["story_id", "Story ID", "input"], ["headline", "Headline", "input"], ["summary", "Summary", "textarea"], ["fml_kicker", "FML kicker", "textarea"], ["topic_tags", "Tags, comma-separated", "input"]];
+  const fields = [["story_id", "Story ID", "input"], ["headline", "Headline", "input"], ["summary", "Summary", "textarea"], ["fml_kicker", "SBNS Kicker", "textarea"], ["topic_tags", "Tags, comma-separated", "input"]];
   fields.forEach(([name, labelText, tag]) => {
     const label = el("label", labelText, ["summary", "fml_kicker", "topic_tags"].includes(name) ? "wide" : "");
     const input = el(tag);
@@ -363,7 +443,7 @@ async function loadDetail(id, notice = "") {
   header.append(context);
   const nav = el("nav", null, "file-nav");
   nav.setAttribute("aria-label", "Story file sections");
-  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
+  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-semantics", "Semantics"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
   sections.filter(([section]) => section !== "story-discovery" || candidate).forEach(([section, label]) => {
     const link = el("a", label); link.href = "#" + section; nav.append(link);
   });
@@ -376,7 +456,7 @@ async function loadDetail(id, notice = "") {
   const discovery = renderDiscovery(candidate);
   if (discovery) detail.append(discovery);
   const rendered = renderAnalysis(data);
-  detail.append(rendered.analysis, rendered.evidence);
+  detail.append(renderSemanticControl(data, rendered.parsed, candidate), rendered.analysis, rendered.evidence);
   if (rendered.proposal) detail.append(rendered.proposal);
   detail.append(renderDrafts(data, rendered.parsed), renderDecisions(data), renderAudit(data));
   fileTitle.focus({ preventScroll: true });
@@ -390,7 +470,7 @@ function renderWatchdeskRun(run, target) {
   target.replaceChildren();
   if (!run) { target.append(el("p", "No Watchdesk runs recorded yet.")); return; }
   const metrics = run.metrics || {};
-  [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
+  [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Gap-ready", metrics.submission_ready_gap ?? 0], ["Aperture-ready", metrics.submission_ready_aperture ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
   if (run.submitted_intake_ids?.length) metric(target, "Submitted intake IDs", run.submitted_intake_ids.join(", "));
   if (run.error_class) metric(target, "Error", run.error_class + ": " + (run.error_message || "Unknown failure"));
 }
@@ -458,7 +538,7 @@ document.querySelector("#new-form").addEventListener("submit", async (event) => 
 try {
   const session = await api("/api/admin/session");
   document.querySelector("#actor").textContent = session.actor.email;
-  await Promise.all([loadQueue(), loadWatchdeskStatus().catch((error) => { watchdeskStatus.textContent = error.message; })]);
+  await Promise.all([loadQueue(), loadWatchdeskStatus().catch((error) => { watchdeskStatus.textContent = error.message; }), loadWatchdeskSources().catch((error) => { watchdeskResult.textContent = error.message; })]);
 } catch (error) {
   document.querySelector("#actor").textContent = "Authentication required";
   queueStatus.textContent = error.message;

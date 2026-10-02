@@ -73,8 +73,9 @@ export function validateAnalysisSemantics(request, analysis) {
   if (analysis.qualification_required && analysis.do_not_claim.length === 0) fail("qualified analysis: do_not_claim must not be empty");
   if (analysis.recommendation === "publish") {
     nonEmpty(analysis.recommendation_reasons, "publish recommendation_reasons"); empty(analysis.hold_reasons, "publish hold_reasons"); empty(analysis.reject_reasons, "publish reject_reasons");
-    if (!analysis.systemic_failure) fail("publish: systemic_failure must be true");
-    if (analysis.claims.some((claim) => claim.material && claim.verification_status === "unverified")) fail("publish: no material claim may be unverified");
+    text(analysis.observed_condition, "publish observed_condition");
+    text(analysis.consequence_significance, "publish consequence_significance");
+    if (analysis.claims.some((claim) => claim.material && !["verified", "verified_with_qualification"].includes(claim.verification_status))) fail("publish: every material claim must be verified or verified with qualification");
     if (!Number.isInteger(analysis.severity) || analysis.severity < 1 || analysis.severity > 5) fail("publish: severity must be an integer from 1 through 5");
     text(analysis.proposed_headline, "publish proposed_headline"); text(analysis.proposed_summary, "publish proposed_summary"); text(analysis.proposed_fml_kicker, "publish proposed_fml_kicker");
     nonEmpty(analysis.proposed_topic_tags, "publish proposed_topic_tags"); nonEmpty(analysis.proposed_sources, "publish proposed_sources");

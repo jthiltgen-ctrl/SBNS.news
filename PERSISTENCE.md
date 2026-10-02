@@ -218,11 +218,12 @@ same migration SQL in isolated SQLite memory. Both commands are included in
 `npm run check`; neither contacts remote D1.
 
 Migration 0005 was applied through the separately authorized admin deployment
-of PR A. PR B adds no migration or schema change. A later PR B merge would
-trigger existing deployment workflows because its `src/**` and `package.json`
-paths are watched; opening its draft PR performs no deployment. Recovery of any
-future schema defect remains a reviewed forward repair, never an automatic
-destructive down migration.
+of PR A. PR B and PR C subsequently merged without another schema change;
+PR C's public-source adapters remain development-only. Draft PR #46 proposes
+forward-only migration 0006 for Watchdesk learned-source state. Merging it
+would trigger the existing admin workflow's remote migration step; opening the
+draft does not. Recovery of any future schema defect remains a reviewed forward
+repair, never an automatic destructive down migration.
 
 ## Recovery
 
