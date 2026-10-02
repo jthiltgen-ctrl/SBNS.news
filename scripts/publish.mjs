@@ -16,6 +16,8 @@ const CATEGORIES = new Set(["International", "National", "Local"]);
 const ORIGINS = new Set(["editor", "visitor", "monitor", "discovery"]);
 const RECOMMENDATIONS = new Set(["publish", "hold", "reject"]);
 const PUBLIC_FIELDS = ["id", "status", "content_type", "category", "headline", "summary", "fml_kicker", "severity", "topic_tags", "sources", "published_at"];
+const ECHO_IDS = { packet_id: /^echo_packet_[a-z0-9]+$/, candidate_id: /^echo_candidate_[a-z0-9]+$/,
+  assessment_id: /^echo_assessment_[a-z0-9]+$/, decision_id: /^echo_decision_[a-z0-9]+$/ };
 
 function fail(message) {
   throw new Error(message);
@@ -115,6 +117,48 @@ function validatePackageSemantics(pkg) {
   }
   if (!isObject(pkg.editorial_guardrails) || !Array.isArray(pkg.editorial_guardrails.do_not_claim) || pkg.editorial_guardrails.do_not_claim.some((warning) => typeof warning !== "string")) fail("editorial_guardrails.do_not_claim must be a string array");
   if (typeof pkg.editorial_guardrails.qualification_required !== "boolean") fail("editorial_guardrails.qualification_required must be boolean");
+  if (pkg.featured_echo && Object.entries(ECHO_IDS).some(([field, pattern]) => !pattern.test(pkg.featured_echo[field] || ""))) fail("featured_echo requires exact durable Echo identifiers");
+}
+
+// A public Echo is frozen from the durable human decision, not from a package
+// author's unaudited prose. This SELECT-only lookup is performed at preparation
+// time; normal checks without featured_echo make no remote D1 request.
+async function verifyFeaturedEcho(pkg, repoRoot = ROOT) {
+  if (!pkg.featured_echo) return null;
+  const ids = pkg.featured_echo;
+  const intakeId = pkg.source_analysis.intake_id;
+  if (!/^intake_[A-Za-z0-9_-]+$/.test(intakeId)) fail("Featured Echo requires an exact Newsroom intake ID");
+  const sql = `SELECT packet.id AS packet_id, candidate.id AS candidate_id, assessment.id AS assessment_id,
+    decision.id AS decision_id, decision.decision, decision.decided_by,
+    candidate.title, candidate.creator, candidate.creation_date,
+    assessment.original_context, assessment.what_echoes, assessment.comparison_breaks,
+    source.url AS source_url, source.title AS source_title
+    FROM echo_decisions AS decision
+    JOIN echo_candidates AS candidate ON candidate.id = decision.candidate_id
+    JOIN echo_packets AS packet ON packet.id = decision.packet_id
+    JOIN echo_packet_intakes AS linked ON linked.packet_id = packet.id AND linked.intake_role = 'primary'
+    JOIN echo_candidate_assessments AS assessment ON assessment.id = decision.assessment_id
+    JOIN echo_candidate_sources AS source ON source.assessment_id = assessment.id
+      AND source.candidate_id = candidate.id AND source.source_role IN ('original_work','historical_context')
+    WHERE packet.id = '${ids.packet_id}' AND candidate.id = '${ids.candidate_id}'
+      AND assessment.id = '${ids.assessment_id}' AND decision.id = '${ids.decision_id}'
+      AND linked.intake_id = '${intakeId}' AND packet.state = 'ready' AND packet.superseded_at IS NULL
+      AND candidate.state = 'editor_ready' AND candidate.editor_ready_assessment_id = assessment.id
+      AND decision.decision = 'feature'
+      AND decision.id = (SELECT latest.id FROM echo_decisions AS latest
+        WHERE latest.candidate_id = candidate.id ORDER BY latest.decided_at DESC, latest.id DESC LIMIT 1)
+    ORDER BY source.id LIMIT 1`;
+  const { stdout } = await run(process.execPath, [path.join(repoRoot, "node_modules", "wrangler", "bin", "wrangler.js"), "d1", "execute", "SBNS_DB", "--config", "wrangler.admin.jsonc", "--remote", "--command", sql, "--json"], repoRoot);
+  let row;
+  try { row = JSON.parse(stdout).at(-1)?.results?.[0]; } catch { fail("Featured Echo remote readback was invalid"); }
+  if (!row || row.decision !== "feature" || !row.decided_by || row.decided_by.startsWith("system:")) fail("Featured Echo has no current exact human FEATURE decision");
+  if (!isHttpUrl(row.source_url) || !["https:"].includes(new URL(row.source_url).protocol)) fail("Featured Echo source requires a secure public link");
+  for (const field of ["title", "original_context", "what_echoes", "comparison_breaks"]) {
+    if (typeof row[field] !== "string" || !row[field].trim()) fail(`Featured Echo is missing ${field}`);
+  }
+  return { artifact_title: row.title, creator: row.creator, creation_date: row.creation_date,
+    original_context: row.original_context, contemporary_connection: row.what_echoes,
+    comparison_breaks: row.comparison_breaks, source: { name: row.source_title || "Original collection record", url: row.source_url } };
 }
 
 async function validatePackageFile(packageFile, schemaFile = SCHEMA_FILE) {
@@ -170,7 +214,7 @@ async function repositoryChecks(pkg, repoRoot) {
   return { stories, target };
 }
 
-function publicStoryFromPackage(pkg, publishedAt) {
+function publicStoryFromPackage(pkg, publishedAt, echo = null) {
   return {
     id: pkg.story.id,
     status: "published",
@@ -183,12 +227,14 @@ function publicStoryFromPackage(pkg, publishedAt) {
     topic_tags: [...pkg.story.topic_tags],
     sources: pkg.story.sources.map(({ name, url }) => ({ name, url })),
     published_at: publishedAt,
+    ...(echo ? { we_were_warned: { ...echo, provenance: { ...pkg.featured_echo } } } : {}),
   };
 }
 
-async function checkPackage(packageFile, repoRoot = ROOT) {
+async function checkPackage(packageFile, repoRoot = ROOT, options = {}) {
   const pkg = await validatePackageFile(path.resolve(packageFile));
   await repositoryChecks(pkg, repoRoot);
+  if (pkg.featured_echo) await (options.verifyEcho ?? verifyFeaturedEcho)(pkg, repoRoot);
   console.log(`Publication package valid: ${pkg.story.id}`);
   return pkg;
 }
@@ -197,11 +243,12 @@ async function preparePackage(packageFile, repoRoot = ROOT, options = {}) {
   await requireCleanFeatureBranch(repoRoot);
   const pkg = await validatePackageFile(path.resolve(packageFile), options.schemaFile ?? path.join(repoRoot, "publication", "schemas", "package.schema.json"));
   const { stories, target } = await repositoryChecks(pkg, repoRoot);
+  const echo = pkg.featured_echo ? await (options.verifyEcho ?? verifyFeaturedEcho)(pkg, repoRoot) : null;
   const feedFile = path.join(repoRoot, "public", "stories.json");
   const previousFeed = await readFile(feedFile, "utf8");
   const previousCount = JSON.parse(previousFeed).length;
   const publishedAt = options.now ?? new Date().toISOString();
-  const story = publicStoryFromPackage(pkg, publishedAt);
+  const story = publicStoryFromPackage(pkg, publishedAt, echo);
   let wroteStory = false;
   try {
     await writeFile(target, `${JSON.stringify(story, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
@@ -214,7 +261,8 @@ async function preparePackage(packageFile, repoRoot = ROOT, options = {}) {
     if (feed.length !== previousCount + 1) fail("Generated public feed did not increment by exactly one story");
     if (!feed.some((item) => item.id === story.id)) fail("Generated public feed does not contain the prepared story");
     const keys = Object.keys(story);
-    if (keys.length !== PUBLIC_FIELDS.length || keys.some((key) => !PUBLIC_FIELDS.includes(key))) fail("Generated story contains non-public fields");
+    const allowed = echo ? [...PUBLIC_FIELDS, "we_were_warned"] : PUBLIC_FIELDS;
+    if (keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) fail("Generated story contains non-public fields");
     console.log(`Publication prepared: ${story.id} at ${publishedAt}`);
     return { story, previousCount, nextCount: feed.length };
   } catch (error) {
@@ -355,6 +403,28 @@ async function test() {
     if (prepared.previousCount !== 1 || prepared.nextCount !== 2) fail("feed increment test failed");
     count += 1;
   } finally { await rm(successRepo.root, { recursive: true, force: true }); }
+
+  const echoPackage = clone(valid);
+  echoPackage.featured_echo = { packet_id: "echo_packet_1", candidate_id: "echo_candidate_1",
+    assessment_id: "echo_assessment_1", decision_id: "echo_decision_1" };
+  const echoRepo = await initializeTempRepo(echoPackage);
+  try {
+    await run("git", ["switch", "-c", "feature/echo-publication-fixture"], echoRepo.root);
+    await expectFailure("human FEATURE required", () => preparePackage(echoRepo.packageFile, echoRepo.root,
+      { verifyEcho: async () => fail("No current exact human FEATURE decision") }), "No current exact human FEATURE decision");
+    if ((await readdir(path.join(echoRepo.root, "content", "stories"))).length !== 1) fail("Failed Echo guard wrote a story");
+    count += 1;
+    const echo = { artifact_title: "Synthetic artifact", creator: "Fixture creator", creation_date: "1900",
+      original_context: "A historical institution faced a different accountability question.",
+      contemporary_connection: "The present issue raises a bounded institutional comparison.",
+      comparison_breaks: "The institutions and outcomes differ.", source: { name: "Fixture archive", url: "https://example.org/archive" } };
+    const prepared = await preparePackage(echoRepo.packageFile, echoRepo.root,
+      { now: "2026-08-19T21:00:00.000Z", verifyEcho: async () => echo });
+    if (prepared.story.we_were_warned?.provenance?.decision_id !== echoPackage.featured_echo.decision_id) fail("Featured Echo was not pinned to the approved decision");
+    const page = await readFile(path.join(echoRepo.root, "public", "story", `${valid.story.id}.html`), "utf8");
+    if (!page.includes("WE WERE WARNED") || !page.includes("The institutions and outcomes differ.")) fail("Approved Echo did not reach the canonical story page");
+    count += 1;
+  } finally { await rm(echoRepo.root, { recursive: true, force: true }); }
 
   const rollbackRepo = await initializeTempRepo(valid);
   try {

@@ -1588,3 +1588,8 @@ footer nav {
     text-align: left;
   }
 }
+.story-cultural-echo { margin: 2rem 0; padding: 1.1rem 1.25rem; border: 1px solid #b7a383; border-left: 5px solid #8a5b26; background: #f6f0e5; }
+.story-cultural-echo h2 { margin: .15rem 0 .6rem; }
+.story-cultural-echo h3 { margin: .3rem 0; }
+.story-cultural-echo p { max-width: 72ch; }
+.story-cultural-echo .echo-attribution { font-style: italic; }

@@ -151,7 +151,7 @@ async function test() {
 
     const persistence = await import("../src/persistence.js");
     const auditExports = Object.keys(persistence).filter((name) => /Audit/.test(name));
-    pass(same(auditExports.sort(), ["createDecisionWithAudit", "createDraftWithAudit", "createIntakeJobWithAudit", "createIntakeWithAudit", "createRetryJobWithAudit", "insertAuditEvent", "listAuditEvents", "recordAnalysisRetryWithAudit"]), "audit helpers must be atomic create or insert/read only");
+    pass(same(auditExports.sort(), ["createDecisionWithAudit", "createDraftWithAudit", "createIntakeJobWithAudit", "createIntakeWithAudit", "createRetryJobWithAudit", "insertAuditEvent", "listAuditEvents", "recordAnalysisRetryWithAudit", "recordEchoRequestWithAudit"]), "audit helpers must be atomic create or insert/read only");
 
     const state = await schemaState(persist);
     pass(same(state.indexes, INDEXES), "expected indexes missing");

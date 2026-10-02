@@ -155,6 +155,22 @@ function validateStory(story, filename) {
     }
   }
 
+  if (Object.hasOwn(story, "we_were_warned")) {
+    const echo = story.we_were_warned;
+    if (story.status !== "published" || story.content_type !== "reporting" || !echo || typeof echo !== "object" || Array.isArray(echo)) issue('"we_were_warned" is allowed only on published reporting');
+    else {
+      for (const field of ["artifact_title", "original_context", "contemporary_connection", "comparison_breaks"]) {
+        if (!isNonEmptyString(echo[field])) issue(`"we_were_warned.${field}" must be non-empty`);
+      }
+      if (echo.creator !== null && echo.creator !== undefined && !isNonEmptyString(echo.creator)) issue('"we_were_warned.creator" must be text or null');
+      if (echo.creation_date !== null && echo.creation_date !== undefined && !isNonEmptyString(echo.creation_date)) issue('"we_were_warned.creation_date" must be text or null');
+      if (!isNonEmptyString(echo.source?.name) || !isValidHttpUrl(echo.source?.url)) issue('"we_were_warned.source" needs an attributable HTTP(S) link');
+      if (!Object.entries({ packet_id: /^echo_packet_[a-z0-9]+$/, candidate_id: /^echo_candidate_[a-z0-9]+$/,
+        assessment_id: /^echo_assessment_[a-z0-9]+$/, decision_id: /^echo_decision_[a-z0-9]+$/ })
+        .every(([field, pattern]) => pattern.test(echo.provenance?.[field] || ""))) issue('"we_were_warned.provenance" requires exact Echo identifiers');
+    }
+  }
+
   for (const evidenceError of validateStoryEvidence(story)) issue(evidenceError);
 
   return errors;
@@ -175,7 +191,24 @@ function normalizedStory(story) {
     published_at: story.published_at,
   };
   if (Object.hasOwn(story, "visuals")) normalized.visuals = normalizeVisuals(story.visuals);
+  if (Object.hasOwn(story, "we_were_warned")) normalized.we_were_warned = structuredClone(story.we_were_warned);
   return normalized;
+}
+
+function renderWeWereWarned(story) {
+  const echo = story.we_were_warned;
+  if (!echo) return "";
+  const attribution = [echo.creator, echo.creation_date].filter(Boolean).join(" · ");
+  return `        <section class="story-cultural-echo" aria-labelledby="cultural-echo-title">
+          <p class="section-label">Cultural memory / editorial comparison</p>
+          <h2 id="cultural-echo-title">WE WERE WARNED</h2>
+          <h3>${escapeHtml(echo.artifact_title)}</h3>
+          ${attribution ? `<p class="echo-attribution">${escapeHtml(attribution)}</p>` : ""}
+          <p><strong>Original context:</strong> ${escapeHtml(echo.original_context)}</p>
+          <p><strong>What echoes:</strong> ${escapeHtml(echo.contemporary_connection)}</p>
+          <p><strong>Where the comparison stops:</strong> ${escapeHtml(echo.comparison_breaks)}</p>
+          <p><a href="${escapeHtml(echo.source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(echo.source.name)}</a></p>
+        </section>`;
 }
 
 function publishedStories(stories) {
@@ -525,7 +558,7 @@ ${severityDots}
           <p class="story-deck">${escapedSummary}</p>
         </header>
 ${renderStoryEvidence(story)}
-        <section class="story-sources" aria-labelledby="sources-title">
+${story.we_were_warned ? `${renderWeWereWarned(story)}\n` : ""}        <section class="story-sources" aria-labelledby="sources-title">
           <h2 id="sources-title">Sources</h2>
           <ol>
 ${renderSources(story)}
@@ -984,6 +1017,19 @@ async function test() {
   assert(!artifacts.homepage.includes('<script>alert("headline")'), "Homepage headline injected executable HTML");
 
   const page = artifacts.pages.get(`${unsafe.id}.html`);
+  assert(!page.includes('class="story-cultural-echo"'), "Stories without a human-featured Echo must have no public Echo chrome");
+  const echoStory = reportingFixture({ id: "featured-echo-fixture", we_were_warned: {
+    artifact_title: 'Synthetic </h3><script>alert("echo")</script>', creator: "Fixture creator", creation_date: "1900",
+    original_context: "Original <context>", contemporary_connection: "A bounded comparison & qualification",
+    comparison_breaks: "The outcomes are not identical.", source: { name: "Archive", url: "https://example.org/record?a=1&b=2" },
+    provenance: { packet_id: "echo_packet_1", candidate_id: "echo_candidate_1", assessment_id: "echo_assessment_1", decision_id: "echo_decision_1" },
+  } });
+  assert(validateStory(echoStory, "echo-fixture.json").length === 0, "Public Echo fixture must validate only as published reporting");
+  const echoPage = generateStoryPage(echoStory, [echoStory]);
+  assert(echoPage.includes("WE WERE WARNED") && echoPage.includes("&lt;script&gt;") && !echoPage.includes('<script>alert("echo")'), "Human-featured Echo renders escaped public text");
+  assert(echoPage.includes("https://example.org/record?a=1&amp;b=2"), "Echo source URL must be attribute-escaped");
+  expectInvalid({ ...echoStory, status: "draft", published_at: null }, '"we_were_warned" is allowed only on published reporting');
+  expectInvalid({ ...echoStory, content_type: "sample" }, '"we_were_warned" is allowed only on published reporting');
   const canonicalUrl = canonicalStoryUrl(unsafe.id);
   const imageUrl = canonicalShareCardUrl(unsafe.id);
   const imageAlt = shareCardAlt(unsafe);

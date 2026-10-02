@@ -1,6 +1,6 @@
 # SBNS Story Queue Email Intake
 
-Status: application integration in draft PR #46; mail-host activation remains external
+Status: implementation present; draft PR #48 closes release-readiness gaps, while production secrets and mail-host activation remain external
 Address: `storyqueue@shockedbutnotsurprised.news`
 Purpose: ordinary-email submission of public story links into the authenticated Newsroom queue.
 
@@ -94,7 +94,7 @@ Per email:
 - maximum plain-text note sent onward: 12,000 bytes;
 - maximum Newsroom note excerpt retained on each intake: 2,000 characters;
 - maximum public story URLs: 10;
-- only credential-free `http` and `https` URLs qualify;
+- only credential-free public-host `http` and `https` URLs qualify; private/local hosts are rejected before intake creation;
 - common tracking parameters and URL fragments are removed before dedupe;
 - attachments are counted for provenance but ignored;
 - HTML-only/attachment-only content does not become attachment ingestion.
@@ -151,18 +151,19 @@ The cPanel pipe command should point to the installed executable PHP relay. Do n
 
 Activation is intentionally separate from merging the code.
 
-1. Merge and deploy the validated Newsroom changes.
-2. Apply the existing PR #46 database migrations required by the broader source-learning work.
-3. Set `STORYQUEUE_INGEST_TOKEN` on the admin Worker.
-4. Set an initial narrow `STORYQUEUE_ALLOWED_SENDERS` policy.
+1. Confirm the analysis deployment token can edit/read back `sbns-analysis`, then merge and deploy the validated Newsroom changes through the normal workflows. PR #48 adds no migration; schema remains v6.
+2. Publisher supplies one or more exact editor-controlled sender addresses. **RELEASE INPUT REQUIRED — STORYQUEUE_ALLOWED_SENDERS** until that value is supplied; do not guess or hardcode a personal address.
+3. Set a separate high-entropy `STORYQUEUE_INGEST_TOKEN` on the admin Worker.
+4. Set the initially narrow `STORYQUEUE_ALLOWED_SENDERS` policy.
 5. Verify `GET /api/admin/storyqueue/status` reports the bridge and sender policy configured.
 6. Install the GreenGeeks relay outside the public web root.
 7. Create the protected relay configuration file.
 8. Configure the `storyqueue@...` cPanel email rule/forwarder to pipe to the relay while preserving the intended mailbox behavior.
-9. Send one controlled test email containing one public story URL and no attachment.
-10. Confirm one `visitor` intake appears, analysis queues once, the email audit event is present, and a resend does not duplicate it.
-11. Send a second controlled test containing an attachment and verify the attachment is ignored.
-12. Only then treat email-to-Newsroom automation as live.
+9. Send one controlled email with one public URL; confirm one intake, one queued analysis, and the append-only message audit.
+10. Resend the same message and URL; confirm no duplicate intake/job.
+11. Send several public URLs with bounded plain-text notes; confirm one normal intake and analysis job per new URL.
+12. Send one message with an attachment; verify only its count is recorded and attachment bytes are ignored.
+13. Confirm the original mailbox still retains ordinary mail, then treat email-to-Newsroom automation as live.
 
 If the GreenGeeks filter/forwarder configuration would unexpectedly eliminate desired mailbox retention, stop and resolve the mail-host behavior before activating the pipe.
 

@@ -61,6 +61,14 @@
             "conflict": false
           }
         ],
+        "claim_source_relationships": [
+          {
+            "claim_id": "claim-repeated-review-bypass",
+            "source_id": "synthetic-news-report",
+            "relation": "context",
+            "explanation": "The report raises the allegation but supplies no independently verified record."
+          }
+        ],
         "source_conflicts": [],
         "observed_condition": "A synthetic report alleges repeated bypassing of required municipal contract review.",
         "attributable_failure": null,
@@ -78,6 +86,10 @@
         "kicker_target": null,
         "kicker_safety": "not_applicable",
         "why_sbns": "The alleged repeated control bypass could fit SBNS, but the systemic failure is not established by available evidence.",
+        "echo_eligible": false,
+        "echo_rationale": "The current allegation lacks sufficient evidence for Echo research.",
+        "echo_search_terms": [],
+        "echo_issue": null,
         "do_not_claim": [
           "Do not claim that the municipality repeatedly bypassed required review unless primary records verify the allegation.",
           "Do not imply an institutional response that has not been obtained."
@@ -174,6 +186,26 @@
             "conflict": false
           }
         ],
+        "claim_source_relationships": [
+          {
+            "claim_id": "claim-reprocessing",
+            "source_id": "synthetic-process-review",
+            "relation": "supports",
+            "explanation": "The synthetic process review records the reprocessing count."
+          },
+          {
+            "claim_id": "claim-delay",
+            "source_id": "synthetic-process-review",
+            "relation": "qualifies",
+            "explanation": "The review estimates delay for the reviewed process, not every applicant."
+          },
+          {
+            "claim_id": "claim-response",
+            "source_id": "synthetic-process-review",
+            "relation": "institutional_response",
+            "explanation": "The review records the administration's stated response."
+          }
+        ],
         "source_conflicts": [],
         "observed_condition": "The synthetic administration repeatedly reprocessed 18,000 claims manually, with documented administrative cost and an estimated 21-day applicant delay.",
         "attributable_failure": null,
@@ -191,6 +223,10 @@
         "kicker_target": "The repeated administrative process",
         "kicker_safety": "acceptable",
         "why_sbns": "The documented process repeatedly consumes public resources and shifts delay onto applicants; that accountability condition is worth explaining even though the record does not establish a violated legal duty or discrete systemic failure.",
+        "echo_eligible": false,
+        "echo_rationale": "No cultural analogy is necessary for this synthetic process fixture.",
+        "echo_search_terms": [],
+        "echo_issue": null,
         "do_not_claim": [
           "Do not claim that the synthetic administration violated a legal processing deadline.",
           "Do not claim that every applicant experienced the same delay.",
@@ -334,6 +370,44 @@
             "conflict": false
           }
         ],
+        "claim_source_relationships": [
+          {
+            "claim_id": "claim-clean-opinion",
+            "source_id": "dubuque-acfr",
+            "relation": "supports",
+            "explanation": "The audit states its opinion and finding categories."
+          },
+          {
+            "claim_id": "claim-clean-opinion",
+            "source_id": "dubuque-announcement",
+            "relation": "institutional_response",
+            "explanation": "The city characterized the opinion publicly; this is not independent corroboration."
+          },
+          {
+            "claim_id": "claim-budget-overrun",
+            "source_id": "dubuque-acfr",
+            "relation": "quantitative",
+            "explanation": "The audit reports actual and authorized expenditures."
+          },
+          {
+            "claim_id": "claim-budget-overrun",
+            "source_id": "iowa-chapter-384",
+            "relation": "context",
+            "explanation": "The statute supplies the legal budget-control context, not the amount."
+          },
+          {
+            "claim_id": "claim-city-response",
+            "source_id": "dubuque-acfr",
+            "relation": "institutional_response",
+            "explanation": "The audit includes the city's response."
+          },
+          {
+            "claim_id": "claim-no-questionable-expenditures",
+            "source_id": "dubuque-acfr",
+            "relation": "supports",
+            "explanation": "The audit explicitly reports no questionable expenditures."
+          }
+        ],
         "source_conflicts": [],
         "observed_condition": "One municipal function spent $2,025,824 beyond its final authorized fiscal 2025 budget.",
         "attributable_failure": "The budget was not amended before disbursements exceeded the authorized amount.",
@@ -353,6 +427,10 @@
         "kicker_target": "The municipal budget-control failure",
         "kicker_safety": "acceptable",
         "why_sbns": "The audit documents a concrete local-government control failure while illustrating why a clean financial-statement opinion does not mean an audit contained no findings.",
+        "echo_eligible": false,
+        "echo_rationale": "The evidence is clearer without a cultural analogy.",
+        "echo_search_terms": [],
+        "echo_issue": null,
         "do_not_claim": [
           "Do not claim that the budget-control finding establishes fraud, theft, missing money, or questionable expenditures.",
           "Do not claim that a clean financial-statement opinion means the audit contained no statutory findings."
@@ -445,6 +523,14 @@
             "conflict": false
           }
         ],
+        "claim_source_relationships": [
+          {
+            "claim_id": "claim-isolated-rudeness",
+            "source_id": "synthetic-incident-account",
+            "relation": "supports",
+            "explanation": "The synthetic account describes the isolated interaction only."
+          }
+        ],
         "source_conflicts": [],
         "observed_condition": "One synthetic public employee behaved rudely in one isolated incident.",
         "attributable_failure": null,
@@ -462,6 +548,10 @@
         "kicker_target": null,
         "kicker_safety": "not_applicable",
         "why_sbns": "The isolated conduct does not establish a broader institutional nexus, recurring pattern, displaced burden, public-resource issue, accountability gap, or other consequential SBNS accountability condition.",
+        "echo_eligible": false,
+        "echo_rationale": "Rejected material cannot initiate cultural research.",
+        "echo_search_terms": [],
+        "echo_issue": null,
         "do_not_claim": [
           "Do not generalize one employee’s synthetic isolated conduct into a policy, practice, or supervisory failure."
         ],

@@ -95,6 +95,14 @@
         "conflict": false
       }
     ],
+    "claim_source_relationships": [
+      { "claim_id": "claim-clean-opinion", "source_id": "dubuque-acfr", "relation": "supports", "explanation": "The audit states its opinion and finding categories." },
+      { "claim_id": "claim-clean-opinion", "source_id": "dubuque-announcement", "relation": "institutional_response", "explanation": "The city characterized the opinion publicly; this is not independent corroboration." },
+      { "claim_id": "claim-budget-overrun", "source_id": "dubuque-acfr", "relation": "quantitative", "explanation": "The audit reports actual and authorized expenditures." },
+      { "claim_id": "claim-budget-overrun", "source_id": "iowa-chapter-384", "relation": "context", "explanation": "The statute supplies the legal budget-control context, not the amount." },
+      { "claim_id": "claim-city-response", "source_id": "dubuque-acfr", "relation": "institutional_response", "explanation": "The audit includes the city's response." },
+      { "claim_id": "claim-no-questionable-expenditures", "source_id": "dubuque-acfr", "relation": "supports", "explanation": "The audit explicitly reports no questionable expenditures." }
+    ],
     "source_conflicts": [],
     "observed_condition": "One municipal function spent $2,025,824 beyond its final authorized fiscal 2025 budget.",
     "attributable_failure": "The budget was not amended before disbursements exceeded the authorized amount.",
@@ -112,6 +120,10 @@
     "kicker_target": "The municipal budget-control failure",
     "kicker_safety": "acceptable",
     "why_sbns": "The audit documents a concrete local-government control failure while illustrating why a clean financial-statement opinion does not mean an audit contained no findings.",
+    "echo_eligible": false,
+    "echo_rationale": "The evidence is clearer without a cultural analogy.",
+    "echo_search_terms": [],
+    "echo_issue": null,
     "do_not_claim": [
       "Do not claim that the budget-control finding establishes fraud, theft, missing money, or questionable expenditures.",
       "Do not claim that a clean financial-statement opinion means the audit contained no statutory findings."

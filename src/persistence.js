@@ -179,11 +179,11 @@ function auditStatement(env, event) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).bind(event.id, event.actor_type, event.actor_id, event.action, event.entity_type, event.entity_id, event.metadata_json, event.created_at);
 }
 
-export async function storeDiscoveryCandidate(env, intake, audit, runId, checkedAt = null) {
+export async function storeDiscoveryCandidate(env, intake, audit, runId, checkedAt = null, job = null) {
   const db = database(env);
   // D1 batch is one SQLite transaction. No lease takeover can interleave with
   // this conditional insert and its audit/ledger statements.
-  return db.batch([
+  const statements = [
     db.prepare(`INSERT OR IGNORE INTO intakes
       (id, origin, submitted_url, submitted_at, submitter_note, status, analysis_status, created_at, updated_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -199,6 +199,12 @@ export async function storeDiscoveryCandidate(env, intake, audit, runId, checked
     db.prepare(`INSERT INTO audit_events
       (id, actor_type, actor_id, action, entity_type, entity_id, metadata_json, created_at)
       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE changes() = 1`).bind(audit.id, audit.actor_type, audit.actor_id ?? null, audit.action, audit.entity_type, audit.entity_id, audit.metadata_json, audit.created_at),
+  ];
+  if (job) statements.push(db.prepare(`INSERT INTO analysis_jobs
+    (id, intake_id, job_type, state, attempt, created_at, updated_at)
+    SELECT ?, ?, 'intake_analysis', 'pending_enqueue', 0, ?, ? WHERE changes() = 1`)
+    .bind(job.id, intake.id, job.created_at, job.updated_at));
+  statements.push(
     // Recheck database time before the final statement. If the lease expired
     // while the batch ran, the existing count CHECK aborts the whole batch.
     db.prepare(`UPDATE watchdesk_runs
@@ -209,7 +215,8 @@ export async function storeDiscoveryCandidate(env, intake, audit, runId, checked
         ) THEN submitted_count + 1 ELSE -1 END,
         submitted_ids_json = json_insert(submitted_ids_json, '$[#]', ?)
       WHERE id = ? AND changes() = 1`).bind(runId, checkedAt, intake.id, runId),
-  ]);
+  );
+  return db.batch(statements);
 }
 
 export async function createIntakeWithAudit(env, intake, audit, idempotency) {
@@ -256,6 +263,10 @@ export async function createRetryJobWithAudit(env, job, audit, idempotency) {
 }
 
 export async function recordAnalysisRetryWithAudit(env, audit, idempotency) {
+  return database(env).batch([auditStatement(env, audit), idempotencyStatement(env, idempotency)]);
+}
+
+export async function recordEchoRequestWithAudit(env, audit, idempotency) {
   return database(env).batch([auditStatement(env, audit), idempotencyStatement(env, idempotency)]);
 }
 

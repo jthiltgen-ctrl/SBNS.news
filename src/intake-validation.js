@@ -65,6 +65,22 @@ export function validateAnalysisSemantics(request, analysis) {
   if (request.schema_version !== analysis.schema_version) fail("fixture: request and analysis schema_version values must match");
   const sourceIds = unique(analysis.sources, "source_id", "analysis.sources");
   const claimIds = unique(analysis.claims, "claim_id", "analysis.claims");
+  const relationships = analysis.claim_source_relationships || [];
+  const relationshipKeys = new Set();
+  for (const relationship of relationships) {
+    if (!claimIds.has(relationship.claim_id) || !sourceIds.has(relationship.source_id)) fail("analysis.claim_source_relationships: nonexistent claim or source");
+    const claim = analysis.claims.find((item) => item.claim_id === relationship.claim_id);
+    if (!claim.source_refs.includes(relationship.source_id)) fail("analysis.claim_source_relationships: relation must match a claim/source link");
+    const key = `${relationship.claim_id}\0${relationship.source_id}`;
+    if (relationshipKeys.has(key)) fail("analysis.claim_source_relationships: duplicate claim/source relation");
+    relationshipKeys.add(key);
+  }
+  for (const claim of analysis.claims) for (const ref of claim.source_refs) {
+    if (!relationshipKeys.has(`${claim.claim_id}\0${ref}`)) fail("analysis.claim_source_relationships: every linked source needs a relation");
+  }
+  if (analysis.echo_search_terms.length > 3 || analysis.echo_search_terms.some((term) => term.length > 80 || /[\r\n]/.test(term))) fail("analysis.echo_search_terms: expected at most three concise concepts");
+  if (analysis.echo_eligible && (analysis.recommendation !== "publish" || !analysis.echo_search_terms.length || !analysis.echo_issue)) fail("analysis.echo_eligible: requires review-ready analysis, a bounded issue brief, and search terms");
+  if (!analysis.echo_eligible && (analysis.echo_search_terms.length || analysis.echo_issue)) fail("analysis.echo_search_terms: ineligible analysis must not start research");
   for (const paragraph of analysis.proposed_body || []) for (const ref of paragraph.claim_refs) if (!claimIds.has(ref)) fail(`analysis.proposed_body: nonexistent claim ${ref}`);
   for (const claim of analysis.claims) for (const ref of claim.source_refs) if (!sourceIds.has(ref)) fail(`analysis.claims: claim ${claim.claim_id} references nonexistent source ${ref}`);
   for (const source of analysis.sources) for (const ref of source.claims_supported) if (!claimIds.has(ref)) fail(`analysis.sources: source ${source.source_id} references nonexistent claim ${ref}`);

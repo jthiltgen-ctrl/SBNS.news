@@ -20,6 +20,9 @@
     "AI_MAX_TOKENS": "4096"
   },
   "queues": {
+    "producers": [
+      { "binding": "ANALYSIS_QUEUE", "queue": "sbns-analysis-staging" }
+    ],
     "consumers": [
       {
         "queue": "sbns-analysis-staging",

@@ -6,11 +6,15 @@ import { buildAnalysisMessages } from "../src/analysis-prompt.js";
 import { analyzeIntake } from "../src/analyzer.js";
 import { draftZero, evidenceLedger } from "../public/admin-persistent/editorial-production.js";
 import { discoverySearchUrl, searchPublicDiscovery, SEARCH_RESULT_LIMIT } from "../src/editorial-search.js";
-import { processAnalysisMessage } from "../src/analysis-index.js";
+import { processAnalysisMessage, processEchoMessage } from "../src/analysis-index.js";
 import { listIntakes } from "../src/persistence.js";
 import { filterAssignments } from "../public/admin-persistent/desk-state.js";
 import { orchestrateSyntheticEcho } from "../src/echo-orchestration.js";
 import { syntheticBrief, syntheticCandidate, AT } from "../fixtures/echo/synthetic-fixtures.mjs";
+import { echoCandidateFromRecord, runEchoResearch } from "../src/echo-runtime.js";
+import { normalizeLocResult } from "../src/echo-source-adapters.js";
+import { createAdminHandler } from "../src/admin-index.js";
+import { getEchoPriorUse } from "../src/echo-persistence.js";
 
 let assertions = 0;
 function pass(value, label) { assert.ok(value, label); assertions++; }
@@ -55,6 +59,7 @@ analysis.sources[0].source_id = "source-1";
 analysis.claims.forEach((claim) => { claim.source_refs = ["source-1"]; });
 analysis.sources.push({ source_id: "source-2", name: "Synthetic public record", url: government, source_type: "government", authority: "Official record for its own findings", recency: "Synthetic fixture", claims_supported: [analysis.claims[0].claim_id] });
 analysis.claims[0].source_refs.push("source-2");
+analysis.claim_source_relationships = analysis.claims.flatMap((claim) => claim.source_refs.map((sourceId) => ({ claim_id: claim.claim_id, source_id: sourceId, relation: sourceId === "source-2" ? "qualifies" : "supports", explanation: "Synthetic source is scoped to this exact claim." })));
 analysis.proposed_sources.push({ name: "Synthetic public record", url: government });
 analysis.proposed_body = [{ text: "The synthetic administration reprocessed 18,000 claims, according to the supplied records.", claim_refs: [analysis.claims[0].claim_id] }];
 const env = { AI_MODEL: "synthetic", AI_GATEWAY_ID: "synthetic", AI: { run: async () => ({ response: analysis }) } };
@@ -63,6 +68,12 @@ pass(verified.claims[0].source_refs.includes("source-2"), "multi-source analysis
 pass(evidenceLedger(verified)[0].sources.length === 2, "ledger shows both claimed sources and their separate authority");
 const proposal = draftZero(verified);
 pass(proposal.state === "proposal" && proposal.paragraphs[0].sources.length === 2, "Draft 0 uses only cited, verified claim references");
+const contradicted = structuredClone(verified);
+contradicted.claim_source_relationships.find((item) => item.claim_id === contradicted.claims[0].claim_id && item.source_id === "source-2").relation = "contradicts";
+pass(draftZero(contradicted).state === "withheld", "contradicted material cannot silently become Draft 0");
+const contextOnly = structuredClone(verified);
+contextOnly.claim_source_relationships.filter((item) => item.claim_id === contextOnly.claims[0].claim_id).forEach((item) => { item.relation = "context"; });
+pass(draftZero(contextOnly).state === "withheld", "context links alone cannot support a factual Draft 0 sentence");
 pass(!Object.hasOwn(proposal, "human_decision") && !Object.hasOwn(proposal, "published_at"), "Draft 0 carries no human or publication authority");
 const changed = structuredClone(analysis);
 changed.proposed_body[0].claim_refs = ["invented-claim"];
@@ -135,9 +146,64 @@ try {
   present.sourceIntakeId = intake.id;
   const negative = await orchestrateSyntheticEcho({ SBNS_DB: localDb }, { brief: { ...brief, issueKey: "synthetic:editorial-no-echo" }, candidates: [], runKey: "negative", requestedBy: "synthetic-editor", triggerType: "manual", at: AT });
   pass(negative.status === "NO_CULTURAL_ECHO_WARRANTED" && negative.readyCount === 0, "synthetic Echo-negative Story File completes successfully without candidate");
-  const positive = await orchestrateSyntheticEcho({ SBNS_DB: localDb }, { brief, candidates: [candidate], runKey: "positive", requestedBy: "synthetic-editor", triggerType: "manual", at: AT });
+  const positive = await orchestrateSyntheticEcho({ SBNS_DB: localDb }, { brief, candidates: [candidate], runKey: "positive", requestedBy: "synthetic-editor", triggerType: "manual", at: "2026-10-01T12:00:01.000Z" });
   pass(positive.status === "READY" && positive.readyCount === 1, "existing Echo contract can accept a fully supplied synthetic candidate packet");
   pass(localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM echo_decisions").get().n === 0 && localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM publication_attempts").get().n === 0, "candidate readiness creates no human Echo decision or publication");
+  const eligible = { ...persistedAnalysis, echo_eligible: true, echo_search_terms: ["institutional recordkeeping"],
+    echo_issue: { institution: "Fictional Civic Water Office", jurisdiction: "Invented District",
+      expectation: "Maintain a complete inspection register", accountability_question: "Was a routine duty documented?",
+      mechanism: "Missing entries obscure routine oversight", affected_interests: ["Synthetic residents"] } };
+  const catalog = normalizeLocResult({ id: "https://www.loc.gov/item/synthetic-echo/", title: "Invented catalog work",
+    contributor_names: ["Imaginary author"], date: "1900", original_format: ["Book"] }, AT);
+  const verifiedCatalog = { ...catalog, context: { status: "source_supported", originalContext: "An invented archive explains how a fictional office recorded its duties.",
+    contextAuthority: "limited", basis: "Synthetic detailed collection record", creatorIntentStatus: "not_claimed" } };
+  const analogy = { whatEchoes: "Both matters involve a documentation gap.", comparisonBreaks: "The institutions and outcomes differ.",
+    remainsUncertain: "No shared cause is established.", temptedOverclaim: "The work predicted the present.",
+    presentDayEvidence: "The synthetic current record documents the gap.", editorialValue: "Clarifies the limits of the comparison.",
+    researchBurden: "low", mechanismMatch: "qualified", addsValue: true };
+  const unresolvedCandidate = echoCandidateFromRecord({ record: verifiedCatalog, assessment: analogy, intakeSource: contemporary, at: AT });
+  pass(unresolvedCandidate.gate.culturalProtocol === "unresolved" && unresolvedCandidate.rights[0].status === "unknown", "missing catalog protocol and rights clearance never become permissions");
+  const reviewedCandidate = echoCandidateFromRecord({ record: { ...verifiedCatalog, culturalProtocol: { status: "none_identified" } },
+    assessment: analogy, intakeSource: contemporary, at: AT });
+  pass(reviewedCandidate.gate.culturalProtocol === "clear" && reviewedCandidate.rights[0].permittedUse.includes("no protected media"), "only an explicit no-protocol finding permits the candidate gate; reuse remains metadata-only");
+  const runtime = await runEchoResearch({ SBNS_DB: localDb }, { intake, analysis: eligible, sources: sourceRows,
+    runKey: "fixture-live-bridge", requestedBy: "system:analysis", triggerType: "review_ready", at: AT }, {
+    discoverLoc: async () => [catalog], verifyDiscoveredContext: async () => verifiedCatalog, assessEchoAnalogy: async () => analogy,
+  });
+  pass(runtime.status === "NO_CULTURAL_ECHO_WARRANTED" && runtime.readyCount === 0, "bounded live-adapter bridge truthfully completes no-echo when protocol status is unresolved");
+  pass(localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM echo_decisions").get().n === 0 &&
+    localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM publication_attempts").get().n === 0, "live research bridge grants no human or publication authority");
+  localDb.sqlite.prepare("UPDATE intakes SET status='review_ready' WHERE id=?").run(intake.id);
+  const latestAnalysis = localDb.sqlite.prepare("SELECT id FROM analyses WHERE intake_id=? ORDER BY created_at DESC LIMIT 1").get(intake.id);
+  localDb.sqlite.prepare("UPDATE analyses SET raw_analysis_json=? WHERE id=?").run(JSON.stringify(eligible), latestAnalysis.id);
+  const echoMessage = { body: { schema_version: "1", type: "echo_research", intake_id: intake.id,
+    analysis_id: latestAnalysis.id, run_key: "synthetic-queue", trigger_type: "review_ready", requested_by: "system:analysis" },
+    acked: false, ack() { this.acked = true; } };
+  let invoked = 0;
+  const queuedEcho = await processEchoMessage(echoMessage, { SBNS_DB: localDb }, { runEchoResearch: async () => { invoked++; return { status: "READY" }; } });
+  pass(queuedEcho.outcome === "complete" && echoMessage.acked && invoked === 1, "distinct Echo queue message reaches bounded research path");
+  const failedEcho = await processEchoMessage({ ...echoMessage, acked: false, ack() { this.acked = true; } },
+    { SBNS_DB: localDb }, { runEchoResearch: async () => { throw new Error("SYNTHETIC_ECHO_OUTAGE"); } });
+  pass(failedEcho.outcome === "failed" && draftZero(eligible).state === "proposal" &&
+    localDb.sqlite.prepare("SELECT state FROM analysis_jobs WHERE id='job_editorial'").get().state === "complete", "Echo failure cannot erase completed reporting analysis or Draft 0");
+  const pinned = localDb.sqlite.prepare("SELECT id, editor_ready_assessment_id FROM echo_candidates WHERE packet_id=? AND state='editor_ready'").get(positive.packetId);
+  const humanHandler = createAdminHandler({ authenticate: async () => ({ actorType: "editor", actorId: "synthetic-editor", email: "synthetic@example.test" }) });
+  const decide = (assessmentId, key = "synthetic-feature") => humanHandler(new Request(`https://admin.example/api/admin/intakes/${intake.id}/echo/decision`, {
+    method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": key },
+    body: JSON.stringify({ candidate_id: pinned.id, assessment_id: assessmentId, decision: "feature", rationale: "Synthetic editorial comparison only" }),
+  }), { SBNS_DB: localDb });
+  pass((await decide("echo_assessment_wrong", "bad-assessment")).status === 409, "human Echo endpoint rejects an assessment other than the pinned revision");
+  const featured = await decide(pinned.editor_ready_assessment_id);
+  pass(featured.status === 201 && (await featured.json()).decision.assessment_id === pinned.editor_ready_assessment_id,
+    "human FEATURE records the exact reviewed assessment through the authenticated Story File route");
+  pass(localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM echo_decisions").get().n === 1 &&
+    localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM editorial_decisions").get().n === 0 &&
+    localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM publication_attempts").get().n === 0,
+  "FEATURE does not approve reporting or publish any story");
+  pass((await getEchoPriorUse({ SBNS_DB: localDb }, candidate.canonicalArtifactId, "synthetic:different-issue")).status === "previously_featured",
+    "prior-use lookup detects a human-featured artifact across issues");
+  pass((await getEchoPriorUse({ SBNS_DB: localDb }, candidate.canonicalArtifactId, brief.issueKey)).status === "never_seen",
+    "a partial retry does not count its own issue packet as prior use");
   pass(localDb.sqlite.prepare("PRAGMA foreign_key_check").all().length === 0, "isolated end-to-end database has zero FK violations");
 } finally { localDb.close(); }
 

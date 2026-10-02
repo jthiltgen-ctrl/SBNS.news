@@ -94,6 +94,10 @@ function check() {
   eq(locRecord({ contributor_names: [], date: null }).date, null);
   eq(locRecord({ access_advisory: ["Traditional Knowledge label: community protocol applies"] }).culturalProtocol.status, "indicated");
   eq(locRecord({ rights_advisory: ["Community protocol applies to this sacred material"] }).culturalProtocol.status, "indicated");
+  const explicitNoProtocol = "No cultural protocol restrictions identified for this item.";
+  eq(locRecord({ access_advisory: [explicitNoProtocol] }).culturalProtocol.status, "none_identified");
+  eq(locRecord({ access_advisory: ["No known restrictions"] }).culturalProtocol.status, "unclear");
+  eq(locRecord({ access_advisory: [explicitNoProtocol, "Traditional Knowledge label: community protocol applies"] }).culturalProtocol.status, "indicated");
   eq(locRecord({ id: "http://www.loc.gov/item/sn85033000/1911-08-10/ed-1/" }).canonicalUrl,
     "https://www.loc.gov/item/sn85033000/1911-08-10/ed-1/");
   eq(normalizeLocResult({ ...LOC_ITEM, id: "https://evil.example/item/2026123456/" }, AT), null);
@@ -151,6 +155,9 @@ function check() {
   ];
   eq(locRecord({ traditional_knowledge_labels: lateLocLabels }).culturalProtocol.status, "indicated");
   eq(verifyLocContext(loc, { item: LOC_ITEM, traditional_knowledge_labels: lateLocLabels }, AT).culturalProtocol.status, "indicated");
+  const noProtocolLoc = locRecord({ access_advisory: [explicitNoProtocol] });
+  eq(verifyLocContext(noProtocolLoc, { item: LOC_ITEM }, AT).culturalProtocol.status, "none_identified");
+  eq(verifyLocContext(noProtocolLoc, { item: { ...LOC_ITEM, access_advisory: ["Community protocol applies"] } }, AT).culturalProtocol.status, "indicated");
   const verifiedSmith = verifySmithsonianContext(smith, { response: SMITH_ITEM }, AT);
   eq(verifiedSmith.context.status, "source_supported");
   eq(verifiedSmith.context.originalContext, SMITH_ITEM.content.freetext.notes[1].content);
@@ -189,6 +196,9 @@ function check() {
     ({ label: "General note", content: `Routine catalog note ${index + 1}.` }));
   const unflaggedSmith = smithRecord({ content: smithItemWithNotes(ordinaryNotes).content });
   eq(unflaggedSmith.culturalProtocol.status, "unclear");
+  const noProtocolSmith = smithItemWithNotes([...ordinaryNotes, { label: "Access", content: explicitNoProtocol }]);
+  eq(normalizeSmithsonianResult(noProtocolSmith, AT).culturalProtocol.status, "none_identified");
+  eq(verifySmithsonianContext(unflaggedSmith, { response: noProtocolSmith }, AT).culturalProtocol.status, "none_identified");
   const lateProtocolItem = smithItemWithNotes([...ordinaryNotes,
     { label: "Cultural sensitivity", content: "Community protocol applies to this fictional ceremonial record." },
   ]);

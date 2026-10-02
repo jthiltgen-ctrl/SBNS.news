@@ -354,12 +354,75 @@ function renderEvidence(data, analysis) {
     if (!claim.sources.length) card.append(el("p", "No claim-specific supporting source is recorded.", "warning"));
     claim.sources.forEach((source) => {
       const provenance = el("p", null, "claim-provenance");
-      provenance.append(safeLink(source.url, source.name), document.createTextNode(" · " + text(source.role) + " · " + text(source.authority) + (source.locator ? " · " + source.locator : "")));
+      provenance.append(safeLink(source.url, source.name), document.createTextNode(" · " + text(source.relation) + " — " + text(source.explanation) + " · " + text(source.role) + " · " + text(source.authority) + (source.locator ? " · " + source.locator : "")));
       card.append(provenance);
     });
     node.append(card);
   });
   node.append(list("Source conflicts", (analysis?.source_conflicts || []).map((conflict) => (conflict.statements || []).join(" / "))));
+  return node;
+}
+function renderEcho(data, analysis) {
+  const node = panel("story-echo", "Cultural Echo / We Were Warned", "echo-panel");
+  node.append(el("p", "Internal cultural research only. A candidate is not a story decision or publication permission.", "warning"));
+  const echo = data.echo;
+  const eligible = analysis?.recommendation === "publish" && analysis.echo_eligible === true && analysis.echo_issue && analysis.echo_search_terms?.length;
+  if (!eligible) { node.append(el("p", "Not yet eligible: complete an evidence-backed, review-ready analysis first.")); return node; }
+  const latestAudit = [...data.audit].reverse().find((event) => event.action.startsWith("echo.research_"));
+  if (!echo && latestAudit?.action === "echo.research_failed") node.append(el("p", "Echo research failed. The story analysis and Draft 0 remain available; retry is editor-initiated.", "warning"));
+  else if (!echo && latestAudit) node.append(el("p", "Echo research queued or running."));
+  else if (!echo) node.append(el("p", "No Echo research has been recorded for this Story File."));
+  const failedBoundPacket = echo?.packet.state === "open" && echo.jobs.at(-1)?.state === "failed" && echo.package_binding;
+  if (failedBoundPacket) node.append(el("p", "Research failed after its candidate package was frozen. A fresh live search cannot safely retry this packet with changed inputs; retain the reporting draft and request a forward repair.", "warning"));
+  if (!echo || echo.packet.state === "open" && echo.jobs.at(-1)?.state === "failed" && !echo.package_binding) {
+    const run = el("button", echo?.jobs.at(-1)?.state === "failed" ? "Retry Echo Research" : "Run Echo Research");
+    run.type = "button";
+    run.addEventListener("click", async () => {
+      run.disabled = true;
+      try { await api("/api/admin/intakes/" + data.intake.id + "/echo", { method: "POST", body: "{}" }); await loadDetail(data.intake.id, "Echo research requested."); }
+      catch (error) { node.append(el("p", error.message, "warning")); run.disabled = false; }
+    });
+    node.append(run);
+  }
+  if (!echo) return node;
+  node.append(fieldGrid([["Packet state", echo.packet.state === "no_echo" ? "NO CULTURAL ECHO WARRANTED" : echo.packet.state], ["Latest research job", echo.jobs.at(-1)?.state || "Pending"], ["No-Echo reason", echo.packet.no_echo_reason_code]]));
+  if (echo.packet.state === "no_echo") { node.append(el("p", "No cultural comparison passed the current context, analogy, rights, and protocol gates. This is a successful outcome.")); return node; }
+  for (const candidate of echo.candidates) {
+    const card = el("article", null, "echo-candidate");
+    card.append(el("h3", candidate.title), fieldGrid([["Creator / date", [candidate.creator, candidate.creation_date].filter(Boolean).join(" · ")], ["Research state", candidate.state], ["Gate result", candidate.gate_reason_code]]));
+    const assessment = echo.assessments.find((item) => item.id === candidate.editor_ready_assessment_id) || echo.assessments.filter((item) => item.candidate_id === candidate.id).at(-1);
+    if (assessment) card.append(fieldGrid([
+      ["Original context", assessment.original_context, true], ["What echoes", assessment.what_echoes, true],
+      ["Where comparison breaks", assessment.comparison_breaks, true], ["Uncertainty", assessment.remains_uncertain, true],
+      ["Tempted overclaim", assessment.tempted_overclaim, true], ["Present-day evidence", assessment.present_day_evidence, true],
+      ["Editorial value", assessment.editorial_value, true], ["Creator intent", assessment.creator_intent_status],
+    ]));
+    const evaluation = safeJson(echo.evaluations?.find((item) => item.entity_id === candidate.id)?.metadata_json, {});
+    card.append(fieldGrid([["Cultural protocol", candidate.gate_reason_code === "CULTURAL_PROTOCOL_UNRESOLVED" ? "Unresolved — do not feature" : candidate.state === "editor_ready" ? "No flagged protocol in reviewed packet; editor must verify" : "Review required"], ["Prior SBNS use", evaluation.prior_use_status || "Not established"]]));
+    const sourceList = el("div"); sourceList.append(el("h4", "Context and contemporary sources"));
+    echo.sources.filter((source) => source.candidate_id === candidate.id).forEach((source) => sourceList.append(el("p", source.source_role + ": "), safeLink(source.url, source.title || source.canonical_identifier || source.intake_source_id)));
+    card.append(sourceList);
+    const rights = echo.rights.filter((item) => item.candidate_id === candidate.id).at(-1);
+    card.append(field("Rights / proposed use", rights ? rights.status + " · " + rights.permitted_use : "No review recorded"));
+    const latestDecision = echo.decisions.filter((item) => item.candidate_id === candidate.id).at(-1);
+    if (latestDecision) card.append(field("Human Echo decision", latestDecision.decision.toUpperCase() + " · " + date(latestDecision.decided_at)));
+    if (candidate.state === "editor_ready" && assessment?.id === candidate.editor_ready_assessment_id) {
+      const controls = el("div", null, "decision-row");
+      [["feature", "FEATURE THIS ECHO"], ["hold", "HOLD"], ["reject", "REJECT"]].forEach(([value, label]) => {
+        const button = el("button", label, value); button.type = "button";
+        button.addEventListener("click", async () => {
+          const rationale = window.prompt("Human editorial rationale for " + label);
+          if (!rationale?.trim()) return;
+          button.disabled = true;
+          try { await api("/api/admin/intakes/" + data.intake.id + "/echo/decision", { method: "POST",
+            body: JSON.stringify({ candidate_id: candidate.id, assessment_id: assessment.id, decision: value, rationale: rationale.trim() }) });
+            await loadDetail(data.intake.id, "Human Echo decision recorded. Story approval and publication remain separate."); }
+          catch (error) { card.append(el("p", error.message, "warning")); button.disabled = false; }
+        }); controls.append(button);
+      }); card.append(controls);
+    }
+    node.append(card);
+  }
   return node;
 }
 function draftForm(intakeId, latest, proposal) {
@@ -502,7 +565,7 @@ async function loadDetail(id, notice = "") {
   header.append(context);
   const nav = el("nav", null, "file-nav");
   nav.setAttribute("aria-label", "Story file sections");
-  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-semantics", "Editorial Frame"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
+  const sections = [["story-intake", "Intake"], ["story-discovery", "Discovery"], ["story-semantics", "Editorial Frame"], ["story-analysis", "Analysis"], ["story-evidence", "Evidence"], ["story-echo", "Cultural Echo"], ["story-drafts", "Drafts"], ["story-decision", "Decision"], ["story-audit", "Audit"]];
   sections.filter(([section]) => section !== "story-discovery" || candidate).forEach(([section, label]) => {
     const link = el("a", label); link.href = "#" + section; nav.append(link);
   });
@@ -515,7 +578,7 @@ async function loadDetail(id, notice = "") {
   const discovery = renderDiscovery(candidate);
   if (discovery) detail.append(discovery);
   const rendered = renderAnalysis(data);
-  detail.append(renderSemanticControl(data, rendered.parsed, candidate), rendered.analysis, rendered.evidence);
+  detail.append(renderSemanticControl(data, rendered.parsed, candidate), rendered.analysis, rendered.evidence, renderEcho(data, rendered.parsed));
   if (rendered.proposal) detail.append(rendered.proposal);
   detail.append(renderDrafts(data, rendered.parsed), renderDecisions(data), renderAudit(data));
   fileTitle.focus({ preventScroll: true });

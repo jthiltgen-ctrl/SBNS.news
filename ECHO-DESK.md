@@ -306,3 +306,52 @@ model call, live Newsroom integration, public `WE WERE WARNED` route, or
 publication authority. After source-adapter review, a bounded execution
 service and Newsroom integration are separate decisions, not an automatic
 consequence of these adapters.
+
+## Draft PR #48 integration boundary
+
+The earlier PR C description above remains the history of the source-adapter
+milestone. Draft PR #48 (not deployed) connects an eligible, completed Story
+File to bounded Echo execution in the existing `sbns-analysis` Queue consumer.
+It uses a distinct `echo_research` message and the existing Echo packet/job
+tables, candidate-package retry binding, LOC and optional keyed Smithsonian
+adapters, and deterministic candidate gates. No fourth Worker, Queue, schema
+migration, cron, or autonomous research service is added. The model may write
+the internal Analogy Truth Test from supplied contemporary facts and
+source-supported original context; it cannot establish creator intent,
+upgrade context authority, clear rights/protocol restrictions, or FEATURE an
+Echo. A failed or no-echo run cannot erase a completed reporting analysis.
+
+Eligible analysis must be review-ready with a publish recommendation,
+evidence-backed issue fields, and one to three short search concepts. Raw
+search hits and low-readiness Watchdesk leads do not start Echo. The runtime
+checks at most six catalog detail records; source outages are isolated where
+another approved adapter succeeds. An ambiguous catalog protocol remains
+`unresolved`, not `clear`, so `NO CULTURAL ECHO WARRANTED` is a legitimate
+result even for an apparently apt artifact. Only an explicit collection-record
+statement that no cultural protocol was identified can produce the
+`none_identified` signal; silence and general copyright clearance cannot, and
+any specific caution takes precedence. Catalog rights metadata is
+reduced to conservative metadata/link-only proposed use; no protected media
+is reproduced by this integration. Prior-use status is read from Echo packets
+for other issues; the current issue is excluded so a partial retry does not
+change its own bound input. A repeated artifact requires an explicit proposed
+incremental-value rationale in the candidate packet and remains for human
+review, not automatic selection.
+
+The Story File presents candidates, qualification/break/uncertainty, sources,
+rights and protocol status, and exact-assessment human FEATURE/HOLD/REJECT.
+FEATURE is not approval of the reporting or publication. The existing
+publication package may optionally name the exact packet/candidate/assessment/
+decision. Preparation performs a SELECT-only D1 verification that this is the
+current human FEATURE on the pinned readiness assessment, then freezes only
+public-safe text/metadata and an attributable source link into the normal
+published story artifact. No FEATURE means no `WE WERE WARNED` section; a
+no-echo result produces no public placeholder. This remains a human-approved
+story publication, not a parallel Echo publication engine.
+
+A failed live run may be retried through the Story File only before a
+candidate-package binding exists. After binding, PR B requires byte-for-byte
+equivalent normalized input; a fresh catalog fetch/model pass cannot promise
+that identity, so the draft UI and API hold the packet for deliberate forward
+repair. Reporting analysis and Draft 0 remain intact. This protects against a
+changed cultural package being blended with rows from a partial prior run.

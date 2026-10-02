@@ -32,6 +32,8 @@ class FakeDB {
     throw new Error(`Unhandled run: ${sql}`)
   }
   all(sql,v){
+    if(sql.startsWith("SELECT packet.* FROM echo_packets"))return [];
+    if(sql.startsWith("SELECT id, created_at FROM audit_events WHERE action = 'echo.candidate_package_bound'"))return [];
     if(sql.startsWith("SELECT * FROM idempotency_records"))return this.s.idem.filter((x)=>x.actor_id===v[0]&&x.operation===v[1]&&x.key===v[2]);
     if(sql==="SELECT * FROM intakes WHERE id = ?")return this.s.intakes.filter((x)=>x.id===v[0]);
     if(sql.startsWith("SELECT * FROM intakes WHERE submitted_url = ?"))return this.s.intakes.filter((x)=>x.submitted_url===v[0]).slice(-1);

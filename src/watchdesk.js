@@ -1,7 +1,7 @@
 import publishedFeed from "../public/stories.json" with { type: "json" };
 import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
-import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, storeDiscoveryCandidate } from "./persistence.js";
+import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, markAnalysisJobQueued, storeDiscoveryCandidate } from "./persistence.js";
 
 export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
@@ -328,10 +328,17 @@ async function defaultSubmit(env, candidate, requestedBy, runId, leaseNow) {
     metadata_json: JSON.stringify({ candidate, requested_by: requestedBy || null, authority_note: "Automated Watchdesk triage is not an editorial decision." }),
     created_at: timestamp,
   };
+  const job = { id: `job_watchdesk_${candidate.content_fingerprint.slice(0, 32)}`, intake_id: intake.id, created_at: timestamp, updated_at: timestamp };
   const checkedAt = leaseNow ? leaseNow() : null;
-  const writes = await storeDiscoveryCandidate(env, intake, audit, runId, checkedAt);
+  const writes = await storeDiscoveryCandidate(env, intake, audit, runId, checkedAt, job);
   if (writes[0]?.meta?.changes === 1) {
-    if (writes[1]?.meta?.changes !== 1 || writes[2]?.meta?.changes !== 1) throw new Error("WATCHDESK_SUBMISSION_STATE_CONFLICT");
+    if (writes[1]?.meta?.changes !== 1 || writes[2]?.meta?.changes !== 1 || writes[3]?.meta?.changes !== 1) throw new Error("WATCHDESK_SUBMISSION_STATE_CONFLICT");
+    try {
+      await env.ANALYSIS_QUEUE.send({ schema_version: "1", job_id: job.id, intake_id: intake.id });
+      await markAnalysisJobQueued(env, job.id, intake.id, new Date().toISOString());
+    } catch {
+      // The durable pending_enqueue job remains available to the editor's retry control.
+    }
     return intake;
   }
   const holder = await env.SBNS_DB.prepare(`SELECT lock.run_id, lock.expires_at, run.status, run.submitted_count

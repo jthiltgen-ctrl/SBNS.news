@@ -78,6 +78,11 @@
         "conflict": false
       }
     ],
+    "claim_source_relationships": [
+      { "claim_id": "claim-reprocessing", "source_id": "synthetic-process-review", "relation": "supports", "explanation": "The synthetic process review records the reprocessing count." },
+      { "claim_id": "claim-delay", "source_id": "synthetic-process-review", "relation": "qualifies", "explanation": "The review estimates delay for the reviewed process, not every applicant." },
+      { "claim_id": "claim-response", "source_id": "synthetic-process-review", "relation": "institutional_response", "explanation": "The review records the administration's stated response." }
+    ],
     "source_conflicts": [],
     "observed_condition": "The synthetic administration repeatedly reprocessed 18,000 claims manually, with documented administrative cost and an estimated 21-day applicant delay.",
     "attributable_failure": null,
@@ -95,6 +100,10 @@
     "kicker_target": "The repeated administrative process",
     "kicker_safety": "acceptable",
     "why_sbns": "The documented process repeatedly consumes public resources and shifts delay onto applicants; that accountability condition is worth explaining even though the record does not establish a violated legal duty or discrete systemic failure.",
+    "echo_eligible": false,
+    "echo_rationale": "No cultural analogy is necessary for this synthetic process fixture.",
+    "echo_search_terms": [],
+    "echo_issue": null,
     "do_not_claim": [
       "Do not claim that the synthetic administration violated a legal processing deadline.",
       "Do not claim that every applicant experienced the same delay.",
