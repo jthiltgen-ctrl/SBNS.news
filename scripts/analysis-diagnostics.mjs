@@ -83,6 +83,16 @@ pass(schemaFailure.substage === "schema_validation_failed" && schemaFailure.diag
 pass(schemaFailure.diagnostics.validator_path === "analysis.recommendation" && schemaFailure.diagnostics.validator_reason_code === "invalid_enum" && schemaFailure.diagnostics.validator_detail.length <= 220, "schema diagnostic retains a bounded safe validator path/reason");
 pass(schemaFailure.diagnostics.finish_reason === "length" && schemaFailure.diagnostics.completion_state === "limit_reached" && schemaFailure.diagnostics.output_tokens === 129 && schemaFailure.diagnostics.request_id === "req-synthetic-7", "available finish/token/request metadata is captured without inference");
 
+for (const [field, value] of [["claims", { malformed: true }], ["source_conflicts", "not-an-array"], ["proposed_sources", { malformed: true }]]) {
+  const malformedField = structuredClone(valid);
+  malformedField[field] = value;
+  const fieldFailure = await failure({ response: malformedField }, base, intake);
+  pass(fieldFailure.code === "invalid_model_output" && fieldFailure.substage === "schema_validation_failed", `${field} with an invalid container type fails through schema validation`);
+  pass(fieldFailure.diagnostics.validation_phase === "schema" && fieldFailure.diagnostics.validator_path === `analysis.${field}` && fieldFailure.diagnostics.validator_reason_code === "expected_type" && fieldFailure.diagnostics.validator_detail.length <= 220,
+    `${field} failure reports a bounded schema path and reason`);
+  pass(!(fieldFailure instanceof TypeError) && !/TypeError/.test(String(fieldFailure.message)), `${field} failure does not expose a raw TypeError`);
+}
+
 const invalidRelation = structuredClone(valid);
 invalidRelation.claim_source_relationships = [];
 const semanticFailure = await failure({ response: invalidRelation }, base, intake);

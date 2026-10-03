@@ -91,6 +91,11 @@ export async function analyzeIntake({ intake, source, evidence, additionalSource
   const normalized = normalizeModelResponse(result, providerMetadata(result, env.AI_MODEL, env.AI_GATEWAY_ID));
   const analysis = normalized.analysis;
   const responseDiagnostics = normalized.diagnostics;
+  try { validateSchema(analysis, analysisSchema, analysisSchema, "analysis"); }
+  catch (error) {
+    const validator = sanitizeValidatorDetail(error.message, "schema");
+    throw new AnalysisFailure("invalid_model_output", error.message, { safeMessage: "Analyzer returned invalid structured output.", substage: "schema_validation_failed", diagnostics: { ...responseDiagnostics, ...validator } });
+  }
   const allowedSources = new Map([["source-1", source.finalUrl], ...additionalSources.map((item, index) => [`source-${index + 2}`, item.finalUrl])]);
   const invalidSourceReference = Array.isArray(analysis?.sources) && analysis.sources.some((item) => allowedSources.get(item.source_id) !== item.url)
     ? "analysis.sources" : analysis.claims?.some((claim) => claim.source_refs?.some((ref) => !allowedSources.has(ref)))
@@ -101,11 +106,6 @@ export async function analyzeIntake({ intake, source, evidence, additionalSource
     diagnostics: { ...responseDiagnostics, validation_phase: "source_references", validator_path: invalidSourceReference, validator_detail: `${invalidSourceReference}: source reference was not supplied` },
   });
   const request = { schema_version: "1.0", submitted_url: intake.submitted_url, submitted_at: intake.submitted_at };
-  try { validateSchema(analysis, analysisSchema, analysisSchema, "analysis"); }
-  catch (error) {
-    const validator = sanitizeValidatorDetail(error.message, "schema");
-    throw new AnalysisFailure("invalid_model_output", error.message, { safeMessage: "Analyzer returned invalid structured output.", substage: "schema_validation_failed", diagnostics: { ...responseDiagnostics, ...validator } });
-  }
   if (analysis.intake_id !== intake.id || analysis.intake_origin !== intake.origin) throw new AnalysisFailure("invalid_model_output", "Analyzer did not preserve intake metadata.", {
     safeMessage: "Analyzer returned invalid structured output.", substage: "intake_metadata_mismatch",
     diagnostics: { ...responseDiagnostics, ...sanitizeValidatorDetail("analysis.intake_id: mismatch", "metadata") },
