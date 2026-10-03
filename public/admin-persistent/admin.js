@@ -120,18 +120,21 @@ function assignmentCard(item) {
   open.type = "button";
   open.setAttribute("aria-label", "Open " + (candidate?.discovered_title || item.submitted_url) + " story file");
   const top = el("span", null, "card-top");
-  top.append(badge(candidate ? "Discovery" : item.origin, "origin"), badge(item.status, "status"));
+  const laneLabel = candidate?.discovery?.lane === "open_sweep" ? "Open Sweep" : candidate ? "Trusted Source" : item.origin;
+  top.append(badge(laneLabel, "origin"), badge(item.status, "status"));
   const title = el("strong", candidate?.discovered_title || item.submitted_url, "card-title");
   const meta = el("span", null, "card-meta");
   if (candidate) {
-    [accountableInstitution(candidate), candidate.topic].forEach((value) => meta.append(el("span", value)));
+    [accountableInstitution(candidate), candidate.topic, ...(candidate.discovery?.lens_ids || []).slice(0, 2).map((lens) => "Lens: " + lens.replaceAll("_", " "))].forEach((value) => meta.append(el("span", value)));
   } else {
     ["AI read: " + text(item.latest_recommendation)].forEach((value) => meta.append(el("span", value)));
   }
   const bottom = el("span", null, "card-bottom");
   bottom.append(el("span", "Analysis: " + (jobLabels[item.latest_analysis_job_state] || text(item.analysis_status))), el("span", "Human decision: " + text(item.latest_decision)), el("span", "Last activity: " + date(item.updated_at)));
   open.append(top, title, meta);
-  if (candidate) open.append(el("span", "Readiness: " + readiness(candidate) + " · Rabbit Hole: " + text(candidate.triage?.recommendation) + " · Burden: " + text(candidate.research_burden), "card-secondary"));
+  if (candidate) open.append(el("span", candidate.discovery?.lane === "open_sweep"
+    ? (candidate.triage?.lead_level === "strong_open_lead" ? "Strong Open Lead" : "Open Lead") + " — unverified · " + (candidate.discovery.event_cluster?.cluster_size || 1) + " coverage URL(s) · admitted for normal analysis"
+    : "Readiness: " + readiness(candidate) + " · Rabbit Hole: " + text(candidate.triage?.recommendation) + " · Burden: " + text(candidate.research_burden), "card-secondary"));
   open.append(bottom);
   open.addEventListener("click", () => loadDetail(item.id).catch((error) => { queueStatus.textContent = error.message; }));
   card.append(open);
@@ -160,14 +163,30 @@ function renderDiscovery(candidate) {
   if (!candidate) return null;
   const node = panel("story-discovery", "Discovery candidate", "discovery-panel");
   node.append(el("p", "Watchdesk surfaced this candidate for human attention. This discovery record is not itself approval or a formal human decision.", "warning"));
+  if (candidate.discovery?.lane === "open_sweep") node.append(el("p", "OPEN SWEEP · LEAD ONLY. Search metadata and emotional language do not establish accuracy, evidence, fault, motive, causation, or institutional responsibility. The normal Story File analysis must verify the article and seek stronger records.", "warning"));
   node.append(fieldGrid([
+    ["Discovery lane", candidate.discovery?.lane === "open_sweep" ? "Open Sweep — source trust unknown" : "Trusted Source — governed monitor"],
+    ...(candidate.discovery?.lane === "open_sweep" ? [["Open Sweep lead level", candidate.triage?.lead_level === "strong_open_lead" ? "Strong Open Lead — metadata suggests the institution and accountability aperture" : "Open Lead — institutional/accountability nexus requires verification during analysis"]] : []),
+    ["Discovery lenses", (candidate.discovery?.lens_ids || []).join(", ") || "Trusted-source monitoring"],
+    ["Event / cluster ID", candidate.discovery?.event_cluster?.cluster_id],
+    ["Cluster size", candidate.discovery?.event_cluster?.cluster_size || 1],
+    ["Representative outlet", candidate.discovery?.event_cluster?.representative_domain || candidate.source?.name],
+    ["Search formulations", (candidate.discovery?.query_formulations || []).join(" · ") || "Trusted-source listing"],
+    ["Other coverage count", Math.max(0, (candidate.discovery?.event_cluster?.coverage_urls?.length || 1) - 1)],
+    ["Possible institution/system (unverified)", candidate.discovery?.event_cluster?.possible_institution_or_system || "Not identified from metadata"],
+    ["Possible affected population (unverified)", candidate.discovery?.event_cluster?.possible_affected_population || "Not identified from metadata"],
+    ["Human-burden signal", candidate.triage?.discovery_labels?.includes("human_burden") ? "Possible — discovery label only" : "Not identified"],
+    ["FML candidate", candidate.triage?.discovery_labels?.includes("fml_candidate") ? "Possible — discovery label only; not a conclusion" : "Not identified"],
+    ["Institutional nexus state", candidate.triage?.checks?.institutional_nexus ? "Plausible from title metadata only" : "Not established"],
+    ["Reason surfaced", candidate.triage?.rationale],
+    ["Admitted to Story File", candidate.discovery?.lane === "open_sweep" ? "Yes — ordinary analysis required; no evidence finding" : "Yes"],
     ["Primary-record status", candidate.primary_record_status], ["Evidence review state", candidate.evidence_review_state || "Unverified (legacy candidate)"],
     ["Material examined", candidate.reviewed_material || "Not recorded"], ["Primary-record location", candidate.primary_record_url || "Not yet located"],
     ["Discovered title", candidate.discovered_title, true], ["Source", candidate.source?.name], ["Source class", candidate.source?.source_class],
     ["Publication / release date", candidate.publication_date], ["Discovered", candidate.discovered_at],
     ["Topic", candidate.topic], ["Accountable institution", accountableInstitution(candidate)],
-    ["Jurisdiction", candidate.jurisdiction], ["Submission readiness", readiness(candidate)],
-    ["Accountability pathway", candidate.submission_readiness?.mode || "Not established"],
+    ["Jurisdiction", candidate.jurisdiction], ["Submission readiness", candidate.discovery?.lane === "open_sweep" ? "Lead admission only; evidence unverified" : readiness(candidate)],
+    ["Accountability pathway", candidate.discovery?.lane === "open_sweep" ? "Open Sweep triage only" : candidate.submission_readiness?.mode || "Not established"],
     ["Why this may belong at SBNS", candidate.why_this_may_belong, true],
     ["Job / expectation (if established)", candidate.apparent_job || "Not yet established", true],
     ["Observed condition (if established)", candidate.observed_condition || "Not yet established", true],
@@ -209,6 +228,11 @@ function renderDiscovery(candidate) {
   const sources = el("div");
   sources.append(el("h3", "Key sources"));
   (candidate.key_sources || []).forEach((source) => sources.append(safeLink(source.url, source.role + ": " + source.url)));
+  const clusteredUrls = (candidate.discovery?.event_cluster?.coverage_urls || []).filter((url) => url !== candidate.normalized_url);
+  if (clusteredUrls.length) {
+    sources.append(el("h3", "Other clustered reporting"), el("p", "Grouped for discovery only; independent corroboration has not been established."));
+    clusteredUrls.forEach((url) => sources.append(safeLink(url, url)));
+  }
   if (!candidate.key_sources?.length) sources.append(el("p", "None recorded."));
   node.append(sources);
   return node;
@@ -296,7 +320,7 @@ function renderAnalysis(data) {
   const discoveryNeedsAnalysis = !job && data.intake.origin === "discovery";
   const retryable = discoveryNeedsAnalysis || ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
   if (retryable) {
-    if (discoveryNeedsAnalysis) node.append(el("p", "Watchdesk discovery is not automatically formal analysis. Start it only after selecting this lead for a full Story File review.", "warning"));
+    if (discoveryNeedsAnalysis) node.append(el("p", "This discovery intake has no analysis job. Start analysis only when selecting the lead for full Story File review.", "warning"));
     if (job?.last_error_message) node.append(el("p", job.last_error_message, "warning"));
     const retry = el("button", discoveryNeedsAnalysis ? "Analyze selected discovery" : "Retry analysis");
     retry.type = "button";
@@ -593,6 +617,10 @@ function renderWatchdeskRun(run, target) {
   if (!run) { target.append(el("p", "No Watchdesk runs recorded yet.")); return; }
   const metrics = run.metrics || {};
   [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Gap-ready", metrics.submission_ready_gap ?? 0], ["Aperture-ready", metrics.submission_ready_aperture ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
+  metric(target, "Trusted Source lane", `${metrics.trusted_scanned ?? 0} feeds · ${metrics.trusted_candidates ?? 0} hits · ${metrics.trusted_failures ?? 0} failures · ${metrics.trusted_submissions ?? 0} submitted`);
+  metric(target, "Open Sweep lane", `${metrics.open_sweep_queries_attempted ?? 0} queries / ${metrics.open_sweep_queries_failed ?? 0} failed · ${metrics.open_sweep_raw_hits ?? 0} hits · ${metrics.open_sweep_event_clusters ?? 0} event clusters · ${metrics.open_sweep_eligible_leads ?? 0} eligible leads (${metrics.open_sweep_strong_open_leads ?? 0} strong / ${metrics.open_sweep_open_leads ?? 0} open) · ${metrics.open_sweep_submissions ?? 0} submitted`);
+  metric(target, "Open Sweep triage", `${metrics.open_sweep_triaged_candidates ?? 0} triaged · ${metrics.open_sweep_human_burden_candidates ?? 0} human-burden · ${metrics.open_sweep_fml_candidates ?? 0} FML candidates · ${metrics.open_sweep_no_action_discarded ?? 0} no-action`);
+  metric(target, "Combined dedupe / overlap", `${metrics.combined_duplicate_suppressions ?? 0} duplicate suppressions · ${metrics.combined_source_cluster_overlap ?? 0} cross-lane event overlaps`);
   if (run.submitted_intake_ids?.length) metric(target, "Submitted intake IDs", run.submitted_intake_ids.join(", "));
   if (run.error_class) metric(target, "Error", run.error_class + ": " + (run.error_message || "Unknown failure"));
 }
@@ -621,7 +649,7 @@ async function loadWatchdeskStatus() {
   watchdeskSources.replaceChildren();
   if (run?.source_health?.length) {
     watchdeskSources.append(el("h3", "Source health"));
-    run.source_health.forEach((source) => watchdeskSources.append(el("p", source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed · " + date(source.checked_at) + (source.error ? " · " + source.error : ""))));
+    run.source_health.forEach((source) => watchdeskSources.append(el("p", (source.lane === "open_sweep" ? "Open Sweep" + (source.lens_id ? " / " + source.lens_id.replaceAll("_", " ") : "") : "Trusted Source") + " · " + source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed · " + date(source.checked_at) + (source.error ? " · " + source.error : ""))));
   }
   watchdeskHistory.replaceChildren();
   (data.recent || []).forEach((item) => watchdeskHistory.append(el("p", date(item.started_at) + " · " + item.trigger_type + " · " + (item.dry_run ? "dry" : "live") + " · " + item.status + " · " + item.run_id)));

@@ -9,6 +9,13 @@ const EMPTY_METRICS = Object.freeze({
   failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0,
   submission_ready_gap: 0, submission_ready_aperture: 0,
   would_submit: 0, submitted_to_newsroom: 0,
+  trusted_scanned: 0, trusted_candidates: 0, trusted_failures: 0, trusted_submissions: 0,
+  open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0,
+  open_sweep_normalized_urls: 0, open_sweep_deduped_hits: 0, open_sweep_event_clusters: 0,
+  open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_human_burden_candidates: 0,
+  open_sweep_fml_candidates: 0, open_sweep_no_action_discarded: 0,
+  open_sweep_would_submit: 0, open_sweep_submissions: 0,
+  combined_total_submissions: 0, combined_duplicate_suppressions: 0, combined_source_cluster_overlap: 0,
 });
 
 function concise(value, max = 200) {
@@ -27,6 +34,8 @@ function publicRun(row) {
     metrics: row.metrics_json ? JSON.parse(row.metrics_json) : { ...EMPTY_METRICS, submitted_to_newsroom: row.submitted_count },
     source_health: JSON.parse(row.source_health_json || "[]").map((source) => ({
       source_id: concise(source.source_id, 80),
+      lane: source.lane === "open_sweep" ? "open_sweep" : "trusted_source",
+      lens_id: source.lens_id ? concise(source.lens_id, 60) : null,
       checked_at: concise(source.checked_at, 40),
       status: source.status === "succeeded" ? "succeeded" : "failed",
       items_parsed: Number.isInteger(source.items_parsed) && source.items_parsed >= 0 ? source.items_parsed : 0,
@@ -112,6 +121,8 @@ export async function runWatchdeskOperation(env, options = {}) {
     if (ledger?.submitted_count !== submittedIds.length || JSON.stringify(JSON.parse(ledger.submitted_ids_json)) !== JSON.stringify(submittedIds)) throw new Error("WATCHDESK_SUBMISSION_COUNT_MISMATCH");
     const sourceHealth = (result.source_health || []).map((source) => ({
       source_id: source.source_id,
+      lane: source.lane === "open_sweep" ? "open_sweep" : "trusted_source",
+      lens_id: source.lens_id || null,
       checked_at: source.checked_at,
       status: source.status,
       error: source.error ? concise(source.error, 120) : null,
