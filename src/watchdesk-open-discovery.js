@@ -1,4 +1,5 @@
 import { searchPublicDiscovery } from "./editorial-search.js";
+import { MEDIA_CLOUD_PROVIDER_ID, MEDIA_CLOUD_RESULTS_LIMIT, searchMediaCloudDiscovery } from "./mediacloud-search.js";
 
 export const OPEN_SWEEP_QUERY_LIMIT = 10;
 export const OPEN_SWEEP_RESULTS_PER_QUERY = 6;
@@ -8,6 +9,7 @@ export const OPEN_SWEEP_TIMESPAN = "7d";
 // GDELT's own response asks clients to limit DOC requests to one every five seconds.
 export const OPEN_SWEEP_QUERY_PACING_MS = 5_000;
 export const OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT = 3;
+export const MEDIA_CLOUD_QUERY_LIMIT = 1;
 
 const LENSES = Object.freeze([
   { id: "human_burden", label: "Human Burden", formulations: ["benefits wrongly denied", "residents still waiting", "families billed after"] },
@@ -111,28 +113,79 @@ export function generateOpenSweepQueries(now = new Date()) {
   return queries.slice(0, OPEN_SWEEP_QUERY_LIMIT);
 }
 
+export function selectMediaCloudQueryIndex(now = new Date(), queryCount = OPEN_SWEEP_QUERY_LIMIT) {
+  const instant = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(instant.valueOf()) || !Number.isInteger(queryCount) || queryCount < 1) throw new Error("Media Cloud query rotation requires a valid time and query count.");
+  const day = Math.floor(Date.UTC(instant.getUTCFullYear(), instant.getUTCMonth(), instant.getUTCDate()) / 86_400_000);
+  const slot = instant.getUTCHours() < 18 ? 0 : 1;
+  // Media Cloud complements nine of the ten formulations over a deterministic
+  // rotation. Its one query is kept inside the documented low-volume budget.
+  return ((day * 2 + slot) % Math.max(1, queryCount - 1));
+}
+
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-export async function runOpenSweep({ search = searchPublicDiscovery, now = new Date(), fetchImpl, delay = wait, pacingMs = OPEN_SWEEP_QUERY_PACING_MS, clockMs = () => Date.now() } = {}) {
+export async function runOpenSweep({ search = searchPublicDiscovery, searchMediaCloud = searchMediaCloudDiscovery, mediaCloudToken = null, now = new Date(), fetchImpl, delay = wait, pacingMs = OPEN_SWEEP_QUERY_PACING_MS, clockMs = () => Date.now() } = {}) {
   const queries = generateOpenSweepQueries(now);
   const items = [];
   const health = [];
   const failures = [];
+  const providerStats = {
+    gdelt: { provider_id: "gdelt", configured: true, status: "healthy", queries_attempted: 0, queries_succeeded: 0, queries_failed: 0, raw_results: 0, latency_ms: 0, circuit_open: false },
+    mediacloud: { provider_id: MEDIA_CLOUD_PROVIDER_ID, configured: typeof mediaCloudToken === "string" && Boolean(mediaCloudToken.trim()), status: "not_configured", queries_attempted: 0, queries_succeeded: 0, queries_failed: 0, raw_results: 0, latency_ms: 0, circuit_open: false },
+  };
   let attempted = 0;
+  let failed = 0;
   let consecutiveTransportFailures = 0;
   let circuitOpen = false;
-  for (let index = 0; index < queries.length; index += 1) {
-    const query = queries[index];
-    if (circuitOpen) {
-      health.push({
-        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
-        checked_at: instantIso(now), status: "skipped", outcome: "circuit_open",
-        attempts: 0, retry_count: 0, duration_ms: 0, http_status: null,
-        error_code: null, error: "Skipped after the Open Sweep transport circuit opened.",
-      });
-      continue;
+  let gdeltRequests = 0;
+  const checkedAt = instantIso(now);
+
+  if (!providerStats.mediacloud.configured) {
+    health.push({ source_id: "mediacloud-search", provider_id: MEDIA_CLOUD_PROVIDER_ID, lane: "open_sweep", checked_at: checkedAt, status: "not_configured", outcome: "not_configured", items_parsed: 0, attempts: 0, retry_count: 0, duration_ms: 0, http_status: null, error_code: null, error: null });
+  }
+
+  const appendItems = (providerId, query, results) => {
+    const bounded = results.slice(0, providerId === "mediacloud" ? MEDIA_CLOUD_RESULTS_LIMIT : OPEN_SWEEP_RESULTS_PER_QUERY);
+    const stats = providerStats[providerId];
+    stats.raw_results += bounded.length;
+    for (const result of bounded) {
+      if (items.length >= OPEN_SWEEP_TOTAL_RESULT_LIMIT) break;
+      items.push({ ...result, provider_id: providerId, discovery_lens_id: query.lens_id, discovery_lens_label: query.lens_label, discovery_query: query.formulation, emotional_intensity_query: providerId === "gdelt" && query.tone_abs_threshold != null });
     }
+    return bounded.length;
+  };
+
+  const recordFailure = (providerId, query, error, queryStartedAt) => {
+    const providerSourceId = providerId === "gdelt" ? "gdelt-doc" : "mediacloud-search";
+    const providerPrefix = providerId === "gdelt" ? "DISCOVERY_" : "MEDIA_CLOUD_";
+    const reason = String(error?.message || `${providerPrefix}QUERY_FAILED`).replace(/[\r\n\t]+/g, " ").slice(0, 120);
+    const code = new RegExp(`^${providerPrefix}[A-Z0-9_]{0,39}$`).test(String(error?.code || "")) ? error.code : `${providerPrefix}QUERY_FAILED`;
+    const attempts = Number.isInteger(error?.attempts) && error.attempts >= 1 ? Math.min(error.attempts, 2) : 1;
+    const httpStatus = Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : null;
+    const durationMs = Math.max(0, Math.min(60_000, Number.isFinite(error?.durationMs) ? error.durationMs : clockMs() - queryStartedAt));
+    failures.push({ source_id: providerSourceId, provider_id: providerId, lane: "open_sweep", lens_id: query.lens_id, error: reason });
+    failed += 1;
+    providerStats[providerId].queries_failed += 1;
+    providerStats[providerId].latency_ms += durationMs;
+    health.push({
+      source_id: providerSourceId, provider_id: providerId, lane: "open_sweep", lens_id: query.lens_id,
+      checked_at: checkedAt, status: "failed", outcome: code.toLowerCase().replace(/^(?:discovery|media_cloud)_/, ""),
+      items_parsed: 0, attempts, retry_count: Math.max(0, attempts - 1), duration_ms: durationMs,
+      http_status: httpStatus, error_code: code, error: reason,
+    });
+    return code;
+  };
+
+  const runGdelt = async (query) => {
+    if (circuitOpen) {
+      health.push({ source_id: "gdelt-doc", provider_id: "gdelt", lane: "open_sweep", lens_id: query.lens_id, checked_at: checkedAt, status: "skipped", outcome: "circuit_open", items_parsed: 0, attempts: 0, retry_count: 0, duration_ms: 0, http_status: null, error_code: null, error: "Skipped after the GDELT transport circuit opened." });
+      return false;
+    }
+    if (gdeltRequests > 0 && pacingMs > 0) await delay(pacingMs);
+    gdeltRequests += 1;
     attempted += 1;
+    providerStats.gdelt.queries_attempted += 1;
     const queryStartedAt = clockMs();
     try {
       const results = await search(query.formulation, {
@@ -146,45 +199,80 @@ export async function runOpenSweep({ search = searchPublicDiscovery, now = new D
         retryBackoffMs: OPEN_SWEEP_QUERY_PACING_MS,
         rateLimitBackoffMs: OPEN_SWEEP_QUERY_PACING_MS,
       });
-      if (!Array.isArray(results)) throw new Error("OPEN_SWEEP_INVALID_RESULTS");
+      if (!Array.isArray(results)) throw Object.assign(new Error("GDELT returned an invalid result shape."), { code: "DISCOVERY_UNEXPECTED_RESPONSE" });
       const bounded = results.slice(0, OPEN_SWEEP_RESULTS_PER_QUERY);
       const transport = results.transport || {};
+      const duration = Math.max(0, Number.isFinite(transport.duration_ms) ? transport.duration_ms : clockMs() - queryStartedAt);
+      providerStats.gdelt.queries_succeeded += 1;
+      providerStats.gdelt.latency_ms += duration;
+      providerStats.gdelt.raw_results += bounded.length;
       health.push({
-        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
-        checked_at: instantIso(now), status: "succeeded", outcome: "success",
-        items_parsed: bounded.length,
+        source_id: "gdelt-doc", provider_id: "gdelt", lane: "open_sweep", lens_id: query.lens_id,
+        checked_at: checkedAt, status: "succeeded", outcome: "success", items_parsed: bounded.length,
         attempts: Number.isInteger(transport.attempts) ? transport.attempts : 1,
         retry_count: Math.max(0, (Number.isInteger(transport.attempts) ? transport.attempts : 1) - 1),
-        duration_ms: Math.max(0, Number.isFinite(transport.duration_ms) ? transport.duration_ms : clockMs() - queryStartedAt),
-        http_status: Number.isInteger(transport.http_status) ? transport.http_status : null,
+        duration_ms: duration, http_status: Number.isInteger(transport.http_status) ? transport.http_status : null,
         error_code: null, error: null,
       });
       consecutiveTransportFailures = 0;
       for (const result of bounded) {
         if (items.length >= OPEN_SWEEP_TOTAL_RESULT_LIMIT) break;
-        items.push({ ...result, discovery_lens_id: query.lens_id, discovery_lens_label: query.lens_label, discovery_query: query.formulation, emotional_intensity_query: query.tone_abs_threshold != null });
+        items.push({ ...result, provider_id: "gdelt", discovery_lens_id: query.lens_id, discovery_lens_label: query.lens_label, discovery_query: query.formulation, emotional_intensity_query: query.tone_abs_threshold != null });
       }
+      return true;
     } catch (error) {
-      const reason = String(error?.message || "OPEN_SWEEP_QUERY_FAILED").replace(/[\r\n\t]+/g, " ").slice(0, 120);
-      const code = /^[A-Z][A-Z0-9_]{0,39}$/.test(String(error?.code || "")) ? error.code : "DISCOVERY_QUERY_FAILED";
-      const attempts = Number.isInteger(error?.attempts) && error.attempts >= 1 ? Math.min(error.attempts, 2) : 1;
-      const httpStatus = Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : null;
-      const durationMs = Math.max(0, Math.min(60_000, clockMs() - queryStartedAt));
-      failures.push({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id, error: reason });
-      health.push({
-        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
-        checked_at: instantIso(now), status: "failed", outcome: code.toLowerCase().replace(/^discovery_/, ""),
-        items_parsed: 0, attempts, retry_count: Math.max(0, attempts - 1), duration_ms: durationMs,
-        http_status: httpStatus, error_code: code, error: reason,
-      });
+      const code = recordFailure("gdelt", query, error, queryStartedAt);
       if (code === "DISCOVERY_TIMEOUT" || code === "DISCOVERY_NETWORK_ERROR") consecutiveTransportFailures += 1;
       else consecutiveTransportFailures = 0;
-      if (consecutiveTransportFailures >= OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT) circuitOpen = true;
+      if (consecutiveTransportFailures >= OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT) {
+        circuitOpen = true;
+        providerStats.gdelt.circuit_open = true;
+        providerStats.gdelt.status = "circuit_open";
+      }
+      return false;
     }
-    if (items.length >= OPEN_SWEEP_TOTAL_RESULT_LIMIT) break;
-    if (!circuitOpen && index < queries.length - 1 && pacingMs > 0) await delay(pacingMs);
+  };
+
+  const runMediaCloud = async (query) => {
+    attempted += 1;
+    providerStats.mediacloud.queries_attempted += 1;
+    const queryStartedAt = clockMs();
+    try {
+      const results = await searchMediaCloud(query.formulation, { token: mediaCloudToken, now, fetchImpl, maxResults: MEDIA_CLOUD_RESULTS_LIMIT, timeoutMs: 15_000, clockMs });
+      if (!Array.isArray(results)) throw Object.assign(new Error("Media Cloud returned an invalid result shape."), { code: "MEDIA_CLOUD_UNEXPECTED_RESPONSE" });
+      const count = appendItems("mediacloud", query, results);
+      const transport = results.transport || {};
+      const duration = Math.max(0, Number.isFinite(transport.duration_ms) ? transport.duration_ms : clockMs() - queryStartedAt);
+      providerStats.mediacloud.queries_succeeded += 1;
+      providerStats.mediacloud.latency_ms += duration;
+      providerStats.mediacloud.status = "healthy";
+      health.push({ source_id: "mediacloud-search", provider_id: MEDIA_CLOUD_PROVIDER_ID, lane: "open_sweep", lens_id: query.lens_id, checked_at: checkedAt, status: "succeeded", outcome: "success", items_parsed: count, attempts: 1, retry_count: 0, duration_ms: duration, http_status: Number.isInteger(transport.http_status) ? transport.http_status : null, error_code: null, error: null });
+      return true;
+    } catch (error) {
+      recordFailure("mediacloud", query, error, queryStartedAt);
+      providerStats.mediacloud.status = "unavailable";
+      return false;
+    }
+  };
+
+  const mediaCloudIndex = providerStats.mediacloud.configured && MEDIA_CLOUD_QUERY_LIMIT > 0
+    ? selectMediaCloudQueryIndex(now, queries.length)
+    : -1;
+  for (let index = 0; index < queries.length; index += 1) {
+    const query = queries[index];
+    if (index === mediaCloudIndex) {
+      const mediaCloudSucceeded = await runMediaCloud(query);
+      // A failed optional provider does not consume or discard its hypothesis:
+      // GDELT gets the single bounded fallback unless its own circuit is open.
+      if (!mediaCloudSucceeded) await runGdelt(query);
+    } else {
+      await runGdelt(query);
+    }
   }
-  return { queries_attempted: attempted, queries_failed: failures.length, raw_hits: items.length, items, source_health: health, source_failures: failures, circuit_open: circuitOpen };
+  if (providerStats.gdelt.queries_failed && providerStats.gdelt.queries_succeeded) providerStats.gdelt.status = circuitOpen ? "circuit_open" : "partial";
+  else if (providerStats.gdelt.queries_failed) providerStats.gdelt.status = circuitOpen ? "circuit_open" : "unavailable";
+  else providerStats.gdelt.status = "healthy";
+  return { queries_attempted: attempted, queries_failed: failed, raw_hits: items.length, items, source_health: health, source_failures: failures, circuit_open: circuitOpen, providers: providerStats };
 }
 
 function instantIso(value) {
@@ -251,6 +339,7 @@ export async function clusterWatchdeskItems(entries, { digest = sha256 } = {}) {
       discovery_lens_ids: lenses,
       coverage_urls: [representative.normalized_url, ...urls.filter((url) => url !== representative.normalized_url)].slice(0, 8),
       domains: domains.slice(0, 10),
+      discovery_provider_ids: [...new Set(members.map((entry) => entry.item.provider_id).filter((providerId) => providerId === "gdelt" || providerId === MEDIA_CLOUD_PROVIDER_ID))].sort(),
       first_seen_at: firstSeen,
       last_seen_at: lastSeen,
       possible_institution_or_system: representative.item.title?.match(/\b([A-Z][\w’'-]+(?:\s+[A-Z][\w’'-]+){0,5}\s+(?:Agency|Department|Office|Service|Board|Commission|Authority|Bureau|Corporation|Hospital|School District|City|County|Utility))\b/)?.[1] || null,

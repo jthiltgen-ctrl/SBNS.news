@@ -167,6 +167,7 @@ function renderDiscovery(candidate) {
   node.append(fieldGrid([
     ["Discovery lane", candidate.discovery?.lane === "open_sweep" ? "Open Sweep — source trust unknown" : "Trusted Source — governed monitor"],
     ...(candidate.discovery?.lane === "open_sweep" ? [["Open Sweep lead level", candidate.triage?.lead_level === "strong_open_lead" ? "Strong Open Lead — metadata suggests the institution and accountability aperture" : "Open Lead — institutional/accountability nexus requires verification during analysis"]] : []),
+    ...(candidate.discovery?.lane === "open_sweep" ? [["Open Sweep provider(s)", (candidate.discovery?.provider_ids || []).join(", ") || "Not recorded; discovery source remains unverified"]] : []),
     ["Discovery lenses", (candidate.discovery?.lens_ids || []).join(", ") || "Trusted-source monitoring"],
     ["Event / cluster ID", candidate.discovery?.event_cluster?.cluster_id],
     ["Cluster size", candidate.discovery?.event_cluster?.cluster_size || 1],
@@ -619,6 +620,15 @@ function renderWatchdeskRun(run, target) {
   [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Gap-ready", metrics.submission_ready_gap ?? 0], ["Aperture-ready", metrics.submission_ready_aperture ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
   metric(target, "Trusted Source lane", `${metrics.trusted_scanned ?? 0} feeds · ${metrics.trusted_candidates ?? 0} hits · ${metrics.trusted_failures ?? 0} failures · ${metrics.trusted_submissions ?? 0} submitted`);
   metric(target, "Open Sweep lane", `${metrics.open_sweep_queries_attempted ?? 0} queries / ${metrics.open_sweep_queries_failed ?? 0} failed · ${metrics.open_sweep_raw_hits ?? 0} hits · ${metrics.open_sweep_event_clusters ?? 0} event clusters · ${metrics.open_sweep_eligible_leads ?? 0} eligible leads (${metrics.open_sweep_strong_open_leads ?? 0} strong / ${metrics.open_sweep_open_leads ?? 0} open) · ${metrics.open_sweep_submissions ?? 0} submitted`);
+  const providers = metrics.open_sweep_providers || {};
+  const providerText = ["gdelt", "mediacloud"].map((providerId) => {
+    const provider = providers[providerId];
+    if (!provider) return providerId === "mediacloud" ? "Media Cloud not configured" : "GDELT status unavailable";
+    const name = providerId === "mediacloud" ? "Media Cloud" : "GDELT";
+    const state = provider.status === "not_configured" ? "not configured" : provider.status;
+    return `${name} ${state} · ${provider.queries_succeeded ?? 0}/${provider.queries_attempted ?? 0} queries · ${provider.raw_results ?? 0} results · ${provider.latency_ms ?? 0} ms${provider.circuit_open ? " · circuit open" : ""}`;
+  }).join(" · ");
+  metric(target, "Open Sweep providers", providerText);
   metric(target, "Open Sweep triage", `${metrics.open_sweep_triaged_candidates ?? 0} triaged · ${metrics.open_sweep_human_burden_candidates ?? 0} human-burden · ${metrics.open_sweep_fml_candidates ?? 0} FML candidates · ${metrics.open_sweep_no_action_discarded ?? 0} no-action`);
   metric(target, "Combined dedupe / overlap", `${metrics.combined_duplicate_suppressions ?? 0} duplicate suppressions · ${metrics.combined_source_cluster_overlap ?? 0} cross-lane event overlaps`);
   if (run.submitted_intake_ids?.length) metric(target, "Submitted intake IDs", run.submitted_intake_ids.join(", "));
@@ -653,7 +663,7 @@ async function loadWatchdeskStatus() {
       const transport = source.lane === "open_sweep" && source.outcome
         ? " · " + source.outcome + " · " + (source.attempts ?? 0) + " attempt(s) · " + (source.duration_ms ?? 0) + " ms" + (source.http_status ? " · HTTP " + source.http_status : "")
         : "";
-      watchdeskSources.append(el("p", (source.lane === "open_sweep" ? "Open Sweep" + (source.lens_id ? " / " + source.lens_id.replaceAll("_", " ") : "") : "Trusted Source") + " · " + source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed" + transport + " · " + date(source.checked_at) + (source.error ? " · " + source.error : "")));
+      watchdeskSources.append(el("p", (source.lane === "open_sweep" ? "Open Sweep" + (source.provider_id ? " / " + source.provider_id : "") + (source.lens_id ? " / " + source.lens_id.replaceAll("_", " ") : "") : "Trusted Source") + " · " + source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed" + transport + " · " + date(source.checked_at) + (source.error ? " · " + source.error : "")));
     });
   }
   watchdeskHistory.replaceChildren();
