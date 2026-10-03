@@ -6,7 +6,8 @@ import { createAdminHandler, createScheduledHandler } from "../src/admin-index.j
 import { fetchRegistrySource, parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
 import { discoverySearchUrl, searchPublicDiscovery } from "../src/editorial-search.js";
 import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, submissionReadiness, triageCandidate } from "../src/watchdesk.js";
-import { clusterWatchdeskItems, generateOpenSweepQueries, OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, OPEN_SWEEP_QUERY_LIMIT, OPEN_SWEEP_QUERY_PACING_MS, OPEN_SWEEP_RESULTS_PER_QUERY, OPEN_SWEEP_TIMEOUT_MS, OPEN_SWEEP_TIMESPAN, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, triageOpenSweepCluster } from "../src/watchdesk-open-discovery.js";
+import { clusterWatchdeskItems, generateOpenSweepQueries, OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, OPEN_SWEEP_QUERY_LIMIT, OPEN_SWEEP_QUERY_PACING_MS, OPEN_SWEEP_RESULTS_PER_QUERY, OPEN_SWEEP_TIMEOUT_MS, OPEN_SWEEP_TIMESPAN, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, selectMediaCloudQueryIndex, triageOpenSweepCluster } from "../src/watchdesk-open-discovery.js";
+import { MEDIA_CLOUD_PROVIDER_ID, MEDIA_CLOUD_RESULTS_LIMIT, mediaCloudSearchRequest, searchMediaCloudDiscovery } from "../src/mediacloud-search.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON, WATCHDESK_LEASE_MS } from "../src/watchdesk-operations.js";
 import { storeDiscoveryCandidate } from "../src/persistence.js";
 import { SOURCE_CLASSES, WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
@@ -127,7 +128,7 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     const openItem = { title: "Families waited months after City Housing Agency ignored repeated repair complaints", url: "https://localnews.example/city-housing-repairs", seen_at: "20260922T120000Z", discovery_lens_id: "human_burden", discovery_query: "families billed after" };
     const openOptions = {
       registry: registryFor(strongCase.source_id), discoverSource: async () => [], openSweep: true,
-      discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: [{ source_id: "gdelt-doc", lane: "open_sweep", lens_id: "human_burden", checked_at: "2026-09-22T12:00:15.000Z", status: "succeeded", outcome: "success", attempts: 2, retry_count: 1, duration_ms: 321, http_status: 200, error_code: null, items_parsed: 1, error: null }], source_failures: [] }),
+      discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: [{ source_id: "gdelt-doc", provider_id: "gdelt", lane: "open_sweep", lens_id: "human_burden", checked_at: "2026-09-22T12:00:15.000Z", status: "succeeded", outcome: "success", attempts: 2, retry_count: 1, duration_ms: 321, http_status: 200, error_code: null, items_parsed: 1, error: null }], source_failures: [] }),
     };
     const openFirst = await runWatchdeskOperation(env, { runId: "ops_open_sweep", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:15.000Z", scanOptions: openOptions });
     const openAudit = sqlite.prepare("SELECT metadata_json FROM audit_events WHERE entity_id = ? AND action = 'watchdesk.candidate_submitted'").get(openFirst.submitted[0]?.intake_id);
@@ -135,7 +136,7 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     pass(openFirst.metrics.open_sweep_submissions === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE submitted_url = ?").get(openItem.url).count === 1, "qualifying Open Sweep discovery enters the existing durable intake flow");
     pass(sqlite.prepare("SELECT state FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id)?.state === "pending_enqueue" && openCandidate.discovery.lane === "open_sweep" && openCandidate.evidence_review_state === "NOT REVIEWED", "Open Sweep admission creates the normal analysis job while preserving source as unverified metadata only");
     const openStatus = await getWatchdeskStatus(env);
-    const persistedOpenHealth = openStatus.latest.source_health.find((source) => source.lane === "open_sweep");
+    const persistedOpenHealth = openStatus.latest.source_health.find((source) => source.provider_id === "gdelt");
     pass(openStatus.latest.metrics.open_sweep_queries_attempted === 10 && openStatus.latest.metrics.open_sweep_submissions === 1 && persistedOpenHealth?.lens_id === "human_burden" && persistedOpenHealth?.attempts === 2 && persistedOpenHealth?.retry_count === 1 && persistedOpenHealth?.duration_ms === 321 && persistedOpenHealth?.http_status === 200, "bounded Open Sweep metrics and per-query transport health persist in the existing run ledger");
     const openRepeat = await runWatchdeskOperation(env, { runId: "ops_open_sweep_repeat", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: openOptions });
     pass(openRepeat.metrics.submitted_to_newsroom === 0 && openRepeat.metrics.duplicates_known === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE submitted_url = ?").get(openItem.url).count === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id).count === 1, "same Open Sweep event is suppressed against the existing Story File and cannot create a duplicate analysis job");
@@ -526,6 +527,31 @@ async function test() {
   await assert.rejects(() => searchPublicDiscovery("residents say agency", { fetchImpl: async () => new Response("not json", { status: 200 }) }), (error) => error.code === "DISCOVERY_MALFORMED_RESPONSE");
   pass(true, "malformed GDELT metadata is distinguishable from network and timeout errors");
 
+  const mediaCloudRequest = mediaCloudSearchRequest("families billed after", FIXED_NOW);
+  pass(mediaCloudRequest.origin === "https://search.mediacloud.org" && mediaCloudRequest.pathname === "/api/search/story-list" && mediaCloudRequest.searchParams.get("platform") === "onlinenews-mediacloud" && mediaCloudRequest.searchParams.get("cs") === "34412234" && mediaCloudRequest.searchParams.get("page_size") === String(MEDIA_CLOUD_RESULTS_LIMIT), "Media Cloud uses its current fixed Search API story-list endpoint, bounded page, and configured news collection");
+  pass(mediaCloudRequest.searchParams.get("q") === 'language:en AND ("families billed after")' && mediaCloudRequest.searchParams.get("start") === "2026-09-16" && mediaCloudRequest.searchParams.get("end") === "2026-09-22", "Media Cloud query uses supported English-language syntax and a bounded seven-day date window");
+
+  let mediaCloudRequestObserved;
+  const mediaCloudItems = await searchMediaCloudDiscovery("families billed after", {
+    token: "synthetic-media-cloud-token", now: FIXED_NOW,
+    fetchImpl: async (url, request) => {
+      mediaCloudRequestObserved = { url: new URL(url), request };
+      return new Response(JSON.stringify({ stories: [{
+        id: "story-123", title: "Family reports being billed after an error", url: "https://unknown-local.example/story?utm_source=mc",
+        publish_date: "2026-09-21", indexed_date: "2026-09-22T10:00:00Z", media_name: "Unknown Local Outlet", text: "Full copyrighted article text must not leave this transient fixture.",
+      }] }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  pass(mediaCloudRequestObserved.url.hostname === "search.mediacloud.org" && mediaCloudRequestObserved.request.method === "GET" && mediaCloudRequestObserved.request.redirect === "manual" && mediaCloudRequestObserved.request.headers.Authorization === "Token synthetic-media-cloud-token", "Media Cloud uses the documented token header against only its fixed HTTPS endpoint and refuses redirects");
+  pass(mediaCloudItems.length === 1 && mediaCloudItems[0].provider_id === MEDIA_CLOUD_PROVIDER_ID && mediaCloudItems[0].domain === "unknown-local.example" && mediaCloudItems[0].published_at === "2026-09-21" && mediaCloudItems[0].url === "https://unknown-local.example/story" && !Object.hasOwn(mediaCloudItems[0], "text"), "Media Cloud normalizes an unknown outlet as an unverified lead and excludes story bodies");
+  let mediaCloudNoTokenCalls = 0;
+  await assert.rejects(() => searchMediaCloudDiscovery("families billed after", { fetchImpl: async () => { mediaCloudNoTokenCalls += 1; return new Response("{}", { status: 200 }); } }), (error) => error.code === "MEDIA_CLOUD_NOT_CONFIGURED");
+  pass(mediaCloudNoTokenCalls === 0, "missing Media Cloud credentials are a clear not-configured state and issue no request");
+  await assert.rejects(() => searchMediaCloudDiscovery("families billed after", { token: "synthetic", fetchImpl: async () => new Response("", { status: 302, headers: { location: "https://unexpected.example/" } }) }), (error) => error.code === "MEDIA_CLOUD_REDIRECT_BLOCKED");
+  await assert.rejects(() => searchMediaCloudDiscovery("families billed after", { token: "synthetic", fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-length": "128001" } }) }), (error) => error.code === "MEDIA_CLOUD_RESPONSE_TOO_LARGE");
+  await assert.rejects(() => searchMediaCloudDiscovery("families billed after", { token: "synthetic", fetchImpl: async () => new Response("bad json", { status: 200 }) }), (error) => error.code === "MEDIA_CLOUD_MALFORMED_RESPONSE");
+  pass(true, "Media Cloud safely categorizes redirects, oversized payloads, and malformed responses");
+
   const slowSuccess = await searchPublicDiscovery("residents say agency", {
     timeoutMs: 50,
     fetchImpl: async () => { await new Promise((resolve) => setTimeout(resolve, 15)); return new Response(JSON.stringify({ articles: [] }), { status: 200 }); },
@@ -550,8 +576,46 @@ async function test() {
       return Array.from({ length: 8 }, (_, index) => ({ title: `${formulation} synthetic item ${index}`, url: `https://outlet${openSearchCalls}-${index}.example/article`, domain: `outlet${openSearchCalls}-${index}.example`, seen_at: "20260922T120000Z" }));
     },
   });
-  pass(openSearchCalls === OPEN_SWEEP_QUERY_LIMIT && boundedSweep.queries_attempted === 10 && boundedSweep.queries_failed === 1 && boundedSweep.source_health.length === 10, "Open Sweep continues all bounded hypotheses after one query failure");
+  pass(openSearchCalls === OPEN_SWEEP_QUERY_LIMIT && boundedSweep.queries_attempted === 10 && boundedSweep.queries_failed === 1 && boundedSweep.source_health.filter((row) => row.provider_id === "gdelt").length === 10 && boundedSweep.source_health.some((row) => row.provider_id === "mediacloud" && row.status === "not_configured"), "Open Sweep continues all bounded hypotheses after one query failure and records an optional provider as not configured");
   pass(boundedSweep.items.length === 54 && boundedSweep.raw_hits === 54 && boundedSweep.items.every((item) => item.discovery_lens_id && item.discovery_query), "Open Sweep caps every query and total results and preserves lens/query provenance");
+
+  const mediaCloudIndex = selectMediaCloudQueryIndex(FIXED_NOW, OPEN_SWEEP_QUERY_LIMIT);
+  const mediaCloudRoutedGdeltQueries = [];
+  const mediaCloudRoutedQueries = [];
+  const mediaCloudSweep = await runOpenSweep({
+    now: FIXED_NOW, mediaCloudToken: "synthetic-media-cloud-token", delay: async () => {},
+    search: async (formulation) => {
+      mediaCloudRoutedGdeltQueries.push(formulation);
+      return [{ title: `GDELT lead for ${formulation}`, url: `https://gdelt.example/${mediaCloudRoutedGdeltQueries.length}`, domain: "gdelt.example", provider_id: "gdelt" }];
+    },
+    searchMediaCloud: async (formulation, options) => {
+      mediaCloudRoutedQueries.push({ formulation, options });
+      return [{ title: "Family waits after billing system error", url: "https://unknown-local.example/mc-story", domain: "unknown-local.example", published_at: "2026-09-21", provider_id: "mediacloud" }];
+    },
+  });
+  pass(mediaCloudRoutedGdeltQueries.length === 9 && mediaCloudRoutedQueries.length === 1 && mediaCloudRoutedQueries[0].formulation === generateOpenSweepQueries(FIXED_NOW)[mediaCloudIndex].formulation && mediaCloudRoutedQueries[0].options.maxResults === MEDIA_CLOUD_RESULTS_LIMIT && mediaCloudSweep.queries_attempted === 10, "one rotating complementary formulation goes to Media Cloud while the other nine stay on paced GDELT");
+  pass(mediaCloudSweep.items.length === 10 && mediaCloudSweep.items.filter((item) => item.provider_id === "mediacloud").length === 1 && mediaCloudSweep.items.filter((item) => item.provider_id === "gdelt").length === 9 && mediaCloudSweep.providers.mediacloud.configured && mediaCloudSweep.providers.mediacloud.raw_results === 1 && mediaCloudSweep.providers.gdelt.queries_succeeded === 9, "both healthy providers contribute distinct provider-neutral leads with concise per-provider health");
+
+  let mediaCloudFallbackCalls = 0;
+  const mediaCloudFallbackSweep = await runOpenSweep({
+    now: FIXED_NOW, mediaCloudToken: "synthetic-media-cloud-token", delay: async () => {},
+    search: async () => [],
+    searchMediaCloud: async () => { mediaCloudFallbackCalls += 1; const error = new Error("Media Cloud search is unavailable."); error.code = "MEDIA_CLOUD_HTTP_ERROR"; error.httpStatus = 503; throw error; },
+  });
+  pass(mediaCloudFallbackCalls === 1 && mediaCloudFallbackSweep.queries_attempted === 11 && mediaCloudFallbackSweep.providers.mediacloud.status === "unavailable" && mediaCloudFallbackSweep.providers.gdelt.queries_succeeded === 10 && mediaCloudFallbackSweep.source_failures.some((failure) => failure.provider_id === "mediacloud"), "a failed Media Cloud request is reported and its one hypothesis falls back to GDELT without stopping the provider lane");
+
+  let rotatingCircuitNow = new Date("2026-09-22T12:00:00.000Z");
+  while (selectMediaCloudQueryIndex(rotatingCircuitNow, OPEN_SWEEP_QUERY_LIMIT) < OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT) rotatingCircuitNow = new Date(rotatingCircuitNow.valueOf() + 86_400_000);
+  let independentMediaCloudCalls = 0;
+  const independentProviderSweep = await runOpenSweep({
+    now: rotatingCircuitNow, mediaCloudToken: "synthetic-media-cloud-token", delay: async () => {},
+    search: async () => { const error = new Error("Public discovery could not reach its provider."); error.code = "DISCOVERY_NETWORK_ERROR"; throw error; },
+    searchMediaCloud: async () => { independentMediaCloudCalls += 1; return [{ title: "Family waits after billing system error", url: "https://unknown-local.example/circuit-survival", domain: "unknown-local.example" }]; },
+  });
+  pass(independentMediaCloudCalls === 1 && independentProviderSweep.circuit_open && independentProviderSweep.providers.gdelt.circuit_open && independentProviderSweep.providers.mediacloud.queries_succeeded === 1 && independentProviderSweep.items.some((item) => item.provider_id === "mediacloud"), "Media Cloud continues independently after GDELT's run-local circuit opens");
+
+  const unconfiguredMediaCloudSweep = await runOpenSweep({ now: FIXED_NOW, delay: async () => {}, search: async () => [] });
+  pass(unconfiguredMediaCloudSweep.queries_attempted === 10 && unconfiguredMediaCloudSweep.providers.gdelt.queries_succeeded === 10 && unconfiguredMediaCloudSweep.providers.mediacloud.status === "not_configured" && !unconfiguredMediaCloudSweep.source_failures.some((failure) => failure.provider_id === "mediacloud"), "an unconfigured Media Cloud account does not block the full existing GDELT sweep or mark the run failed");
 
   const pacing = [];
   const pacedSweep = await runOpenSweep({ now: FIXED_NOW, delay: async (milliseconds) => pacing.push(milliseconds), search: async () => [] });
@@ -571,7 +635,8 @@ async function test() {
     },
   });
   pass(circuitCalls === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT && circuitSweep.queries_attempted === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT && circuitSweep.queries_failed === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, "three consecutive timeout/network failures open the run-local circuit breaker");
-  pass(circuitSweep.source_health.length === OPEN_SWEEP_QUERY_LIMIT && circuitSweep.source_health.slice(OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT).every((entry) => entry.status === "skipped" && entry.outcome === "circuit_open") && circuitSweep.source_health[0].retry_count === 1, "circuit-open query health is explicit and records bounded retry metadata without issuing more requests");
+  const circuitGdeltHealth = circuitSweep.source_health.filter((entry) => entry.provider_id === "gdelt");
+  pass(circuitGdeltHealth.length === OPEN_SWEEP_QUERY_LIMIT && circuitGdeltHealth.slice(OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT).every((entry) => entry.status === "skipped" && entry.outcome === "circuit_open") && circuitGdeltHealth[0].retry_count === 1, "circuit-open query health is explicit and records bounded retry metadata without issuing more requests");
 
   const openEntries = Array.from({ length: 5 }, (_, index) => ({
     lane: "open_sweep",
@@ -581,6 +646,11 @@ async function test() {
   const eventClusters = await clusterWatchdeskItems(openEntries);
   pass(eventClusters.length === 1 && eventClusters[0].cluster_size === 5 && eventClusters[0].domains.length === 5, "strong cross-publisher title/time match forms one event cluster rather than five editor cards");
   pass(eventClusters[0].coverage_urls.length === 5 && eventClusters[0].discovery_lens_ids.length === 2 && eventClusters[0].coverage_independence.includes("not independent corroboration"), "event cluster retains bounded URLs/lenses while explicitly not claiming independent corroboration");
+  const providerOverlapCluster = await clusterWatchdeskItems([
+    { lane: "open_sweep", source: { primary_record: false }, item: { provider_id: "gdelt", title: openTitle, url: "https://unknown-local.example/repeated-story?utm_source=gdelt", seen_at: "20260922T120000Z" } },
+    { lane: "open_sweep", source: { primary_record: false }, item: { provider_id: "mediacloud", title: openTitle, url: "https://unknown-local.example/repeated-story?utm_source=mediacloud", seen_at: "20260922T120000Z" } },
+  ]);
+  pass(providerOverlapCluster.length === 1 && providerOverlapCluster[0].cluster_size === 2 && JSON.stringify(providerOverlapCluster[0].discovery_provider_ids) === JSON.stringify(["gdelt", "mediacloud"]) && providerOverlapCluster[0].coverage_independence.includes("Not assessed"), "same-URL discoveries from both providers collapse to one cluster with provenance but no corroboration claim");
   const crossLane = await clusterWatchdeskItems([...openEntries, {
     lane: "trusted_source", source: { id: "synthetic-primary", primary_record: true },
     item: { title: openTitle, url: "https://records.example/story-1", seen_at: "20260922T120000Z" },
@@ -633,7 +703,7 @@ async function test() {
   const vagueSystemCluster = await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Families waited months after system error denied their benefits without recourse", url: "https://local.example/vague-system", discovery_lens_id: "human_burden" } }]);
   pass(!triageOpenSweepCluster(vagueSystemCluster[0]).checks.institutional_nexus, "a vague reference to a system alone is not an identifiable institutional nexus");
 
-  const openItem = { title: openTitle, url: "https://localnews.example/story-1", seen_at: "20260922T120000Z", discovery_lens_id: "human_burden", discovery_lens_label: "Human Burden", discovery_query: "families billed after" };
+  const openItem = { title: openTitle, url: "https://localnews.example/story-1", seen_at: "20260922T120000Z", provider_id: "gdelt", discovery_lens_id: "human_burden", discovery_lens_label: "Human Burden", discovery_query: "families billed after" };
   const sweepResult = { queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: Array.from({ length: 10 }, (_, index) => ({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: `lens-${index}`, checked_at: FIXED_NOW, status: "succeeded", items_parsed: 1, error: null })), source_failures: [] };
   const openRun = await runWatchdeskScan({}, {
     ...runOptions, discoverSource: async () => [], openSweep: true, discoverOpenSweep: async () => sweepResult,
@@ -646,6 +716,23 @@ async function test() {
   pass(admittedCandidate.evidence_review_state === "NOT REVIEWED" && admittedCandidate.institution_or_system === null && admittedCandidate.discovery.event_cluster.cluster_size === 1 && admittedCandidate.triage.recommendation === "EXPLORE", "Open Sweep does not manufacture reviewed evidence, an accountable actor, or a factual conclusion");
   pass(admittedCandidate.submission_readiness.mode === "open_sweep_lead" && admittedCandidate.submission_readiness.evidence_verified === false && admittedCandidate.remains_unproven.includes("not been verified"), "Open Sweep admission is explicitly a lead-only handoff to the unchanged normal analysis path");
   pass(admittedCandidate.triage.ranking_signals.includes("named_institution_in_title"), "the bounded lead ordering signals persist with the admitted discovery provenance");
+  pass(admittedCandidate.discovery.provider_ids.includes("gdelt") && admittedCandidate.discovery.source_trust === "unknown_lead_only" && admittedCandidate.evidence_review_state === "NOT REVIEWED", "provider provenance is recorded while GDELT discovery remains an untrusted lead, not evidence");
+
+  const overlappingStory = { ...openItem, url: "https://unknown-local.example/shared-story?utm_source=gdelt", seen_at: "2026-09-20T12:00:00.000Z" };
+  const overlappingStoryFromMediaCloud = { ...overlappingStory, provider_id: "mediacloud", url: "https://unknown-local.example/shared-story?utm_source=mediacloud" };
+  const substantiveSingleProvider = { title: "County Housing Department bills a family $18,000 after admitting a benefits system error", url: "https://local-tv.example/county-billing", seen_at: "2026-09-21T12:00:00.000Z", provider_id: "gdelt", discovery_lens_id: "little_guy_pays", discovery_query: "families billed after" };
+  const providerNeutralRun = await runWatchdeskScan({}, {
+    ...runOptions, registry: registryFor(strongCase.source_id), discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [overlappingStory, overlappingStoryFromMediaCloud, substantiveSingleProvider] }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_provider_neutrality",
+  });
+  pass(providerNeutralRun.candidates[0].discovered_title === substantiveSingleProvider.title && providerNeutralRun.candidates[1].discovery.provider_ids.length === 2 && providerNeutralRun.candidates[1].evidence_review_state === "NOT REVIEWED" && providerNeutralRun.candidates[1].discovery.source_trust === "unknown_lead_only", "cross-provider overlap records provenance without raising evidence authority or ranking above a stronger single-provider lead");
+  const mediaCloudOnlyRun = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [{ ...substantiveSingleProvider, provider_id: "mediacloud" }] }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_mediacloud_untrusted_lead",
+  });
+  pass(mediaCloudOnlyRun.candidates.length === 1 && mediaCloudOnlyRun.candidates[0].discovery.provider_ids.includes("mediacloud") && mediaCloudOnlyRun.candidates[0].discovery.source_trust === "unknown_lead_only" && mediaCloudOnlyRun.candidates[0].evidence_review_state === "NOT REVIEWED", "a Media Cloud-only unknown publisher may enter ordinary analysis as an unverified lead without becoming trusted evidence");
 
   const weakerOpenTitle = "Families waited 18 months after repeated complaints and appeals for an answer after benefits were denied";
   const rankedOpen = await runWatchdeskScan({}, {
@@ -713,6 +800,16 @@ async function test() {
     lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_open_failure",
   });
   pass(openFailure.status === "partial" && openFailure.metrics.trusted_candidates === 1 && openFailure.metrics.would_submit === 1 && openFailure.source_failures.some((failure) => failure.lane === "open_sweep"), "Open Sweep failure is visible but does not break a successful Trusted Source lane");
+  const bothProvidersDown = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: discovery(strongCase.item), openSweep: true,
+    discoverOpenSweep: ({ now }) => runOpenSweep({
+      now, mediaCloudToken: "synthetic-media-cloud-token", delay: async () => {},
+      search: async () => { const error = new Error("Synthetic GDELT network failure."); error.code = "DISCOVERY_NETWORK_ERROR"; throw error; },
+      searchMediaCloud: async () => { const error = new Error("Synthetic Media Cloud failure."); error.code = "MEDIA_CLOUD_HTTP_ERROR"; error.httpStatus = 503; throw error; },
+    }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_both_open_providers_down",
+  });
+  pass(bothProvidersDown.status === "partial" && bothProvidersDown.metrics.trusted_candidates === 1 && bothProvidersDown.metrics.would_submit === 1 && bothProvidersDown.source_failures.some((failure) => failure.provider_id === "gdelt") && bothProvidersDown.source_failures.some((failure) => failure.provider_id === "mediacloud"), "simultaneous Open Sweep provider failures are explicit partial health and preserve a successful Trusted Source candidate");
   const zeroOpen = await runWatchdeskScan({}, {
     ...runOptions, discoverSource: async () => [], openSweep: true,
     discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [], source_health: [], source_failures: [] }),

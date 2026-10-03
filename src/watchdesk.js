@@ -7,11 +7,11 @@ import { clusterWatchdeskItems, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, tri
 export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
 const OPEN_SWEEP_SOURCE = Object.freeze({
-  id: "gdelt-open-sweep",
-  name: "GDELT Open Sweep",
+  id: "open-sweep-public-news",
+  name: "Open Sweep public-news lead",
   source_class: "unverified_public_news",
   jurisdiction: "Public-news discovery",
-  discovery_url: "https://api.gdeltproject.org/api/v2/doc/doc",
+  discovery_url: null,
   adapter: "open_sweep",
   enabled: true,
   primary_record: false,
@@ -185,7 +185,7 @@ function burdenFor(item, source, hasPrimary) {
 }
 
 export async function buildCandidate(item, source, discoveredAt, runId) {
-  const originalUrl = new URL(item.url, source.discovery_url).href;
+  const originalUrl = new URL(item.url, source.discovery_url || undefined).href;
   const normalizedUrl = normalizeDiscoveryUrl(originalUrl);
   const primaryUrl = item.primary_source_url ? normalizeDiscoveryUrl(item.primary_source_url) : null;
   const hasPrimary = Boolean(primaryUrl || source.primary_record);
@@ -195,7 +195,7 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
   const inspectedText = typeof item.record_summary === "string" ? item.record_summary.replace(/\s+/g, " ").trim() : "";
   const recordSummaryTruncated = reviewState !== "NOT REVIEWED" && inspectedText.length > 20_000;
   const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 20_000)) || (source.open_sweep
-    ? `GDELT indexed this public reporting URL under a bounded Open Sweep query. The article was not retrieved or reviewed; this is a discovery lead only.` : source.primary_record
+    ? `An Open Sweep provider indexed this public reporting URL under a bounded discovery query. The article was not retrieved or reviewed; this is a discovery lead only.` : source.primary_record
     ? `${source.name} publicly listed “${concise(item.title, 500)}”${item.published_at ? ` with a release date of ${iso(item.published_at)}` : ""}. The underlying record has not yet been reviewed by Watchdesk.`
     : `${source.name} published “${concise(item.title, 500)}.” This is a discovery signal; the underlying primary record has not yet been established.`);
   const evidence = reviewState === "NOT REVIEWED" ? null : accountabilityFromReviewedText(recordSummary, concise(item.institution, 300));
@@ -229,7 +229,7 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     research_prompt: evidence?.question ? null : concise(item.accountability_question, 1_000),
     primary_record_url: hasPrimary ? (primaryUrl || normalizedUrl) : null,
     evidence_review_state: reviewState,
-    reviewed_material: reviewState === "NOT REVIEWED" ? (source.open_sweep ? "GDELT title, URL, domain, and discovery metadata only; linked article and original records not retrieved or reviewed" : "Listing or discovery metadata only; underlying primary record not reviewed") : reviewedMaterial,
+    reviewed_material: reviewState === "NOT REVIEWED" ? (source.open_sweep ? "Provider title, URL, domain, and discovery metadata only; linked article and original records not retrieved or reviewed" : "Listing or discovery metadata only; underlying primary record not reviewed") : reviewedMaterial,
     primary_record_status: !hasPrimary ? "SECONDARY SIGNAL — PRIMARY RECORD NEEDED" : reviewState === "REVIEWED" ? "PRIMARY RECORD REVIEWED" : reviewState === "PARTIALLY REVIEWED" ? "PRIMARY RECORD PARTIALLY REVIEWED" : "PRIMARY RECORD LOCATED",
     key_sources: keySources,
     material_qualification: concise(item.material_qualification, 1_000) || (source.open_sweep ? "Search metadata is not article verification; source quality, context, accuracy, causation, and any institutional response remain unestablished." : reviewState === "REVIEWED" ? "The reviewed record still requires human verification of scope and any institutional response." : reviewState === "PARTIALLY REVIEWED" ? "Only bounded first-party material was examined; the full record and any institutional response require human verification." : "Watchdesk reviewed listing metadata only; the record, scope, and any institutional response require human verification."),
@@ -395,7 +395,7 @@ export async function runWatchdeskScan(env, options = {}) {
     evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0,
     deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0,
     trusted_scanned: 0, trusted_candidates: 0, trusted_failures: 0, trusted_submissions: 0,
-    open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0,
+    open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0, open_sweep_providers: null,
     open_sweep_normalized_urls: 0, open_sweep_deduped_hits: 0, open_sweep_event_clusters: 0,
     open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_open_leads: 0, open_sweep_strong_open_leads: 0, open_sweep_human_burden_candidates: 0,
     open_sweep_fml_candidates: 0, open_sweep_no_action_discarded: 0,
@@ -436,11 +436,12 @@ export async function runWatchdeskScan(env, options = {}) {
     try {
       const sweep = options.discoverOpenSweep
         ? await options.discoverOpenSweep({ now: discoveredAt, fetchImpl: options.fetchImpl })
-        : await runOpenSweep({ now: discoveredAt, fetchImpl: options.fetchImpl || fetch });
+        : await runOpenSweep({ now: discoveredAt, fetchImpl: options.fetchImpl || fetch, mediaCloudToken: env?.MEDIA_CLOUD_API_TOKEN, searchMediaCloud: options.searchMediaCloud });
       if (!sweep || !Array.isArray(sweep.items) || !Array.isArray(sweep.source_health) || !Array.isArray(sweep.source_failures)) throw new Error("OPEN_SWEEP_INVALID_OUTPUT");
       metrics.open_sweep_queries_attempted = Number.isInteger(sweep.queries_attempted) ? sweep.queries_attempted : sweep.source_health.length;
       metrics.open_sweep_queries_failed = Number.isInteger(sweep.queries_failed) ? sweep.queries_failed : sweep.source_failures.length;
-      metrics.open_sweep_raw_hits = sweep.items.length;
+      metrics.open_sweep_raw_hits = Number.isInteger(sweep.raw_hits) ? sweep.raw_hits : sweep.items.length;
+      metrics.open_sweep_providers = sweep.providers || null;
       metrics.items_discovered += sweep.items.length;
       sourceHealth.push(...sweep.source_health);
       sourceFailures.push(...sweep.source_failures);
@@ -448,8 +449,8 @@ export async function runWatchdeskScan(env, options = {}) {
     } catch (error) {
       const reason = concise(error?.message || "OPEN_SWEEP_FAILED", 120);
       metrics.open_sweep_queries_failed = 1;
-      sourceFailures.push({ source_id: "gdelt-doc", lane: "open_sweep", error: reason });
-      sourceHealth.push({ source_id: "gdelt-doc", lane: "open_sweep", checked_at: iso(clock()), status: "failed", error: reason, items_parsed: 0 });
+      sourceFailures.push({ source_id: "open-sweep", lane: "open_sweep", error: reason });
+      sourceHealth.push({ source_id: "open-sweep", provider_id: "unknown", lane: "open_sweep", checked_at: iso(clock()), status: "failed", error: reason, items_parsed: 0 });
     }
   }
 
@@ -488,6 +489,7 @@ export async function runWatchdeskScan(env, options = {}) {
           coverage_urls: cluster.coverage_urls,
           domains: cluster.domains,
           discovery_lens_ids: cluster.discovery_lens_ids,
+          discovery_provider_ids: cluster.discovery_provider_ids,
           open_lead_level: isOpenSweep ? openTriage.lead_level : null,
           first_seen_at: cluster.first_seen_at,
           last_seen_at: cluster.last_seen_at,
@@ -500,6 +502,7 @@ export async function runWatchdeskScan(env, options = {}) {
           lane: isOpenSweep ? "open_sweep" : "trusted_source",
           source_trust: isOpenSweep ? "unknown_lead_only" : "governed_source",
           lens_ids: cluster.discovery_lens_ids,
+          provider_ids: cluster.discovery_provider_ids,
           query_formulations: [...new Set(cluster.members.map((entry) => entry.item.discovery_query).filter(Boolean))].slice(0, 10),
           material_development_signal: isOpenSweep && MATERIAL_DEVELOPMENT_TITLE.test(item.title || ""),
           open_sweep_overlap: cluster.source_cluster_overlap,

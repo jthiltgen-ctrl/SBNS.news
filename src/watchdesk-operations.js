@@ -10,7 +10,7 @@ const EMPTY_METRICS = Object.freeze({
   submission_ready_gap: 0, submission_ready_aperture: 0,
   would_submit: 0, submitted_to_newsroom: 0,
   trusted_scanned: 0, trusted_candidates: 0, trusted_failures: 0, trusted_submissions: 0,
-  open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0,
+  open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0, open_sweep_providers: null,
   open_sweep_normalized_urls: 0, open_sweep_deduped_hits: 0, open_sweep_event_clusters: 0,
   open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_human_burden_candidates: 0,
   open_sweep_fml_candidates: 0, open_sweep_no_action_discarded: 0,
@@ -23,7 +23,7 @@ function concise(value, max = 200) {
 }
 
 function boundedTransport(source) {
-  const outcome = ["success", "timeout", "network_error", "rate_limited", "http_error", "redirect_blocked", "response_too_large", "malformed_response", "unexpected_response", "no_readable_result", "circuit_open", "query_failed"].includes(source.outcome) ? source.outcome : null;
+  const outcome = ["success", "timeout", "network_error", "rate_limited", "http_error", "redirect_blocked", "response_too_large", "malformed_response", "unexpected_response", "no_readable_result", "circuit_open", "query_failed", "not_configured"].includes(source.outcome) ? source.outcome : null;
   const errorCode = /^[A-Z][A-Z0-9_]{0,39}$/.test(String(source.error_code || "")) ? source.error_code : null;
   return {
     ...(outcome ? { outcome } : {}),
@@ -47,10 +47,11 @@ function publicRun(row) {
     metrics: row.metrics_json ? JSON.parse(row.metrics_json) : { ...EMPTY_METRICS, submitted_to_newsroom: row.submitted_count },
     source_health: JSON.parse(row.source_health_json || "[]").map((source) => ({
       source_id: concise(source.source_id, 80),
+      provider_id: ["gdelt", "mediacloud"].includes(source.provider_id) ? source.provider_id : null,
       lane: source.lane === "open_sweep" ? "open_sweep" : "trusted_source",
       lens_id: source.lens_id ? concise(source.lens_id, 60) : null,
       checked_at: concise(source.checked_at, 40),
-      status: source.status === "succeeded" ? "succeeded" : source.status === "skipped" ? "skipped" : "failed",
+      status: ["succeeded", "skipped", "not_configured"].includes(source.status) ? source.status : "failed",
       items_parsed: Number.isInteger(source.items_parsed) && source.items_parsed >= 0 ? source.items_parsed : 0,
       error: source.error ? concise(source.error, 120) : null,
       ...boundedTransport(source),
@@ -135,6 +136,7 @@ export async function runWatchdeskOperation(env, options = {}) {
     if (ledger?.submitted_count !== submittedIds.length || JSON.stringify(JSON.parse(ledger.submitted_ids_json)) !== JSON.stringify(submittedIds)) throw new Error("WATCHDESK_SUBMISSION_COUNT_MISMATCH");
     const sourceHealth = (result.source_health || []).map((source) => ({
       source_id: source.source_id,
+      provider_id: ["gdelt", "mediacloud"].includes(source.provider_id) ? source.provider_id : null,
       lane: source.lane === "open_sweep" ? "open_sweep" : "trusted_source",
       lens_id: source.lens_id || null,
       checked_at: source.checked_at,
