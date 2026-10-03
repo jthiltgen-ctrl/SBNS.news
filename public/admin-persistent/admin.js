@@ -649,7 +649,12 @@ async function loadWatchdeskStatus() {
   watchdeskSources.replaceChildren();
   if (run?.source_health?.length) {
     watchdeskSources.append(el("h3", "Source health"));
-    run.source_health.forEach((source) => watchdeskSources.append(el("p", (source.lane === "open_sweep" ? "Open Sweep" + (source.lens_id ? " / " + source.lens_id.replaceAll("_", " ") : "") : "Trusted Source") + " · " + source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed · " + date(source.checked_at) + (source.error ? " · " + source.error : ""))));
+    run.source_health.forEach((source) => {
+      const transport = source.lane === "open_sweep" && source.outcome
+        ? " · " + source.outcome + " · " + (source.attempts ?? 0) + " attempt(s) · " + (source.duration_ms ?? 0) + " ms" + (source.http_status ? " · HTTP " + source.http_status : "")
+        : "";
+      watchdeskSources.append(el("p", (source.lane === "open_sweep" ? "Open Sweep" + (source.lens_id ? " / " + source.lens_id.replaceAll("_", " ") : "") : "Trusted Source") + " · " + source.source_id + ": " + source.status + " · " + source.items_parsed + " parsed" + transport + " · " + date(source.checked_at) + (source.error ? " · " + source.error : "")));
+    });
   }
   watchdeskHistory.replaceChildren();
   (data.recent || []).forEach((item) => watchdeskHistory.append(el("p", date(item.started_at) + " · " + item.trigger_type + " · " + (item.dry_run ? "dry" : "live") + " · " + item.status + " · " + item.run_id)));
