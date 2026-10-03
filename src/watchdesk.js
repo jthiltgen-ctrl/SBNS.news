@@ -1,10 +1,23 @@
 import publishedFeed from "../public/stories.json" with { type: "json" };
 import { WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
 import { fetchRegistrySource } from "./watchdesk-adapters.js";
-import { findDiscoveryMatches, findMonitoringMatch, listApprovedDynamicWatchdeskSources, markAnalysisJobQueued, storeDiscoveryCandidate } from "./persistence.js";
+import { findMonitoringMatch, findWatchdeskEventMatches, listApprovedDynamicWatchdeskSources, markAnalysisJobQueued, storeDiscoveryCandidate } from "./persistence.js";
+import { clusterWatchdeskItems, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, triageOpenSweepCluster } from "./watchdesk-open-discovery.js";
 
 export const WATCHDESK_VERSION = "1.2";
 export const MAX_SUBMISSIONS_PER_RUN = 5;
+const OPEN_SWEEP_SOURCE = Object.freeze({
+  id: "gdelt-open-sweep",
+  name: "GDELT Open Sweep",
+  source_class: "unverified_public_news",
+  jurisdiction: "Public-news discovery",
+  discovery_url: "https://api.gdeltproject.org/api/v2/doc/doc",
+  adapter: "open_sweep",
+  enabled: true,
+  primary_record: false,
+  topic: "Open Sweep reporting lead",
+  open_sweep: true,
+});
 const REVIEW_STATES = new Set(["NOT REVIEWED", "PARTIALLY REVIEWED", "REVIEWED"]);
 const FACTUAL_SIGNAL = /\b(found|identified|documented|observed|reported|determined|estimated|recommended|required|requires|prohibits|exceeded|failed|missing|incomplete|declined|increased|decreased|did not|has not|have not)\b|\b\d+(?:[,.]\d+)?\s*(?:percent|%|million|billion|hours|days)\b/i;
 const TRACKING_PARAMETERS = new Set(["fbclid", "gclid", "dclid", "msclkid", "mc_cid", "mc_eid", "ref", "ref_src"]);
@@ -17,6 +30,7 @@ const GENERIC_TOKENS = new Set(["audit", "report", "review", "oversight", "feder
 const ACTOR_NAME = /\b((?:(?:[A-Z][A-Za-z’'-]+|of|the|and|for)\s+){1,7}(?:Administration|Agency|Department|Office|Service|Board|Commission|Authority|Bureau|Corporation))\b(?:\s*\(([A-Z][A-Z0-9]{1,7})\))?/g;
 const RESOLVED_GAP = /\b(?:gap (?:was|has been) resolved|issue (?:was|has been) corrected|recommendation (?:was|has been) implemented|has since (?:completed|implemented|corrected|resolved))\b/i;
 const ACTION_STOPWORDS = new Set(["about", "after", "agency", "before", "could", "federal", "found", "government", "official", "program", "public", "recommended", "required", "responsible", "reported", "report", "should", "stated", "their", "there", "these", "those", "which"]);
+const MATERIAL_DEVELOPMENT_TITLE = /\b(new report|new finding|new evidence|new response|another failure|failed remediation|corrective action|expanded population|additional finding|settlement|lawsuit|court ruling|follow[- ]up report|appeal denied)\b/i;
 
 function concise(value, max = 1_000) {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -180,7 +194,8 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     && reviewedMaterial && concise(item.record_summary) ? item.evidence_review_state : "NOT REVIEWED";
   const inspectedText = typeof item.record_summary === "string" ? item.record_summary.replace(/\s+/g, " ").trim() : "";
   const recordSummaryTruncated = reviewState !== "NOT REVIEWED" && inspectedText.length > 20_000;
-  const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 20_000)) || (source.primary_record
+  const recordSummary = (reviewState !== "NOT REVIEWED" && concise(item.record_summary, 20_000)) || (source.open_sweep
+    ? `GDELT indexed this public reporting URL under a bounded Open Sweep query. The article was not retrieved or reviewed; this is a discovery lead only.` : source.primary_record
     ? `${source.name} publicly listed “${concise(item.title, 500)}”${item.published_at ? ` with a release date of ${iso(item.published_at)}` : ""}. The underlying record has not yet been reviewed by Watchdesk.`
     : `${source.name} published “${concise(item.title, 500)}.” This is a discovery signal; the underlying primary record has not yet been established.`);
   const evidence = reviewState === "NOT REVIEWED" ? null : accountabilityFromReviewedText(recordSummary, concise(item.institution, 300));
@@ -202,7 +217,9 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     institution_or_system: evidence?.actor || null,
     jurisdiction: concise(item.jurisdiction || source.jurisdiction, 200),
     topic: concise(item.topic || titleSubject(item.title, source) || source.topic, 200),
-    why_this_may_belong: concise(item.why_this_may_belong, 1_000) || `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`,
+    why_this_may_belong: concise(item.why_this_may_belong, 1_000) || (source.open_sweep
+      ? "This metadata-only public-news lead passed a bounded human-impact and institutional-nexus triage. It is not a finding by SBNS."
+      : `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`),
     apparent_job: concise(evidence?.expectation, 1_000),
     record_summary: recordSummary,
     record_summary_truncated: recordSummaryTruncated,
@@ -212,16 +229,17 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     research_prompt: evidence?.question ? null : concise(item.accountability_question, 1_000),
     primary_record_url: hasPrimary ? (primaryUrl || normalizedUrl) : null,
     evidence_review_state: reviewState,
-    reviewed_material: reviewState === "NOT REVIEWED" ? "Listing or discovery metadata only; underlying primary record not reviewed" : reviewedMaterial,
+    reviewed_material: reviewState === "NOT REVIEWED" ? (source.open_sweep ? "GDELT title, URL, domain, and discovery metadata only; linked article and original records not retrieved or reviewed" : "Listing or discovery metadata only; underlying primary record not reviewed") : reviewedMaterial,
     primary_record_status: !hasPrimary ? "SECONDARY SIGNAL — PRIMARY RECORD NEEDED" : reviewState === "REVIEWED" ? "PRIMARY RECORD REVIEWED" : reviewState === "PARTIALLY REVIEWED" ? "PRIMARY RECORD PARTIALLY REVIEWED" : "PRIMARY RECORD LOCATED",
     key_sources: keySources,
-    material_qualification: concise(item.material_qualification, 1_000) || (reviewState === "REVIEWED" ? "The reviewed record still requires human verification of scope and any institutional response." : reviewState === "PARTIALLY REVIEWED" ? "Only bounded first-party material was examined; the full record and any institutional response require human verification." : "Watchdesk reviewed listing metadata only; the record, scope, and any institutional response require human verification."),
+    material_qualification: concise(item.material_qualification, 1_000) || (source.open_sweep ? "Search metadata is not article verification; source quality, context, accuracy, causation, and any institutional response remain unestablished." : reviewState === "REVIEWED" ? "The reviewed record still requires human verification of scope and any institutional response." : reviewState === "PARTIALLY REVIEWED" ? "Only bounded first-party material was examined; the full record and any institutional response require human verification." : "Watchdesk reviewed listing metadata only; the record, scope, and any institutional response require human verification."),
     institutional_response: concise(item.institutional_response, 1_000),
     remains_unproven: concise(item.remains_unproven, 1_000) || "The underlying facts, governing standard, material consequences, and any institutional response have not been independently established by SBNS.",
     research_burden: burdenFor(item, source, hasPrimary),
     title_fingerprint: titleFingerprint,
     content_fingerprint: contentFingerprint,
     provenance: { system: "SBNS Watchdesk", run_id: runId, source_id: source.id, automated: true, discovered_at: discoveredAt },
+    discovery: { lane: source.open_sweep ? "open_sweep" : "trusted_source", source_trust: source.open_sweep ? "unknown_lead_only" : "governed_source", lens_ids: [], event_cluster: null },
     published_story_relationship: publishedRelationship(item, normalizedUrl),
     monitoring_relationship: null,
     triage: null,
@@ -300,6 +318,12 @@ function existingDisposition(candidate, rows) {
     const prior = candidateMetadata(row);
     if (!prior) return { duplicate: true, reason: "known_discovery_url", related_intake_id: row.id };
     if (prior.content_fingerprint === candidate.content_fingerprint) return { duplicate: true, reason: "unchanged_discovery", related_intake_id: row.id };
+    const currentCoverage = new Set(candidate.discovery?.event_cluster?.coverage_urls || []);
+    const priorCoverage = prior.discovery?.event_cluster?.coverage_urls || [];
+    const sameOpenEvent = candidate.discovery?.lane === "open_sweep" && prior.discovery?.lane === "open_sweep" && priorCoverage.some((url) => currentCoverage.has(url));
+    if (sameOpenEvent) return candidate.discovery?.material_development_signal
+      ? { duplicate: false, reason: "materially_new_event_development", related_intake_id: row.id }
+      : { duplicate: true, reason: "known_open_event_cluster", related_intake_id: row.id };
     if (row.submitted_url === candidate.normalized_url || prior.title_fingerprint === candidate.title_fingerprint) return { duplicate: false, reason: "materially_new_development", related_intake_id: row.id };
   }
   return { duplicate: false, reason: null, related_intake_id: null };
@@ -357,19 +381,38 @@ export async function runWatchdeskScan(env, options = {}) {
   if (!discoveredAt) throw new Error("Watchdesk clock must return a valid date.");
   const runId = options.runId || `watchdesk_${(await digest(`${discoveredAt}\n${registry.map((source) => source.id).join(",")}`)).slice(0, 24)}`;
   const discover = options.discoverSource || ((source) => fetchRegistrySource(source, options.fetchImpl || fetch));
-  const lookupDiscovery = options.lookupDiscovery || ((candidate) => findDiscoveryMatches(env, candidate.normalized_url, candidate.title_fingerprint));
+  const lookupDiscovery = options.lookupDiscovery || ((candidate) => env?.SBNS_DB
+    ? findWatchdeskEventMatches(env, candidate.normalized_url, candidate.title_fingerprint, candidate.discovery?.event_cluster?.cluster_id || null, candidate.discovery?.event_cluster?.coverage_urls || [])
+    : Promise.resolve([]));
   const lookupMonitoring = options.lookupMonitoring || ((candidate) => findMonitoringMatch(env, candidate.normalized_url));
   const submit = options.submitCandidate || ((candidate) => defaultSubmit(env, candidate, options.requestedBy, runId, options.leaseNow));
-  const metrics = { sources_checked: 0, sources_succeeded: 0, items_discovered: 0, deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0, failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0, submission_ready_gap: 0, submission_ready_aperture: 0, evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0, deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0 };
+  const shouldRunOpenSweep = options.openSweep === true || (!options.registry && options.openSweep !== false);
+  const metrics = {
+    sources_checked: 0, sources_succeeded: 0, items_discovered: 0,
+    deterministic_rejects: 0, duplicates_known: 0, fit_gate_survivors: 0,
+    failed_fit_gate: 0, discovery_leads: 0, submission_ready: 0,
+    submission_ready_gap: 0, submission_ready_aperture: 0,
+    evidence_state_distribution: {}, rabbit_hole_stop: 0, routed: 0,
+    deferred_by_ceiling: 0, would_submit: 0, submitted_to_newsroom: 0,
+    trusted_scanned: 0, trusted_candidates: 0, trusted_failures: 0, trusted_submissions: 0,
+    open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0,
+    open_sweep_normalized_urls: 0, open_sweep_deduped_hits: 0, open_sweep_event_clusters: 0,
+    open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_human_burden_candidates: 0,
+    open_sweep_fml_candidates: 0, open_sweep_no_action_discarded: 0,
+    open_sweep_would_submit: 0, open_sweep_submissions: 0,
+    combined_total_submissions: 0, combined_duplicate_suppressions: 0, combined_source_cluster_overlap: 0,
+  };
   const sourceFailures = [];
   const sourceHealth = [];
   const survivors = [];
   const discoveryLeads = [];
   const runUrls = new Set();
   const runContent = new Set();
+  const entries = [];
 
   for (const source of registry) {
     metrics.sources_checked += 1;
+    metrics.trusted_scanned += 1;
     let items;
     try {
       items = await discover(source);
@@ -379,26 +422,113 @@ export async function runWatchdeskScan(env, options = {}) {
     catch (error) {
       const reason = concise(error?.message || "SOURCE_FAILED", 120);
       sourceFailures.push({ source_id: source.id, error: reason });
+      metrics.trusted_failures += 1;
       sourceHealth.push({ source_id: source.id, checked_at: iso(clock()), status: "failed", error: reason, items_parsed: 0 });
       continue;
     }
     sourceHealth.push({ source_id: source.id, checked_at: iso(clock()), status: "succeeded", error: null, items_parsed: items.length });
     metrics.items_discovered += items.length;
-    for (const item of items) {
+    metrics.trusted_candidates += items.length;
+    for (const item of items) entries.push({ lane: "trusted_source", source, item });
+  }
+
+  if (shouldRunOpenSweep) {
+    try {
+      const sweep = options.discoverOpenSweep
+        ? await options.discoverOpenSweep({ now: discoveredAt, fetchImpl: options.fetchImpl })
+        : await runOpenSweep({ now: discoveredAt, fetchImpl: options.fetchImpl || fetch });
+      if (!sweep || !Array.isArray(sweep.items) || !Array.isArray(sweep.source_health) || !Array.isArray(sweep.source_failures)) throw new Error("OPEN_SWEEP_INVALID_OUTPUT");
+      metrics.open_sweep_queries_attempted = Number.isInteger(sweep.queries_attempted) ? sweep.queries_attempted : sweep.source_health.length;
+      metrics.open_sweep_queries_failed = Number.isInteger(sweep.queries_failed) ? sweep.queries_failed : sweep.source_failures.length;
+      metrics.open_sweep_raw_hits = sweep.items.length;
+      metrics.items_discovered += sweep.items.length;
+      sourceHealth.push(...sweep.source_health);
+      sourceFailures.push(...sweep.source_failures);
+      for (const item of sweep.items.slice(0, OPEN_SWEEP_TOTAL_RESULT_LIMIT)) entries.push({ lane: "open_sweep", source: OPEN_SWEEP_SOURCE, item });
+    } catch (error) {
+      const reason = concise(error?.message || "OPEN_SWEEP_FAILED", 120);
+      metrics.open_sweep_queries_failed = 1;
+      sourceFailures.push({ source_id: "gdelt-doc", lane: "open_sweep", error: reason });
+      sourceHealth.push({ source_id: "gdelt-doc", lane: "open_sweep", checked_at: iso(clock()), status: "failed", error: reason, items_parsed: 0 });
+    }
+  }
+
+  const openRows = entries.filter((entry) => entry.lane === "open_sweep");
+  const openUrls = new Set(openRows.flatMap((entry) => { try { return [normalizeDiscoveryUrl(entry.item.url)]; } catch { return []; } }));
+  metrics.open_sweep_normalized_urls = openUrls.size;
+  metrics.open_sweep_deduped_hits = Math.max(0, metrics.open_sweep_raw_hits - openUrls.size);
+  const clusters = await clusterWatchdeskItems(entries, { digest });
+  metrics.open_sweep_event_clusters = clusters.filter((cluster) => cluster.lane_set.includes("open_sweep")).length;
+  metrics.combined_source_cluster_overlap = clusters.filter((cluster) => cluster.source_cluster_overlap).length;
+
+  for (const cluster of clusters) {
+      const { lane, source, item } = cluster.representative;
+      const isOpenSweep = lane === "open_sweep";
+      let openTriage = null;
+      if (isOpenSweep) {
+        openTriage = triageOpenSweepCluster(cluster);
+        metrics.open_sweep_triaged_candidates += 1;
+        if (openTriage.human_burden) metrics.open_sweep_human_burden_candidates += 1;
+        if (openTriage.fml_candidate) metrics.open_sweep_fml_candidates += 1;
+        if (!openTriage.ready) { metrics.open_sweep_no_action_discarded += 1; metrics.deterministic_rejects += 1; continue; }
+        metrics.open_sweep_eligible_leads += 1;
+      } else {
       const deterministic = deterministicFilter(item, source);
       if (!deterministic.passes) { metrics.deterministic_rejects += 1; continue; }
+      }
       let candidate;
-      try { candidate = await buildCandidate(item, source, discoveredAt, runId); }
+      try {
+        candidate = await buildCandidate(item, source, discoveredAt, runId);
+        const clusterMeta = {
+          cluster_id: cluster.cluster_id,
+          cluster_size: cluster.cluster_size,
+          representative_url: cluster.representative.normalized_url,
+          coverage_urls: cluster.coverage_urls,
+          domains: cluster.domains,
+          discovery_lens_ids: cluster.discovery_lens_ids,
+          first_seen_at: cluster.first_seen_at,
+          last_seen_at: cluster.last_seen_at,
+          possible_institution_or_system: cluster.possible_institution_or_system,
+          possible_affected_population: cluster.possible_affected_population,
+          source_cluster_overlap: cluster.source_cluster_overlap,
+          coverage_independence: cluster.coverage_independence,
+        };
+        candidate.discovery = {
+          lane: isOpenSweep ? "open_sweep" : "trusted_source",
+          source_trust: isOpenSweep ? "unknown_lead_only" : "governed_source",
+          lens_ids: cluster.discovery_lens_ids,
+          query_formulations: [...new Set(cluster.members.map((entry) => entry.item.discovery_query).filter(Boolean))].slice(0, 10),
+          material_development_signal: isOpenSweep && MATERIAL_DEVELOPMENT_TITLE.test(item.title || ""),
+          open_sweep_overlap: cluster.source_cluster_overlap,
+          event_cluster: clusterMeta,
+        };
+      }
       catch { metrics.deterministic_rejects += 1; continue; }
       if (runUrls.has(candidate.normalized_url) || runContent.has(candidate.content_fingerprint)) { metrics.duplicates_known += 1; continue; }
       runUrls.add(candidate.normalized_url); runContent.add(candidate.content_fingerprint);
-      if (candidate.published_story_relationship?.type === "published_exact") { metrics.duplicates_known += 1; continue; }
+      if (candidate.published_story_relationship?.type === "published_exact"
+        || (isOpenSweep && candidate.published_story_relationship?.type === "published_development" && !MATERIAL_DEVELOPMENT_TITLE.test(item.title || ""))) {
+        metrics.duplicates_known += 1;
+        continue;
+      }
       const known = existingDisposition(candidate, await lookupDiscovery(candidate));
       if (known.duplicate) { metrics.duplicates_known += 1; continue; }
       if (known.related_intake_id) candidate.related_intake_id = known.related_intake_id;
       const monitor = await lookupMonitoring(candidate);
       if (monitor) { metrics.duplicates_known += 1; continue; }
       metrics.evidence_state_distribution[candidate.primary_record_status] = (metrics.evidence_state_distribution[candidate.primary_record_status] || 0) + 1;
+      if (isOpenSweep) {
+        candidate.triage = { recommendation: openTriage.recommendation, rationale: openTriage.rationale, discovery_labels: openTriage.labels, checks: openTriage.checks, ranking_signals: openTriage.ranking_signals };
+        candidate.submission_readiness = { ready: true, mode: "open_sweep_lead", reasons: ["admitted for ordinary full analysis as an unverified reporting lead"], development_gaps: [], evidence_verified: false };
+        candidate.research_burden = "HIGH";
+        candidate.institution_or_system = null;
+        candidate.apparent_job = null;
+        candidate.observed_condition = null;
+        candidate.accountability_gap = null;
+        candidate.accountability_question = null;
+        candidate.remains_unproven = "The source article, underlying events, responsible institution, accuracy, causation, and any response have not been verified by SBNS.";
+      }
+      if (!isOpenSweep) {
       const fit = fitGate(candidate, item);
       if (!fit.passes) {
         metrics.failed_fit_gate += 1;
@@ -419,13 +549,19 @@ export async function runWatchdeskScan(env, options = {}) {
       metrics.submission_ready += 1;
       if (candidate.submission_readiness.mode === "gap") metrics.submission_ready_gap += 1;
       if (candidate.submission_readiness.mode === "editorial_aperture") metrics.submission_ready_aperture += 1;
+      } else {
+        // Lead admission is not evidence readiness; keep the historical
+        // submission_ready metric scoped to the trusted evidence-backed lane.
+      }
       survivors.push(candidate);
-    }
   }
 
   survivors.sort((left, right) => {
     const priority = (candidate) => candidate.submission_readiness?.mode === "gap" ? 0 : 1;
-    return priority(left) - priority(right);
+    const rankingSignals = (candidate) => candidate.triage?.ranking_signals?.length || 0;
+    return priority(left) - priority(right)
+      || rankingSignals(right) - rankingSignals(left)
+      || String(right.discovery?.event_cluster?.first_seen_at || right.publication_date || "").localeCompare(String(left.discovery?.event_cluster?.first_seen_at || left.publication_date || ""));
   });
   const selected = survivors.slice(0, MAX_SUBMISSIONS_PER_RUN);
   const deferred = survivors.slice(MAX_SUBMISSIONS_PER_RUN);
@@ -438,10 +574,15 @@ export async function runWatchdeskScan(env, options = {}) {
       const intake = await submit(candidate);
       if (!intake) { metrics.duplicates_known += 1; continue; }
       submitted.push({ intake, candidate });
+      if (candidate.discovery?.lane === "open_sweep") metrics.open_sweep_submissions += 1;
+      else metrics.trusted_submissions += 1;
       if (options.onSubmitted) await options.onSubmitted(intake);
     }
     metrics.submitted_to_newsroom = submitted.length;
   }
+  metrics.open_sweep_would_submit = selected.filter((candidate) => candidate.discovery?.lane === "open_sweep").length;
+  metrics.combined_total_submissions = metrics.submitted_to_newsroom;
+  metrics.combined_duplicate_suppressions = metrics.duplicates_known;
   return {
     ok: true,
     run_id: runId,
@@ -452,8 +593,8 @@ export async function runWatchdeskScan(env, options = {}) {
     source_health: sourceHealth,
     discovery_leads: discoveryLeads.slice(0, MAX_SUBMISSIONS_PER_RUN),
     candidates: selected,
-    deferred_candidates: deferred.map((candidate) => ({ title: candidate.discovered_title, normalized_url: candidate.normalized_url, source_id: candidate.source.id, triage: candidate.triage.recommendation, content_fingerprint: candidate.content_fingerprint })),
-    submitted: submitted.map(({ intake, candidate }) => ({ intake_id: intake.id, title: candidate.discovered_title, triage: candidate.triage.recommendation })),
+    deferred_candidates: deferred.map((candidate) => ({ title: candidate.discovered_title, normalized_url: candidate.normalized_url, source_id: candidate.source.id, discovery_lane: candidate.discovery?.lane, cluster_id: candidate.discovery?.event_cluster?.cluster_id, triage: candidate.triage.recommendation, content_fingerprint: candidate.content_fingerprint })),
+    submitted: submitted.map(({ intake, candidate }) => ({ intake_id: intake.id, title: candidate.discovered_title, triage: candidate.triage.recommendation, discovery_lane: candidate.discovery?.lane, cluster_id: candidate.discovery?.event_cluster?.cluster_id })),
     message: options.dryRun && selected.length ? `${selected.length} candidate${selected.length === 1 ? "" : "s"} would be submitted to Newsroom.` : submitted.length ? `${submitted.length} candidate${submitted.length === 1 ? "" : "s"} submitted to Newsroom.` : selected.length ? "No new discovery intakes; selected candidates were already known." : discoveryLeads.length ? "No submission-ready candidates; discovery leads require more evidence." : "No worthwhile SBNS discovery candidates this run.",
   };
 }

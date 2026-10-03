@@ -163,6 +163,24 @@ export async function findDiscoveryMatches(env, normalizedUrl, titleFingerprint)
   return result.results;
 }
 
+export async function findWatchdeskEventMatches(env, normalizedUrl, titleFingerprint, clusterId = null, relatedUrls = []) {
+  const urls = [...new Set([normalizedUrl, ...(Array.isArray(relatedUrls) ? relatedUrls : [])].filter((value) => typeof value === "string" && value.length <= 2_048))].slice(0, 8);
+  const urlSlots = urls.map(() => "?").join(", ");
+  const result = await database(env).prepare(`SELECT intakes.*,
+    audit_events.metadata_json AS discovery_metadata_json
+    FROM intakes
+    LEFT JOIN audit_events ON audit_events.entity_type = 'intake'
+      AND audit_events.entity_id = intakes.id
+      AND audit_events.action = 'watchdesk.candidate_submitted'
+    WHERE intakes.submitted_url IN (${urlSlots})
+      OR (audit_events.action = 'watchdesk.candidate_submitted' AND (
+        json_extract(audit_events.metadata_json, '$.candidate.title_fingerprint') = ?
+        OR (? IS NOT NULL AND json_extract(audit_events.metadata_json, '$.candidate.discovery.event_cluster.cluster_id') = ?)
+      ))
+    ORDER BY intakes.updated_at DESC, intakes.id ASC`).bind(...urls, titleFingerprint, clusterId, clusterId).all();
+  return result.results;
+}
+
 export async function findMonitoringMatch(env, normalizedUrl) {
   return database(env).prepare("SELECT * FROM monitoring_events WHERE development_url = ? ORDER BY checked_at DESC, id DESC LIMIT 1").bind(normalizedUrl).first();
 }

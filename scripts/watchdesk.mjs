@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createAdminHandler, createScheduledHandler } from "../src/admin-index.js";
 import { fetchRegistrySource, parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
+import { discoverySearchUrl, searchPublicDiscovery } from "../src/editorial-search.js";
 import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, submissionReadiness, triageCandidate } from "../src/watchdesk.js";
+import { clusterWatchdeskItems, generateOpenSweepQueries, OPEN_SWEEP_QUERY_LIMIT, OPEN_SWEEP_RESULTS_PER_QUERY, OPEN_SWEEP_TIMEOUT_MS, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, triageOpenSweepCluster } from "../src/watchdesk-open-discovery.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON, WATCHDESK_LEASE_MS } from "../src/watchdesk-operations.js";
 import { storeDiscoveryCandidate } from "../src/persistence.js";
 import { SOURCE_CLASSES, WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
@@ -42,11 +44,30 @@ async function check() {
     assert.equal(new URL(entry.discovery_url).protocol, "https:");
     assert.equal(JSON.stringify(entry).match(/token|secret|password/i), null);
   }
+  const openQueries = generateOpenSweepQueries(new Date(FIXED_NOW));
+  assert.equal(openQueries.length, OPEN_SWEEP_QUERY_LIMIT);
+  assert.deepEqual(openQueries.slice(0, 9).map((entry) => entry.lens_id), ["human_burden", "bureaucratic_absurdity", "ignored_warning", "no_one_owns_problem", "little_guy_pays", "technical_compliance_failure", "waste_broken_delivery", "no_recourse", "fml_discovery"]);
+  assert.equal(openQueries.filter((entry) => entry.tone_abs_threshold != null).length, 1);
+  assert.notDeepEqual(openQueries.map((entry) => entry.formulation), generateOpenSweepQueries(new Date("2026-09-23T14:00:00.000Z")).map((entry) => entry.formulation), "query formulation should rotate by scheduled run window");
+  assert.notDeepEqual(generateOpenSweepQueries(new Date("2026-09-22T14:00:00.000Z")).map((entry) => entry.formulation), generateOpenSweepQueries(new Date("2026-09-22T23:00:00.000Z")).map((entry) => entry.formulation), "the two daily scheduled runs should use distinct query rotations");
+  assert.notDeepEqual(generateOpenSweepQueries(new Date("2026-09-22T23:00:00.000Z")).map((entry) => entry.formulation), generateOpenSweepQueries(new Date("2026-09-23T14:00:00.000Z")).map((entry) => entry.formulation), "adjacent evening and next-morning scheduled runs should keep rotating");
+  const toneUrl = new URL(discoverySearchUrl("residents say agency", { maxRecords: 6, toneAbsThreshold: 10 }));
+  assert.equal(toneUrl.host, "api.gdeltproject.org");
+  assert.equal(toneUrl.searchParams.get("maxrecords"), "6");
+  assert.equal(toneUrl.searchParams.get("query"), "residents say agency toneabs>10");
+  assert.throws(() => discoverySearchUrl("residents say agency toneabs>10"), /plain-text/);
+  assert.throws(() => discoverySearchUrl("residents say agency", { maxRecords: 11 }), /result limit/);
+  assert.throws(() => discoverySearchUrl("residents say agency", { toneAbsThreshold: 100 }), /toneabs thresholds/);
+  assert.equal(OPEN_SWEEP_RESULTS_PER_QUERY, 6);
+  assert.equal(OPEN_SWEEP_TOTAL_RESULT_LIMIT, 60);
+  assert.equal(OPEN_SWEEP_TIMEOUT_MS, 8_000);
   const config = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
   assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
   assert.deepEqual(migrations, ["0001_editorial_foundation.sql", "0002_admin_queue.sql", "0003_live_analysis.sql", "0004_watchdesk_runs.sql", "0005_echo_durable_contracts.sql", "0006_watchdesk_source_learning.sql"]);
-  console.log("Watchdesk check passed: 12 governed sources (9 active), 21 synthetic fixture cases, broader local/national/independent/whistleblower discovery, bounded cron, and run-ledger migration.");
+  const workflow = await readFile(path.join(ROOT, "src", "watchdesk-open-discovery.js"), "utf8");
+  assert.equal(/Cloudflare|Queue|scheduled\s*\(/i.test(workflow), false, "Open Sweep must remain inside the existing Watchdesk worker and cron");
+  console.log("Watchdesk check passed: 12 governed sources (9 active), 21 synthetic fixture cases, 10 bounded rotating Open Sweep formulations, unchanged cron, and existing run ledger.");
 }
 
 async function localOperationalDb() {
@@ -96,9 +117,24 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     const realFirst = await runWatchdeskOperation(env, { runId: "ops_real_d1", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:10.000Z", scanOptions: realD1Options });
     pass(realFirst.metrics.submitted_to_newsroom === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1, "live path must create exactly one discovery intake using D1");
     pass(sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs WHERE state = 'pending_enqueue'").get().count === 1, "a submission-ready Watchdesk intake durably creates an analysis job; an unavailable queue leaves it retryable");
+    const openItem = { title: "Families waited months after City Housing Agency ignored repeated repair complaints", url: "https://localnews.example/city-housing-repairs", seen_at: "20260922T120000Z", discovery_lens_id: "human_burden", discovery_query: "families billed after" };
+    const openOptions = {
+      registry: registryFor(strongCase.source_id), discoverSource: async () => [], openSweep: true,
+      discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: [{ source_id: "gdelt-doc", lane: "open_sweep", lens_id: "human_burden", checked_at: "2026-09-22T12:00:15.000Z", status: "succeeded", items_parsed: 1, error: null }], source_failures: [] }),
+    };
+    const openFirst = await runWatchdeskOperation(env, { runId: "ops_open_sweep", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:15.000Z", scanOptions: openOptions });
+    const openAudit = sqlite.prepare("SELECT metadata_json FROM audit_events WHERE entity_id = ? AND action = 'watchdesk.candidate_submitted'").get(openFirst.submitted[0]?.intake_id);
+    const openCandidate = JSON.parse(openAudit.metadata_json).candidate;
+    pass(openFirst.metrics.open_sweep_submissions === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE submitted_url = ?").get(openItem.url).count === 1, "qualifying Open Sweep discovery enters the existing durable intake flow");
+    pass(sqlite.prepare("SELECT state FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id)?.state === "pending_enqueue" && openCandidate.discovery.lane === "open_sweep" && openCandidate.evidence_review_state === "NOT REVIEWED", "Open Sweep admission creates the normal analysis job while preserving source as unverified metadata only");
+    const openStatus = await getWatchdeskStatus(env);
+    const persistedOpenHealth = openStatus.latest.source_health.find((source) => source.lane === "open_sweep");
+    pass(openStatus.latest.metrics.open_sweep_queries_attempted === 10 && openStatus.latest.metrics.open_sweep_submissions === 1 && persistedOpenHealth?.lens_id === "human_burden", "bounded Open Sweep metrics and query/lens health persist in the existing run ledger");
+    const openRepeat = await runWatchdeskOperation(env, { runId: "ops_open_sweep_repeat", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: openOptions });
+    pass(openRepeat.metrics.submitted_to_newsroom === 0 && openRepeat.metrics.duplicates_known === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE submitted_url = ?").get(openItem.url).count === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id).count === 1, "same Open Sweep event is suppressed against the existing Story File and cannot create a duplicate analysis job");
     const ignoredDuplicate = await runWatchdeskOperation(env, { runId: "ops_ignored_duplicate", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: { ...realD1Options, lookupDiscovery: async () => [] } });
     const ignoredLedger = sqlite.prepare("SELECT submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = 'ops_ignored_duplicate'").get();
-    pass(ignoredDuplicate.metrics.submitted_to_newsroom === 0 && ignoredDuplicate.metrics.duplicates_known === 1 && ignoredLedger.submitted_count === 0 && ignoredLedger.submitted_ids_json === "[]" && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE action = 'watchdesk.candidate_submitted'").get().count === 1, "ignored duplicate insert must not create an intake or audit or change the ledger");
+    pass(ignoredDuplicate.metrics.submitted_to_newsroom === 0 && ignoredDuplicate.metrics.duplicates_known === 1 && ignoredLedger.submitted_count === 0 && ignoredLedger.submitted_ids_json === "[]" && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 2 && sqlite.prepare("SELECT COUNT(*) AS count FROM audit_events WHERE action = 'watchdesk.candidate_submitted'").get().count === 2, "ignored duplicate insert must not create an intake or audit or change the ledger");
 
     const partial = await runWatchdeskOperation(env, { runId: "ops_partial", triggerType: "manual", dryRun: true, requestedBy: "editor@example.com", now: () => "2026-09-22T12:01:00.000Z", scanOptions: { registry: [failureSource, ...registryFor(strongCase.source_id)], discoverSource: async (entry) => { if (entry.id === failureSource.id) throw new Error("SYNTHETIC_SOURCE_UNAVAILABLE"); return [strongCase.item]; }, lookupDiscovery: async () => [], lookupMonitoring: async () => null } });
     status = await getWatchdeskStatus(env);
@@ -128,12 +164,12 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     const scheduled = createScheduledHandler({ executeWatchdesk: (runtime, opts) => runWatchdeskOperation(runtime, { ...opts, runId: "ops_scheduled", now: () => "2026-09-22T12:04:00.000Z", scanOptions: liveOptions }) });
     await scheduled({ cron: WATCHDESK_CRON }, env);
     const scheduledRow = sqlite.prepare("SELECT trigger_type, dry_run, requested_by, metrics_json FROM watchdesk_runs WHERE id = 'ops_scheduled'").get();
-    pass(scheduledRow.trigger_type === "scheduled" && scheduledRow.dry_run === 0 && scheduledRow.requested_by === "system:watchdesk-schedule" && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 2, "scheduled handler must use the real lease-fenced D1 path and nonhuman provenance");
+    pass(scheduledRow.trigger_type === "scheduled" && scheduledRow.dry_run === 0 && scheduledRow.requested_by === "system:watchdesk-schedule" && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 3, "scheduled handler must use the real lease-fenced D1 path and nonhuman provenance");
     pass(JSON.parse(scheduledRow.metrics_json).submitted_to_newsroom === 1, "scheduled submission count must reconcile with ledger");
     const scheduledIds = sqlite.prepare("SELECT submitted_count, submitted_ids_json FROM watchdesk_runs WHERE id = 'ops_scheduled'").get();
     pass(scheduledIds.submitted_count === 1 && sqlite.prepare("SELECT id FROM intakes WHERE id = ?").get(JSON.parse(scheduledIds.submitted_ids_json)[0])?.id, "ledger must retain the actual submitted intake ID and count");
     const manualRepeat = await runWatchdeskOperation(env, { runId: "ops_manual_repeat", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:05:00.000Z", scanOptions: liveOptions });
-    pass(manualRepeat.metrics.duplicates_known === 1 && manualRepeat.metrics.submitted_to_newsroom === 0 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 2, "manual and scheduled runs must share the same discovery dedupe");
+    pass(manualRepeat.metrics.duplicates_known === 1 && manualRepeat.metrics.submitted_to_newsroom === 0 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE origin = 'discovery'").get().count === 3, "manual and scheduled runs must share the same discovery dedupe");
     const many = Array.from({ length: 7 }, (_, index) => ({ ...strongCase.item, title: `Synthetic Grant ${index}: Audit Found Controls Failed and Costs Overran Plan`, url: `https://www.gao.gov/products/gao-26-operational-cap-${index}` }));
     const capped = await runWatchdeskOperation(env, { runId: "ops_capped", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:06:00.000Z", scanOptions: { ...liveOptions, discoverSource: async () => many, lookupDiscovery: async () => [] } });
     pass(capped.metrics.submission_ready === 7 && capped.metrics.submitted_to_newsroom === 5 && capped.metrics.deferred_by_ceiling === 2, "live operational run must submit no more than five candidates");
@@ -428,6 +464,130 @@ async function test() {
   const partial = await runWatchdeskScan({}, { ...runOptions, registry: [failureSource, ...registryFor(strongCase.source_id)], discoverSource: async (entry) => { if (entry.id === failureSource.id) throw new Error("SYNTHETIC_SOURCE_UNAVAILABLE"); return [strongCase.item]; }, lookupDiscovery: async () => [], dryRun: true });
   pass(partial.status === "partial" && partial.source_failures.length === 1 && partial.metrics.would_submit === 1, "one source failure must be visible without aborting independent sources");
   pass(partial.source_health[0].status === "failed" && partial.source_health[0].error === "SYNTHETIC_SOURCE_UNAVAILABLE" && partial.source_health[1].status === "succeeded", "partial run must name failed source and preserve successful-source health");
+
+  const openTitle = "Families waited months after City Housing Agency ignored repeated repair complaints";
+  let rateLimitCalls = 0;
+  const rateLimited = await searchPublicDiscovery("residents say agency", {
+    maxRecords: 6, toneAbsThreshold: 10, retryRateLimit: true,
+    fetchImpl: async (url, request) => {
+      rateLimitCalls += 1;
+      pass(url.includes("toneabs%3E10") && request.redirect === "manual" && request.method === "GET", "emotional-intensity search must use the fixed GDELT query and refuse redirects");
+      return rateLimitCalls === 1
+        ? new Response("", { status: 429, headers: { "retry-after": "0" } })
+        : new Response(JSON.stringify({ articles: [{ url: "https://localnews.example/story-1", title: openTitle, seendate: "20260922T120000Z" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  pass(rateLimitCalls === 2 && rateLimited.length === 1 && rateLimited[0].domain === "localnews.example", "Open Sweep may perform one bounded retry after a GDELT 429 and returns metadata only");
+
+  let openSearchCalls = 0;
+  const boundedSweep = await runOpenSweep({
+    now: FIXED_NOW,
+    search: async (formulation, options) => {
+      openSearchCalls += 1;
+      assert.ok(formulation.length >= 4 && formulation.length <= 120);
+      assert.equal(options.maxRecords, OPEN_SWEEP_RESULTS_PER_QUERY);
+      assert.equal(options.timeoutMs, OPEN_SWEEP_TIMEOUT_MS);
+      assert.equal(options.retryRateLimit, true);
+      if (openSearchCalls === 4) throw new Error("SYNTHETIC_QUERY_TIMEOUT");
+      return Array.from({ length: 8 }, (_, index) => ({ title: `${formulation} synthetic item ${index}`, url: `https://outlet${openSearchCalls}-${index}.example/article`, domain: `outlet${openSearchCalls}-${index}.example`, seen_at: "20260922T120000Z" }));
+    },
+  });
+  pass(openSearchCalls === OPEN_SWEEP_QUERY_LIMIT && boundedSweep.queries_attempted === 10 && boundedSweep.queries_failed === 1 && boundedSweep.source_health.length === 10, "Open Sweep continues all bounded hypotheses after one query failure");
+  pass(boundedSweep.items.length === 54 && boundedSweep.raw_hits === 54 && boundedSweep.items.every((item) => item.discovery_lens_id && item.discovery_query), "Open Sweep caps every query and total results and preserves lens/query provenance");
+
+  const openEntries = Array.from({ length: 5 }, (_, index) => ({
+    lane: "open_sweep",
+    source: { id: "gdelt-open-sweep", primary_record: false },
+    item: { title: index % 2 ? "Residents waited months after City Housing Agency ignored repair complaints" : openTitle, url: `https://outlet${index}.example/story-${index}`, seen_at: `2026092${index + 1}T120000Z`, discovery_lens_id: index % 2 ? "ignored_warning" : "human_burden", discovery_query: "residents still waiting" },
+  }));
+  const eventClusters = await clusterWatchdeskItems(openEntries);
+  pass(eventClusters.length === 1 && eventClusters[0].cluster_size === 5 && eventClusters[0].domains.length === 5, "strong cross-publisher title/time match forms one event cluster rather than five editor cards");
+  pass(eventClusters[0].coverage_urls.length === 5 && eventClusters[0].discovery_lens_ids.length === 2 && eventClusters[0].coverage_independence.includes("not independent corroboration"), "event cluster retains bounded URLs/lenses while explicitly not claiming independent corroboration");
+  const crossLane = await clusterWatchdeskItems([...openEntries, {
+    lane: "trusted_source", source: { id: "synthetic-primary", primary_record: true },
+    item: { title: openTitle, url: "https://records.example/story-1", seen_at: "20260922T120000Z" },
+  }]);
+  pass(crossLane.length === 1 && crossLane[0].source_cluster_overlap && crossLane[0].representative.lane === "trusted_source", "trusted primary material remains the representative when it overlaps Open Sweep coverage");
+  const samePublisher = await clusterWatchdeskItems([
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: "https://same.example/a", seen_at: "20260922T120000Z" } },
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: "Residents waited months after City Housing Agency ignored repair complaints again", url: "https://same.example/b", seen_at: "20260922T120000Z" } },
+  ]);
+  pass(samePublisher.length === 2, "similar headlines from one publisher are not merged without strong cross-publisher identity");
+  const farApart = await clusterWatchdeskItems([
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: "https://outlet-a.example/a", seen_at: "20260901T120000Z" } },
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: "https://outlet-b.example/b", seen_at: "20260920T120000Z" } },
+  ]);
+  pass(farApart.length === 2, "matching titles outside the seven-day event window remain separate events");
+  pass(farApart[0].cluster_id !== farApart[1].cluster_id, "the stable event key separates repeated headlines from different time windows");
+  const unknownDate = await clusterWatchdeskItems([
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: "https://outlet-a.example/a" } },
+    { lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: "https://outlet-b.example/b" } },
+  ]);
+  pass(unknownDate.length === 2, "missing publication/seen time prevents title-only event clustering");
+  const stableId = await clusterWatchdeskItems([openEntries[0]]);
+  pass(stableId[0].cluster_id === eventClusters[0].cluster_id, "a repeated headline retains its deterministic event identity when coverage URL count changes");
+  const boundedCoverage = await clusterWatchdeskItems(Array.from({ length: 10 }, (_, index) => ({ lane: "open_sweep", source: { primary_record: false }, item: { title: openTitle, url: `https://coverage${index}.example/story`, seen_at: "20260922T120000Z" } })));
+  pass(boundedCoverage[0].coverage_urls.length === 8 && boundedCoverage[0].coverage_urls.includes(boundedCoverage[0].representative.normalized_url), "cluster audit retains the representative URL within its bounded coverage set");
+
+  const strongOpenCluster = eventClusters[0];
+  const openAssessment = triageOpenSweepCluster(strongOpenCluster);
+  pass(openAssessment.ready && openAssessment.recommendation === "EXPLORE" && openAssessment.checks.human_impact && openAssessment.checks.institutional_nexus && openAssessment.checks.concrete_condition && openAssessment.checks.accountability_aperture && openAssessment.checks.researchability, "metadata-only Open Sweep intake requires all six lightweight human-impact/accountability/researchability checks");
+  pass(openAssessment.fml_candidate && openAssessment.labels.includes("human_burden") && openAssessment.source_trust.startsWith("unknown"), "FML and human-burden are discovery labels only, and unknown publishers remain leads rather than trusted sources");
+  pass(openAssessment.ranking_signals.includes("named_institution_in_title") && !openAssessment.ranking_signals.some((signal) => /emotion|tone/i.test(signal)), "Open Sweep ranking favors concrete reporting signals rather than emotional intensity");
+  const emotionalJunk = await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "A heartbreaking family lost everything in a devastating tragedy with no further details", url: "https://local.example/tragedy", discovery_lens_id: "emotional_intensity" } }]);
+  const emotionalTriage = triageOpenSweepCluster(emotionalJunk[0]);
+  pass(!emotionalTriage.ready && !emotionalTriage.fml_candidate && emotionalTriage.reasons.includes("institutional_nexus"), "highly emotional coverage without a plausible institutional/accountability nexus is discarded");
+  const vagueSystemCluster = await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Families waited months after system error denied their benefits without recourse", url: "https://local.example/vague-system", discovery_lens_id: "human_burden" } }]);
+  pass(!triageOpenSweepCluster(vagueSystemCluster[0]).checks.institutional_nexus, "a vague reference to a system alone is not an identifiable institutional nexus");
+
+  const openItem = { title: openTitle, url: "https://localnews.example/story-1", seen_at: "20260922T120000Z", discovery_lens_id: "human_burden", discovery_lens_label: "Human Burden", discovery_query: "families billed after" };
+  const sweepResult = { queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: Array.from({ length: 10 }, (_, index) => ({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: `lens-${index}`, checked_at: FIXED_NOW, status: "succeeded", items_parsed: 1, error: null })), source_failures: [] };
+  const openRun = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true, discoverOpenSweep: async () => sweepResult,
+    lookupDiscovery: async () => [], lookupMonitoring: async () => null, dryRun: false, runId: "synthetic_open_sweep",
+  });
+  const admittedOpen = stored.at(-1);
+  const admittedCandidate = JSON.parse(admittedOpen.discovery_metadata_json).candidate;
+  pass(openRun.status === "complete" && openRun.metrics.trusted_candidates === 0 && openRun.metrics.open_sweep_queries_attempted === 10 && openRun.metrics.open_sweep_submissions === 1, `Open-only lead may enter the same Watchdesk run and bounded submission cap (${JSON.stringify({ status: openRun.status, trusted: openRun.metrics.trusted_candidates, queries: openRun.metrics.open_sweep_queries_attempted, triaged: openRun.metrics.open_sweep_triaged_candidates, discarded: openRun.metrics.open_sweep_no_action_discarded, duplicate: openRun.metrics.duplicates_known, submitted: openRun.metrics.open_sweep_submissions, would: openRun.metrics.would_submit, leads: openRun.discovery_leads.length, failures: openRun.source_failures })})`);
+  pass(admittedOpen.submitted_url === openItem.url && admittedCandidate.discovery.lane === "open_sweep" && admittedCandidate.discovery.source_trust === "unknown_lead_only", "admitted Open Sweep URL is normalized into the ordinary discovery intake with explicit unknown-source provenance");
+  pass(admittedCandidate.evidence_review_state === "NOT REVIEWED" && admittedCandidate.institution_or_system === null && admittedCandidate.discovery.event_cluster.cluster_size === 1 && admittedCandidate.triage.recommendation === "EXPLORE", "Open Sweep does not manufacture reviewed evidence, an accountable actor, or a factual conclusion");
+  pass(admittedCandidate.submission_readiness.mode === "open_sweep_lead" && admittedCandidate.submission_readiness.evidence_verified === false && admittedCandidate.remains_unproven.includes("not been verified"), "Open Sweep admission is explicitly a lead-only handoff to the unchanged normal analysis path");
+  pass(admittedCandidate.triage.ranking_signals.includes("named_institution_in_title"), "the bounded lead ordering signals persist with the admitted discovery provenance");
+
+  const publishedRelated = { ...openItem, related_story_id: "faa-bnatcs-gao-cost-schedule-review", url: "https://localnews.example/related-existing-story" };
+  const publishedRepeat = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [publishedRelated] }), lookupDiscovery: async () => [], dryRun: true,
+    submitCandidate: async () => { throw new Error("published-event repeat must not submit"); }, runId: "synthetic_open_published_repeat",
+  });
+  pass(publishedRepeat.metrics.duplicates_known === 1 && publishedRepeat.metrics.would_submit === 0, "Open Sweep lead related to an existing published Story File is suppressed absent a material-development signal");
+  const publishedDevelopment = { ...publishedRelated, title: "New report: Families waited months after City Housing Agency ignored repeated repair complaints", url: "https://localnews.example/related-new-report" };
+  const publishedUpdate = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [publishedDevelopment] }), lookupDiscovery: async () => [], dryRun: true,
+    submitCandidate: async () => { throw new Error("dry run must not submit"); }, runId: "synthetic_open_published_development",
+  });
+  pass(publishedUpdate.metrics.would_submit === 1 && publishedUpdate.candidates[0].published_story_relationship.type === "published_development" && publishedUpdate.candidates[0].discovery.material_development_signal, "explicit follow-up/new-report wording may surface a related lead for normal analysis without declaring the development verified");
+
+  const junkRun = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [{ title: "A heartbreaking family lost everything in a devastating tragedy with no further details", url: "https://localnews.example/tragedy", discovery_lens_id: "emotional_intensity", discovery_query: "family says denied service" }] }),
+    lookupDiscovery: async () => [], dryRun: true, submitCandidate: async () => { throw new Error("emotional-only item must not submit"); }, runId: "synthetic_open_junk",
+  });
+  pass(junkRun.metrics.open_sweep_human_burden_candidates === 0 && junkRun.metrics.open_sweep_fml_candidates === 0 && junkRun.metrics.open_sweep_no_action_discarded === 1 && junkRun.metrics.would_submit === 0, "emotion alone never creates an Open Sweep candidate or fills the submission ceiling");
+
+  const openFailure = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: discovery(strongCase.item), openSweep: true,
+    discoverOpenSweep: async () => { throw new Error("SYNTHETIC_GDELT_UNAVAILABLE"); },
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_open_failure",
+  });
+  pass(openFailure.status === "partial" && openFailure.metrics.trusted_candidates === 1 && openFailure.metrics.would_submit === 1 && openFailure.source_failures.some((failure) => failure.lane === "open_sweep"), "Open Sweep failure is visible but does not break a successful Trusted Source lane");
+  const zeroOpen = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [], source_health: [], source_failures: [] }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_open_zero",
+  });
+  pass(zeroOpen.status === "complete" && zeroOpen.metrics.would_submit === 0 && zeroOpen.metrics.submitted_to_newsroom === 0, "zero qualifying Open Sweep and Trusted Source results remain a successful zero-submission run");
 
   let capturedOptions;
   const handler = createAdminHandler({ authenticate: async () => ({ actorType: "editor", actorId: "editor@example.com", email: "editor@example.com" }), executeWatchdesk: async (_env, options) => { capturedOptions = options; return { ok: true, dry_run: options.dryRun, metrics: {} }; } });
