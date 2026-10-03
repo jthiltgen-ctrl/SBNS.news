@@ -218,7 +218,7 @@ export async function buildCandidate(item, source, discoveredAt, runId) {
     jurisdiction: concise(item.jurisdiction || source.jurisdiction, 200),
     topic: concise(item.topic || titleSubject(item.title, source) || source.topic, 200),
     why_this_may_belong: concise(item.why_this_may_belong, 1_000) || (source.open_sweep
-      ? "This metadata-only public-news lead passed a bounded human-impact and institutional-nexus triage. It is not a finding by SBNS."
+      ? "This metadata-only public-news lead passed a bounded human-impact / concrete-condition and editorial-opportunity triage. The institution, responsibility, or accountability nexus may still require verification during ordinary analysis. It is not a finding by SBNS."
       : `This ${source.jurisdiction} discovery signal may warrant human inspection. It is not a finding by SBNS.`),
     apparent_job: concise(evidence?.expectation, 1_000),
     record_summary: recordSummary,
@@ -561,12 +561,23 @@ export async function runWatchdeskScan(env, options = {}) {
 
   survivors.sort((left, right) => {
     const priority = (candidate) => candidate.submission_readiness?.mode === "gap" ? 0
-      : candidate.discovery?.lane !== "open_sweep" ? 1
-        : candidate.triage?.lead_level === "strong_open_lead" ? 2 : 3;
-    const rankingSignals = (candidate) => candidate.triage?.ranking_signals?.length || 0;
+      : candidate.discovery?.lane === "open_sweep" && candidate.triage?.lead_level === "open_lead" ? 2 : 1;
+    const qualitySignals = (candidate) => {
+      const title = String(candidate.discovered_title || "");
+      const diagnosis = candidate.triage?.ranking_signals || [];
+      const evidenceStrength = candidate.evidence_review_state === "REVIEWED" ? 2
+        : candidate.evidence_review_state === "PARTIALLY REVIEWED" ? 1 : 0;
+      const identifiedInstitution = Boolean(candidate.institution_or_system || candidate.discovery?.event_cluster?.possible_institution_or_system);
+      const specificScale = /\$\s?\d|\b\d+(?:[,.]\d+)?\s?(?:days?|weeks?|months?|years?|people|residents|claims|dollars?)\b/i.test(title);
+      const warningOrRecourse = /\b(?:warn(?:ed|ing)|complaints?|appeals?|no response|no recourse|unable to appeal|despite prior)\b/i.test(title)
+        || diagnosis.includes("explicit_warning_or_recourse_signal");
+      const materialDevelopment = candidate.discovery?.material_development_signal === true || MATERIAL_DEVELOPMENT_TITLE.test(title);
+      return evidenceStrength + Number(identifiedInstitution) + Number(specificScale) + Number(warningOrRecourse) + Number(materialDevelopment);
+    };
+    const recency = (candidate) => String(candidate.discovery?.event_cluster?.first_seen_at || candidate.publication_date || candidate.discovered_at || "");
     return priority(left) - priority(right)
-      || rankingSignals(right) - rankingSignals(left)
-      || String(right.discovery?.event_cluster?.first_seen_at || right.publication_date || "").localeCompare(String(left.discovery?.event_cluster?.first_seen_at || left.publication_date || ""));
+      || qualitySignals(right) - qualitySignals(left)
+      || recency(right).localeCompare(recency(left));
   });
   const selected = survivors.slice(0, MAX_SUBMISSIONS_PER_RUN);
   const deferred = survivors.slice(MAX_SUBMISSIONS_PER_RUN);

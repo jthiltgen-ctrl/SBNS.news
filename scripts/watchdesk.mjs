@@ -580,6 +580,33 @@ async function test() {
   });
   pass(rankedOpen.metrics.open_sweep_strong_open_leads === 1 && rankedOpen.metrics.open_sweep_open_leads === 1 && rankedOpen.candidates[0].triage.lead_level === "strong_open_lead", "strong Open Leads rank ahead of more recent, more specific ordinary Open Leads and both levels are measured");
 
+  const apertureCase = fixture(data, "aperture-waste-without-discrete-failure");
+  const highSpecificOpen = { title: "New report: County Housing Department keeps billing family $8,400 despite repeated complaints after admitting system error", url: "https://local.example/specific-open", seen_at: "20260930T120000Z", discovery_lens_id: "ignored_warning", discovery_query: "repeated complaints" };
+  const ordinaryOpen = { title: "Families waited 18 months after repeated complaints and appeals for an answer after benefits were denied", url: "https://local.example/ordinary-open", seen_at: "20261002T120000Z", discovery_lens_id: "human_burden", discovery_query: "residents still waiting" };
+  const competitiveRun = await runWatchdeskScan({}, {
+    ...runOptions, registry: registryFor(apertureCase.source_id), discoverSource: discovery(apertureCase.item), openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [highSpecificOpen, ordinaryOpen] }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_competitive_open_tier",
+  });
+  pass(competitiveRun.candidates.length === 3 && competitiveRun.candidates[0].discovery.lane === "open_sweep" && competitiveRun.candidates[0].triage.lead_level === "strong_open_lead" && competitiveRun.candidates[1].discovery.lane === "trusted_source" && competitiveRun.candidates[1].submission_readiness.mode === "editorial_aperture" && competitiveRun.candidates[2].triage.lead_level === "open_lead", "a specific Strong Open Lead competes on quality with trusted non-gap candidates, while ordinary Open Lead remains lower tier");
+  pass(competitiveRun.candidates[2].why_this_may_belong.includes("human-impact / concrete-condition and editorial-opportunity") && competitiveRun.candidates[2].why_this_may_belong.includes("may still require verification during ordinary analysis"), "ordinary Open Lead explanation distinguishes discovery opportunity from an unverified accountability nexus");
+
+  const oneStrongOpenSweep = { ...sweepResult, items: [highSpecificOpen] };
+  const fiveTrustedGaps = Array.from({ length: 5 }, (_, index) => ({ ...strongCase.item, title: `Synthetic Grant ${index}: Audit Found Controls Failed and Costs Overran Plan`, url: `https://www.gao.gov/products/gao-26-gap-priority-${index}` }));
+  const gapsFirstRun = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => fiveTrustedGaps, openSweep: true,
+    discoverOpenSweep: async () => oneStrongOpenSweep, lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_five_gaps_priority",
+  });
+  pass(gapsFirstRun.candidates.length === MAX_SUBMISSIONS_PER_RUN && gapsFirstRun.candidates.every((candidate) => candidate.discovery.lane === "trusted_source" && candidate.submission_readiness.mode === "gap") && gapsFirstRun.metrics.deferred_by_ceiling === 1, "five stronger evidence-backed trusted gaps may take all five slots ahead of a Strong Open Lead");
+
+  const fiveTrustedApertures = Array.from({ length: 5 }, (_, index) => ({ ...apertureCase.item, title: `Synthetic ${index}: ${apertureCase.item.title}`, url: `https://www.gao.gov/products/gao-26-aperture-priority-${index}` }));
+  const noQuotaRun = await runWatchdeskScan({}, {
+    ...runOptions, registry: registryFor(apertureCase.source_id), discoverSource: async () => fiveTrustedApertures, openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [ordinaryOpen] }), lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_no_open_quota",
+  });
+  pass(noQuotaRun.candidates.length === MAX_SUBMISSIONS_PER_RUN && noQuotaRun.candidates.every((candidate) => candidate.discovery.lane === "trusted_source" && candidate.submission_readiness.mode === "editorial_aperture"), "ordinary Open Leads receive no reserved quota and cannot displace five stronger trusted candidates");
+  pass(MAX_SUBMISSIONS_PER_RUN === 5, "competitive ranking leaves the shared five-intake ceiling unchanged");
+
   const publishedRelated = { ...openItem, related_story_id: "faa-bnatcs-gao-cost-schedule-review", url: "https://localnews.example/related-existing-story" };
   const publishedRepeat = await runWatchdeskScan({}, {
     ...runOptions, discoverSource: async () => [], openSweep: true,
