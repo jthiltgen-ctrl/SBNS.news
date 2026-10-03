@@ -6,6 +6,7 @@ import {
 import { AnalysisFailure, retrieveSource, sha256 } from "./source-retrieval.js";
 import { expandPrimaryRecords } from "./primary-source-expansion.js";
 import { echoEligible, runEchoResearch } from "./echo-runtime.js";
+import { sanitizeAnalysisFailureDiagnostic } from "./analysis-diagnostics.js";
 
 const MAIN_QUEUE = "sbns-analysis-staging";
 const DLQ = "sbns-analysis-dlq-staging";
@@ -74,8 +75,10 @@ export async function processAnalysisMessage(message, env, dependencies = {}) {
     return { outcome: "complete", analysis };
   } catch (caught) {
     const error = safeError(caught); const failedAt = timestamp();
-    if (error.retryable) { await markAnalysisRetrying(env, jobId, intakeId, failedAt, error.code, error.safeMessage); message.retry({ delaySeconds: Math.min(300, 2 ** Math.min(message.attempts ?? 1, 8)) }); log("analysis_retry", { job_id: jobId, intake_id: intakeId, error_code: error.code }); return { outcome: "retry", error }; }
-    await markAnalysisFailed(env, jobId, intakeId, failedAt, error.code, error.safeMessage); message.ack(); log("analysis_failed", { job_id: jobId, intake_id: intakeId, error_code: error.code }); return { outcome: "failed", error };
+    const attempt = Math.min(1000, Math.max(0, Number.isInteger(job.attempt) ? job.attempt + 1 : message.attempts ?? 0));
+    const diagnostics = sanitizeAnalysisFailureDiagnostic(error.diagnostics, { jobId, errorCode: error.code, substage: error.substage, retryable: error.retryable, attempt, failedAt });
+    if (error.retryable) { await markAnalysisRetrying(env, jobId, intakeId, failedAt, error.code, error.safeMessage, diagnostics); message.retry({ delaySeconds: Math.min(300, 2 ** Math.min(message.attempts ?? 1, 8)) }); log("analysis_retry", { job_id: jobId, intake_id: intakeId, error_code: error.code, substage: diagnostics.substage }); return { outcome: "retry", error }; }
+    await markAnalysisFailed(env, jobId, intakeId, failedAt, error.code, error.safeMessage, "analysis.failed", "failed", diagnostics); message.ack(); log("analysis_failed", { job_id: jobId, intake_id: intakeId, error_code: error.code, substage: diagnostics.substage }); return { outcome: "failed", error };
   }
 }
 

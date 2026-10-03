@@ -1,5 +1,6 @@
 import { filterAssignments, queueCounts } from "./desk-state.js";
 import { draftZero, evidenceLedger } from "./editorial-production.js";
+import { analysisFailureFields } from "./analysis-diagnostics.js";
 
 const views = [...document.querySelectorAll("main > section")];
 const queue = document.querySelector("#queue");
@@ -317,6 +318,12 @@ function renderAnalysis(data) {
   const node = panel("story-analysis", "Analysis", "analysis-panel");
   const job = data.analysis_jobs.at(-1);
   node.append(field("Analysis state", jobLabels[job?.state] || data.intake.analysis_status));
+  const failureFields = analysisFailureFields(job);
+  if (failureFields.length) {
+    const diagnostics = el("section", null, "analysis-block failure-diagnostics");
+    diagnostics.append(el("h3", "Analysis failure diagnostics"), fieldGrid(failureFields));
+    node.append(diagnostics);
+  }
   const discoveryNeedsAnalysis = !job && data.intake.origin === "discovery";
   const retryable = discoveryNeedsAnalysis || ["pending_enqueue", "failed", "dead_letter"].includes(job?.state);
   if (retryable) {

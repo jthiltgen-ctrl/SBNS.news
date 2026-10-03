@@ -12,7 +12,14 @@ const ACCEPTED = new Set([
 ]);
 
 export class AnalysisFailure extends Error {
-  constructor(code, message, { retryable = false, safeMessage = message } = {}) { super(message); this.code = code; this.retryable = retryable; this.safeMessage = safeMessage; }
+  constructor(code, message, { retryable = false, safeMessage = message, substage = null, diagnostics = null } = {}) {
+    super(message);
+    this.code = code;
+    this.retryable = retryable;
+    this.safeMessage = safeMessage;
+    this.substage = substage;
+    this.diagnostics = diagnostics;
+  }
 }
 
 function ipv4Number(hostname) {
