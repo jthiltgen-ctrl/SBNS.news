@@ -3,7 +3,11 @@ import { searchPublicDiscovery } from "./editorial-search.js";
 export const OPEN_SWEEP_QUERY_LIMIT = 10;
 export const OPEN_SWEEP_RESULTS_PER_QUERY = 6;
 export const OPEN_SWEEP_TOTAL_RESULT_LIMIT = 60;
-export const OPEN_SWEEP_TIMEOUT_MS = 8_000;
+export const OPEN_SWEEP_TIMEOUT_MS = 15_000;
+export const OPEN_SWEEP_TIMESPAN = "7d";
+// GDELT's own response asks clients to limit DOC requests to one every five seconds.
+export const OPEN_SWEEP_QUERY_PACING_MS = 5_000;
+export const OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT = 3;
 
 const LENSES = Object.freeze([
   { id: "human_burden", label: "Human Burden", formulations: ["benefits wrongly denied", "residents still waiting", "families billed after"] },
@@ -107,37 +111,80 @@ export function generateOpenSweepQueries(now = new Date()) {
   return queries.slice(0, OPEN_SWEEP_QUERY_LIMIT);
 }
 
-export async function runOpenSweep({ search = searchPublicDiscovery, now = new Date(), fetchImpl } = {}) {
+const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+export async function runOpenSweep({ search = searchPublicDiscovery, now = new Date(), fetchImpl, delay = wait, pacingMs = OPEN_SWEEP_QUERY_PACING_MS, clockMs = () => Date.now() } = {}) {
   const queries = generateOpenSweepQueries(now);
   const items = [];
   const health = [];
   const failures = [];
   let attempted = 0;
-  for (const query of queries) {
+  let consecutiveTransportFailures = 0;
+  let circuitOpen = false;
+  for (let index = 0; index < queries.length; index += 1) {
+    const query = queries[index];
+    if (circuitOpen) {
+      health.push({
+        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
+        checked_at: instantIso(now), status: "skipped", outcome: "circuit_open",
+        attempts: 0, retry_count: 0, duration_ms: 0, http_status: null,
+        error_code: null, error: "Skipped after the Open Sweep transport circuit opened.",
+      });
+      continue;
+    }
     attempted += 1;
+    const queryStartedAt = clockMs();
     try {
       const results = await search(query.formulation, {
         fetchImpl,
         timeoutMs: OPEN_SWEEP_TIMEOUT_MS,
         maxRecords: OPEN_SWEEP_RESULTS_PER_QUERY,
         toneAbsThreshold: query.tone_abs_threshold,
+        timespan: OPEN_SWEEP_TIMESPAN,
         retryRateLimit: true,
+        retryTimeout: true,
+        retryBackoffMs: OPEN_SWEEP_QUERY_PACING_MS,
+        rateLimitBackoffMs: OPEN_SWEEP_QUERY_PACING_MS,
       });
       if (!Array.isArray(results)) throw new Error("OPEN_SWEEP_INVALID_RESULTS");
       const bounded = results.slice(0, OPEN_SWEEP_RESULTS_PER_QUERY);
-      health.push({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id, checked_at: instantIso(now), status: "succeeded", items_parsed: bounded.length, error: null });
+      const transport = results.transport || {};
+      health.push({
+        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
+        checked_at: instantIso(now), status: "succeeded", outcome: "success",
+        items_parsed: bounded.length,
+        attempts: Number.isInteger(transport.attempts) ? transport.attempts : 1,
+        retry_count: Math.max(0, (Number.isInteger(transport.attempts) ? transport.attempts : 1) - 1),
+        duration_ms: Math.max(0, Number.isFinite(transport.duration_ms) ? transport.duration_ms : clockMs() - queryStartedAt),
+        http_status: Number.isInteger(transport.http_status) ? transport.http_status : null,
+        error_code: null, error: null,
+      });
+      consecutiveTransportFailures = 0;
       for (const result of bounded) {
         if (items.length >= OPEN_SWEEP_TOTAL_RESULT_LIMIT) break;
         items.push({ ...result, discovery_lens_id: query.lens_id, discovery_lens_label: query.lens_label, discovery_query: query.formulation, emotional_intensity_query: query.tone_abs_threshold != null });
       }
     } catch (error) {
       const reason = String(error?.message || "OPEN_SWEEP_QUERY_FAILED").replace(/[\r\n\t]+/g, " ").slice(0, 120);
+      const code = /^[A-Z][A-Z0-9_]{0,39}$/.test(String(error?.code || "")) ? error.code : "DISCOVERY_QUERY_FAILED";
+      const attempts = Number.isInteger(error?.attempts) && error.attempts >= 1 ? Math.min(error.attempts, 2) : 1;
+      const httpStatus = Number.isInteger(error?.httpStatus) && error.httpStatus >= 100 && error.httpStatus <= 599 ? error.httpStatus : null;
+      const durationMs = Math.max(0, Math.min(60_000, clockMs() - queryStartedAt));
       failures.push({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id, error: reason });
-      health.push({ source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id, checked_at: instantIso(now), status: "failed", items_parsed: 0, error: reason });
+      health.push({
+        source_id: "gdelt-doc", lane: "open_sweep", lens_id: query.lens_id,
+        checked_at: instantIso(now), status: "failed", outcome: code.toLowerCase().replace(/^discovery_/, ""),
+        items_parsed: 0, attempts, retry_count: Math.max(0, attempts - 1), duration_ms: durationMs,
+        http_status: httpStatus, error_code: code, error: reason,
+      });
+      if (code === "DISCOVERY_TIMEOUT" || code === "DISCOVERY_NETWORK_ERROR") consecutiveTransportFailures += 1;
+      else consecutiveTransportFailures = 0;
+      if (consecutiveTransportFailures >= OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT) circuitOpen = true;
     }
     if (items.length >= OPEN_SWEEP_TOTAL_RESULT_LIMIT) break;
+    if (!circuitOpen && index < queries.length - 1 && pacingMs > 0) await delay(pacingMs);
   }
-  return { queries_attempted: attempted, queries_failed: failures.length, raw_hits: items.length, items, source_health: health, source_failures: failures };
+  return { queries_attempted: attempted, queries_failed: failures.length, raw_hits: items.length, items, source_health: health, source_failures: failures, circuit_open: circuitOpen };
 }
 
 function instantIso(value) {

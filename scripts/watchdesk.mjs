@@ -6,7 +6,7 @@ import { createAdminHandler, createScheduledHandler } from "../src/admin-index.j
 import { fetchRegistrySource, parseHtmlLinks, parseRssAtom } from "../src/watchdesk-adapters.js";
 import { discoverySearchUrl, searchPublicDiscovery } from "../src/editorial-search.js";
 import { buildCandidate, deterministicFilter, fitGate, MAX_SUBMISSIONS_PER_RUN, normalizeDiscoveryUrl, runWatchdeskScan, submissionReadiness, triageCandidate } from "../src/watchdesk.js";
-import { clusterWatchdeskItems, generateOpenSweepQueries, OPEN_SWEEP_QUERY_LIMIT, OPEN_SWEEP_RESULTS_PER_QUERY, OPEN_SWEEP_TIMEOUT_MS, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, triageOpenSweepCluster } from "../src/watchdesk-open-discovery.js";
+import { clusterWatchdeskItems, generateOpenSweepQueries, OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, OPEN_SWEEP_QUERY_LIMIT, OPEN_SWEEP_QUERY_PACING_MS, OPEN_SWEEP_RESULTS_PER_QUERY, OPEN_SWEEP_TIMEOUT_MS, OPEN_SWEEP_TIMESPAN, OPEN_SWEEP_TOTAL_RESULT_LIMIT, runOpenSweep, triageOpenSweepCluster } from "../src/watchdesk-open-discovery.js";
 import { getWatchdeskMachineHealth, getWatchdeskStatus, runWatchdeskOperation, WATCHDESK_CRON, WATCHDESK_LEASE_MS } from "../src/watchdesk-operations.js";
 import { storeDiscoveryCandidate } from "../src/persistence.js";
 import { SOURCE_CLASSES, WATCHDESK_SOURCES, validateSourceRegistry } from "../watchdesk/source-registry.js";
@@ -55,12 +55,19 @@ async function check() {
   assert.equal(toneUrl.host, "api.gdeltproject.org");
   assert.equal(toneUrl.searchParams.get("maxrecords"), "6");
   assert.equal(toneUrl.searchParams.get("query"), "residents say agency toneabs>10");
+  const openSweepUrl = new URL(discoverySearchUrl("residents say agency", { maxRecords: 6, timespan: "7d" }));
+  assert.equal(openSweepUrl.searchParams.get("timespan"), "7d");
+  assert.equal(new URL(discoverySearchUrl("residents say agency")).searchParams.get("timespan"), "30d", "interactive editorial search retains its prior default window");
+  assert.throws(() => discoverySearchUrl("residents say agency", { timespan: "14d" }), /timespan must be 7d or 30d/);
   assert.throws(() => discoverySearchUrl("residents say agency toneabs>10"), /plain-text/);
   assert.throws(() => discoverySearchUrl("residents say agency", { maxRecords: 11 }), /result limit/);
   assert.throws(() => discoverySearchUrl("residents say agency", { toneAbsThreshold: 100 }), /toneabs thresholds/);
   assert.equal(OPEN_SWEEP_RESULTS_PER_QUERY, 6);
   assert.equal(OPEN_SWEEP_TOTAL_RESULT_LIMIT, 60);
-  assert.equal(OPEN_SWEEP_TIMEOUT_MS, 8_000);
+  assert.equal(OPEN_SWEEP_TIMEOUT_MS, 15_000);
+  assert.equal(OPEN_SWEEP_TIMESPAN, "7d");
+  assert.equal(OPEN_SWEEP_QUERY_PACING_MS, 5_000);
+  assert.equal(OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, 3);
   const config = await readFile(path.join(ROOT, "wrangler.admin.jsonc"), "utf8");
   assert.deepEqual(JSON.parse(config).triggers.crons, [WATCHDESK_CRON]);
   const migrations = (await readdir(path.join(ROOT, "migrations"))).filter((name) => name.endsWith(".sql")).sort();
@@ -120,7 +127,7 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     const openItem = { title: "Families waited months after City Housing Agency ignored repeated repair complaints", url: "https://localnews.example/city-housing-repairs", seen_at: "20260922T120000Z", discovery_lens_id: "human_burden", discovery_query: "families billed after" };
     const openOptions = {
       registry: registryFor(strongCase.source_id), discoverSource: async () => [], openSweep: true,
-      discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: [{ source_id: "gdelt-doc", lane: "open_sweep", lens_id: "human_burden", checked_at: "2026-09-22T12:00:15.000Z", status: "succeeded", items_parsed: 1, error: null }], source_failures: [] }),
+      discoverOpenSweep: async () => ({ queries_attempted: 10, queries_failed: 0, items: [openItem], source_health: [{ source_id: "gdelt-doc", lane: "open_sweep", lens_id: "human_burden", checked_at: "2026-09-22T12:00:15.000Z", status: "succeeded", outcome: "success", attempts: 2, retry_count: 1, duration_ms: 321, http_status: 200, error_code: null, items_parsed: 1, error: null }], source_failures: [] }),
     };
     const openFirst = await runWatchdeskOperation(env, { runId: "ops_open_sweep", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:15.000Z", scanOptions: openOptions });
     const openAudit = sqlite.prepare("SELECT metadata_json FROM audit_events WHERE entity_id = ? AND action = 'watchdesk.candidate_submitted'").get(openFirst.submitted[0]?.intake_id);
@@ -129,7 +136,7 @@ async function operationalTests(pass, data, strongCase, zeroCase, failureSource)
     pass(sqlite.prepare("SELECT state FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id)?.state === "pending_enqueue" && openCandidate.discovery.lane === "open_sweep" && openCandidate.evidence_review_state === "NOT REVIEWED", "Open Sweep admission creates the normal analysis job while preserving source as unverified metadata only");
     const openStatus = await getWatchdeskStatus(env);
     const persistedOpenHealth = openStatus.latest.source_health.find((source) => source.lane === "open_sweep");
-    pass(openStatus.latest.metrics.open_sweep_queries_attempted === 10 && openStatus.latest.metrics.open_sweep_submissions === 1 && persistedOpenHealth?.lens_id === "human_burden", "bounded Open Sweep metrics and query/lens health persist in the existing run ledger");
+    pass(openStatus.latest.metrics.open_sweep_queries_attempted === 10 && openStatus.latest.metrics.open_sweep_submissions === 1 && persistedOpenHealth?.lens_id === "human_burden" && persistedOpenHealth?.attempts === 2 && persistedOpenHealth?.retry_count === 1 && persistedOpenHealth?.duration_ms === 321 && persistedOpenHealth?.http_status === 200, "bounded Open Sweep metrics and per-query transport health persist in the existing run ledger");
     const openRepeat = await runWatchdeskOperation(env, { runId: "ops_open_sweep_repeat", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: openOptions });
     pass(openRepeat.metrics.submitted_to_newsroom === 0 && openRepeat.metrics.duplicates_known === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM intakes WHERE submitted_url = ?").get(openItem.url).count === 1 && sqlite.prepare("SELECT COUNT(*) AS count FROM analysis_jobs WHERE intake_id = ?").get(openFirst.submitted[0].intake_id).count === 1, "same Open Sweep event is suppressed against the existing Story File and cannot create a duplicate analysis job");
     const ignoredDuplicate = await runWatchdeskOperation(env, { runId: "ops_ignored_duplicate", triggerType: "manual", requestedBy: "editor@example.com", now: () => "2026-09-22T12:00:20.000Z", scanOptions: { ...realD1Options, lookupDiscovery: async () => [] } });
@@ -467,8 +474,10 @@ async function test() {
 
   const openTitle = "Families waited months after City Housing Agency ignored repeated repair complaints";
   let rateLimitCalls = 0;
+  const rateLimitSleeps = [];
   const rateLimited = await searchPublicDiscovery("residents say agency", {
     maxRecords: 6, toneAbsThreshold: 10, retryRateLimit: true,
+    sleep: async (milliseconds) => rateLimitSleeps.push(milliseconds),
     fetchImpl: async (url, request) => {
       rateLimitCalls += 1;
       pass(url.includes("toneabs%3E10") && request.redirect === "manual" && request.method === "GET", "emotional-intensity search must use the fixed GDELT query and refuse redirects");
@@ -477,23 +486,92 @@ async function test() {
         : new Response(JSON.stringify({ articles: [{ url: "https://localnews.example/story-1", title: openTitle, seendate: "20260922T120000Z" }] }), { status: 200, headers: { "content-type": "application/json" } });
     },
   });
-  pass(rateLimitCalls === 2 && rateLimited.length === 1 && rateLimited[0].domain === "localnews.example", "Open Sweep may perform one bounded retry after a GDELT 429 and returns metadata only");
+  pass(rateLimitCalls === 2 && rateLimitSleeps[0] === 5_000 && rateLimited.length === 1 && rateLimited[0].domain === "localnews.example" && rateLimited.transport.attempts === 2 && rateLimited.transport.http_status === 200, "Open Sweep may perform one retry after a GDELT 429 with the provider's bounded five-second minimum");
+
+  let providerLimitCalls = 0;
+  const providerLimitSleeps = [];
+  const providerRateLimited = await searchPublicDiscovery("residents say agency", {
+    retryRateLimit: true, sleep: async (milliseconds) => providerLimitSleeps.push(milliseconds),
+    fetchImpl: async () => {
+      providerLimitCalls += 1;
+      return providerLimitCalls === 1
+        ? new Response("Please limit requests to one every 5 seconds.", { status: 200, headers: { "content-type": "text/plain" } })
+        : new Response(JSON.stringify({ articles: [] }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  pass(providerLimitCalls === 2 && providerLimitSleeps[0] === 5_000 && providerRateLimited.transport.attempts === 2, "the provider's plain-text rate-limit notice is classified and receives one bounded retry");
+
+  let timeoutCalls = 0;
+  const timeoutRecovery = await searchPublicDiscovery("residents say agency", {
+    timeoutMs: 8, retryTimeout: true, retryBackoffMs: 1,
+    fetchImpl: async (_url, request) => {
+      timeoutCalls += 1;
+      if (timeoutCalls === 1) return new Promise((_resolve, reject) => request.signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError")), { once: true }));
+      return new Response(JSON.stringify({ articles: [{ url: "https://localnews.example/slow-story", title: "Synthetic delayed response" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  pass(timeoutCalls === 2 && timeoutRecovery.transport.attempts === 2 && timeoutRecovery.length === 1, "one locally timed-out query receives one bounded retry and a succeeding response is retained");
+
+  await assert.rejects(
+    () => searchPublicDiscovery("residents say agency", { timeoutMs: 8, fetchImpl: async (_url, request) => new Promise((_resolve, reject) => request.signal.addEventListener("abort", () => reject(new DOMException("The operation was aborted", "AbortError")), { once: true })) }),
+    (error) => error.code === "DISCOVERY_TIMEOUT" && error.attempts === 1 && !/operation was aborted/i.test(error.message),
+  );
+  pass(true, "local aborts are reported as a stable timeout category rather than raw AbortError text");
+  await assert.rejects(() => searchPublicDiscovery("residents say agency", { fetchImpl: async () => { throw new Error("socket detail must not escape"); } }), (error) => error.code === "DISCOVERY_NETWORK_ERROR" && !error.message.includes("socket detail"));
+  pass(true, "network failures are categorized without exposing runtime error details");
+  await assert.rejects(() => searchPublicDiscovery("residents say agency", { fetchImpl: async () => new Response("", { status: 503 }) }), (error) => error.code === "DISCOVERY_HTTP_ERROR" && error.httpStatus === 503);
+  pass(true, "provider HTTP failures retain a safe category and status code");
+  await assert.rejects(() => searchPublicDiscovery("residents say agency", { fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-length": "256001" } }) }), (error) => error.code === "DISCOVERY_RESPONSE_TOO_LARGE");
+  pass(true, "oversized GDELT responses fail with a bounded transport category");
+  await assert.rejects(() => searchPublicDiscovery("residents say agency", { fetchImpl: async () => new Response("not json", { status: 200 }) }), (error) => error.code === "DISCOVERY_MALFORMED_RESPONSE");
+  pass(true, "malformed GDELT metadata is distinguishable from network and timeout errors");
+
+  const slowSuccess = await searchPublicDiscovery("residents say agency", {
+    timeoutMs: 50,
+    fetchImpl: async () => { await new Promise((resolve) => setTimeout(resolve, 15)); return new Response(JSON.stringify({ articles: [] }), { status: 200 }); },
+  });
+  pass(slowSuccess.length === 0 && slowSuccess.transport.http_status === 200, "a bounded slower response inside its request deadline completes successfully");
 
   let openSearchCalls = 0;
   const boundedSweep = await runOpenSweep({
     now: FIXED_NOW,
+    delay: async () => {},
     search: async (formulation, options) => {
       openSearchCalls += 1;
       assert.ok(formulation.length >= 4 && formulation.length <= 120);
       assert.equal(options.maxRecords, OPEN_SWEEP_RESULTS_PER_QUERY);
       assert.equal(options.timeoutMs, OPEN_SWEEP_TIMEOUT_MS);
+      assert.equal(options.timespan, "7d");
       assert.equal(options.retryRateLimit, true);
+      assert.equal(options.retryTimeout, true);
+      assert.equal(options.retryBackoffMs, OPEN_SWEEP_QUERY_PACING_MS);
+      assert.equal(options.rateLimitBackoffMs, OPEN_SWEEP_QUERY_PACING_MS);
       if (openSearchCalls === 4) throw new Error("SYNTHETIC_QUERY_TIMEOUT");
       return Array.from({ length: 8 }, (_, index) => ({ title: `${formulation} synthetic item ${index}`, url: `https://outlet${openSearchCalls}-${index}.example/article`, domain: `outlet${openSearchCalls}-${index}.example`, seen_at: "20260922T120000Z" }));
     },
   });
   pass(openSearchCalls === OPEN_SWEEP_QUERY_LIMIT && boundedSweep.queries_attempted === 10 && boundedSweep.queries_failed === 1 && boundedSweep.source_health.length === 10, "Open Sweep continues all bounded hypotheses after one query failure");
   pass(boundedSweep.items.length === 54 && boundedSweep.raw_hits === 54 && boundedSweep.items.every((item) => item.discovery_lens_id && item.discovery_query), "Open Sweep caps every query and total results and preserves lens/query provenance");
+
+  const pacing = [];
+  const pacedSweep = await runOpenSweep({ now: FIXED_NOW, delay: async (milliseconds) => pacing.push(milliseconds), search: async () => [] });
+  pass(pacedSweep.queries_attempted === OPEN_SWEEP_QUERY_LIMIT && pacing.length === OPEN_SWEEP_QUERY_LIMIT - 1 && pacing.every((milliseconds) => milliseconds === OPEN_SWEEP_QUERY_PACING_MS), "queries are sequential and respect GDELT's five-second request guidance");
+  pass(pacedSweep.queries_failed === 0 && pacedSweep.raw_hits === 0 && pacedSweep.items.length === 0, "a successful zero-result Open Sweep remains a valid run outcome");
+
+  let circuitCalls = 0;
+  const circuitSweep = await runOpenSweep({
+    now: FIXED_NOW,
+    delay: async () => {},
+    search: async () => {
+      circuitCalls += 1;
+      const error = new Error("Public discovery timed out; no intake was created.");
+      error.code = "DISCOVERY_TIMEOUT";
+      error.attempts = 2;
+      throw error;
+    },
+  });
+  pass(circuitCalls === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT && circuitSweep.queries_attempted === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT && circuitSweep.queries_failed === OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT, "three consecutive timeout/network failures open the run-local circuit breaker");
+  pass(circuitSweep.source_health.length === OPEN_SWEEP_QUERY_LIMIT && circuitSweep.source_health.slice(OPEN_SWEEP_CIRCUIT_FAILURE_LIMIT).every((entry) => entry.status === "skipped" && entry.outcome === "circuit_open") && circuitSweep.source_health[0].retry_count === 1, "circuit-open query health is explicit and records bounded retry metadata without issuing more requests");
 
   const openEntries = Array.from({ length: 5 }, (_, index) => ({
     lane: "open_sweep",

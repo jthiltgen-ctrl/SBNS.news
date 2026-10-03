@@ -22,6 +22,19 @@ function concise(value, max = 200) {
   return String(value ?? "Unknown failure").replace(/[\r\n\t]+/g, " ").slice(0, max);
 }
 
+function boundedTransport(source) {
+  const outcome = ["success", "timeout", "network_error", "rate_limited", "http_error", "redirect_blocked", "response_too_large", "malformed_response", "unexpected_response", "no_readable_result", "circuit_open", "query_failed"].includes(source.outcome) ? source.outcome : null;
+  const errorCode = /^[A-Z][A-Z0-9_]{0,39}$/.test(String(source.error_code || "")) ? source.error_code : null;
+  return {
+    ...(outcome ? { outcome } : {}),
+    ...(Number.isInteger(source.attempts) && source.attempts >= 0 ? { attempts: Math.min(source.attempts, 2) } : {}),
+    ...(Number.isInteger(source.retry_count) && source.retry_count >= 0 ? { retry_count: Math.min(source.retry_count, 1) } : {}),
+    ...(Number.isFinite(source.duration_ms) && source.duration_ms >= 0 ? { duration_ms: Math.min(Math.trunc(source.duration_ms), 60_000) } : {}),
+    ...(Number.isInteger(source.http_status) && source.http_status >= 100 && source.http_status <= 599 ? { http_status: source.http_status } : {}),
+    ...(errorCode ? { error_code: errorCode } : {}),
+  };
+}
+
 function publicRun(row) {
   if (!row) return null;
   return {
@@ -37,9 +50,10 @@ function publicRun(row) {
       lane: source.lane === "open_sweep" ? "open_sweep" : "trusted_source",
       lens_id: source.lens_id ? concise(source.lens_id, 60) : null,
       checked_at: concise(source.checked_at, 40),
-      status: source.status === "succeeded" ? "succeeded" : "failed",
+      status: source.status === "succeeded" ? "succeeded" : source.status === "skipped" ? "skipped" : "failed",
       items_parsed: Number.isInteger(source.items_parsed) && source.items_parsed >= 0 ? source.items_parsed : 0,
       error: source.error ? concise(source.error, 120) : null,
+      ...boundedTransport(source),
     })),
     source_failure_count: row.source_failure_count,
     submitted_count: row.submitted_count,
@@ -127,6 +141,7 @@ export async function runWatchdeskOperation(env, options = {}) {
       status: source.status,
       error: source.error ? concise(source.error, 120) : null,
       items_parsed: source.items_parsed,
+      ...boundedTransport(source),
     }));
     const status = result.status === "partial" ? "partial" : "success";
     const holder = await db.prepare("SELECT run_id, expires_at FROM watchdesk_run_lock WHERE name = 'watchdesk'").first();
