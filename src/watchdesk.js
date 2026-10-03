@@ -397,7 +397,7 @@ export async function runWatchdeskScan(env, options = {}) {
     trusted_scanned: 0, trusted_candidates: 0, trusted_failures: 0, trusted_submissions: 0,
     open_sweep_queries_attempted: 0, open_sweep_queries_failed: 0, open_sweep_raw_hits: 0,
     open_sweep_normalized_urls: 0, open_sweep_deduped_hits: 0, open_sweep_event_clusters: 0,
-    open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_human_burden_candidates: 0,
+    open_sweep_triaged_candidates: 0, open_sweep_eligible_leads: 0, open_sweep_open_leads: 0, open_sweep_strong_open_leads: 0, open_sweep_human_burden_candidates: 0,
     open_sweep_fml_candidates: 0, open_sweep_no_action_discarded: 0,
     open_sweep_would_submit: 0, open_sweep_submissions: 0,
     combined_total_submissions: 0, combined_duplicate_suppressions: 0, combined_source_cluster_overlap: 0,
@@ -472,6 +472,8 @@ export async function runWatchdeskScan(env, options = {}) {
         if (openTriage.fml_candidate) metrics.open_sweep_fml_candidates += 1;
         if (!openTriage.ready) { metrics.open_sweep_no_action_discarded += 1; metrics.deterministic_rejects += 1; continue; }
         metrics.open_sweep_eligible_leads += 1;
+        if (openTriage.lead_level === "strong_open_lead") metrics.open_sweep_strong_open_leads += 1;
+        else metrics.open_sweep_open_leads += 1;
       } else {
       const deterministic = deterministicFilter(item, source);
       if (!deterministic.passes) { metrics.deterministic_rejects += 1; continue; }
@@ -486,6 +488,7 @@ export async function runWatchdeskScan(env, options = {}) {
           coverage_urls: cluster.coverage_urls,
           domains: cluster.domains,
           discovery_lens_ids: cluster.discovery_lens_ids,
+          open_lead_level: isOpenSweep ? openTriage.lead_level : null,
           first_seen_at: cluster.first_seen_at,
           last_seen_at: cluster.last_seen_at,
           possible_institution_or_system: cluster.possible_institution_or_system,
@@ -518,7 +521,7 @@ export async function runWatchdeskScan(env, options = {}) {
       if (monitor) { metrics.duplicates_known += 1; continue; }
       metrics.evidence_state_distribution[candidate.primary_record_status] = (metrics.evidence_state_distribution[candidate.primary_record_status] || 0) + 1;
       if (isOpenSweep) {
-        candidate.triage = { recommendation: openTriage.recommendation, rationale: openTriage.rationale, discovery_labels: openTriage.labels, checks: openTriage.checks, ranking_signals: openTriage.ranking_signals };
+        candidate.triage = { recommendation: openTriage.recommendation, lead_level: openTriage.lead_level, rationale: openTriage.rationale, discovery_labels: openTriage.labels, checks: openTriage.checks, ranking_signals: openTriage.ranking_signals };
         candidate.submission_readiness = { ready: true, mode: "open_sweep_lead", reasons: ["admitted for ordinary full analysis as an unverified reporting lead"], development_gaps: [], evidence_verified: false };
         candidate.research_burden = "HIGH";
         candidate.institution_or_system = null;
@@ -557,7 +560,9 @@ export async function runWatchdeskScan(env, options = {}) {
   }
 
   survivors.sort((left, right) => {
-    const priority = (candidate) => candidate.submission_readiness?.mode === "gap" ? 0 : 1;
+    const priority = (candidate) => candidate.submission_readiness?.mode === "gap" ? 0
+      : candidate.discovery?.lane !== "open_sweep" ? 1
+        : candidate.triage?.lead_level === "strong_open_lead" ? 2 : 3;
     const rankingSignals = (candidate) => candidate.triage?.ranking_signals?.length || 0;
     return priority(left) - priority(right)
       || rankingSignals(right) - rankingSignals(left)

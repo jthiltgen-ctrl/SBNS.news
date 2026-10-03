@@ -21,7 +21,8 @@ const IMPACT = /\b(resident|family|families|patient|worker|veteran|student|tenan
 const INSTITUTION = /\b(agency|department|city|county|state|federal|school|school district|hospital|insurer|insurance company|utility|bank|government|office|service|board|commission|authority|bureau|administrator|contractor|vendor|company|corporation|court|police|sheriff|prison|public housing|medicaid|medicare|social security|transit|water district|landlord)\b|\b(?:computer|benefits|claims|eligibility|payment|transit|water|insurance|administrative) system\b/i;
 const CONDITION = /\b(denied|refused|rejected|charged|billed|lost|missing|error|mistake|failed|delay|delayed|waiting|waited|months|years|overpaid|underpaid|cut off|shut off|evicted|appeal|complaint|warning|unsafe|unusable|could not|cannot|unable|forced to pay|no response|not repaired|still waiting|backlog|wrongly|despite|after repeated)\b|\b\d+(?:\.\d+)?\s*(?:days?|weeks?|months?|years?|dollars?|\$)/i;
 const APERTURE = /\b(complaint|complaints|warning|warned|appeal|denied|error|mistake|delay|delayed|failed|failure|no response|not responsible|forced to pay|despite|repeated|still waiting|backlog|refused|could not|unable|no recourse|cost|overrun|unfixed|ignored|technicality|computer glitch|wrongly)\b/i;
-const VIVID = /\b(absurd|ridiculous|impossible|computer glitch|technicality|still waiting|forced to|charged despite|denied|lost|evicted|shut off|months|years|refused|no response)\b/i;
+const VIVID = /\b(absurd|ridiculous|impossible|computer glitch|technicality|still waiting|forced to|charged despite|denied|mistake|evicted|shut off|months|years|refused|no response)\b/i;
+const STRONG_HUMAN_BURDEN = /\b(?:waited|waiting|still waiting|owes|owed|billed|billing|charged|forced to pay|benefits denied|denied benefits|claim denied|claims denied|cut off|shut off|evicted|appeal denied|no response|no recourse)\b|\$\s?\d/i;
 const GENERIC = new Set(["after", "agency", "city", "county", "department", "families", "family", "government", "people", "residents", "state", "system", "the", "their", "with"]);
 
 function tokens(title) {
@@ -223,19 +224,32 @@ export function triageOpenSweepCluster(cluster) {
   const accountabilityAperture = APERTURE.test(title);
   const researchable = title.trim().length >= 30 && Boolean(cluster.representative.normalized_url);
   const distinctiveValue = new Set(cluster.discovery_lens_ids).size > 0 && tokens(title).size >= 4 && impact && institutionalNexus && concreteCondition && accountabilityAperture;
+  const strongHumanBurden = impact && concreteCondition && STRONG_HUMAN_BURDEN.test(title);
   const labels = new Set(cluster.discovery_lens_ids.filter((label) => label !== "fml_discovery" && label !== "emotional_intensity"));
   if (/\b(gap|shortfall|missing|deficiency|failure)\b/i.test(title)) labels.add("gap");
-  if (impact && institutionalNexus && concreteCondition) labels.add("human_burden");
+  if (strongHumanBurden) labels.add("human_burden");
   if (accountabilityAperture && institutionalNexus) labels.add("editorial_aperture");
   if (/\b(warned|warning|complaint|complaints|hazard|ignored|despite prior)\b/i.test(title)) labels.add("ignored_warning");
   if (/\b(appeal|no recourse|no response|unable to appeal|cannot appeal)\b/i.test(title)) labels.add("no_recourse");
   if (/\b(technically|compliant|compliance|computer system|technicality|administrative error)\b/i.test(title) && concreteCondition) labels.add("bureaucratic_absurdity");
   if (/\b(forced to pay|charged despite|billed after|benefits lost|cut off)\b/i.test(title)) labels.add("little_guy_pays");
-  const fmlCandidate = impact && institutionalNexus && concreteCondition && VIVID.test(title);
+  const fmlCandidate = impact && concreteCondition && accountabilityAperture && VIVID.test(title);
   if (fmlCandidate) labels.add("fml_candidate");
   const checks = { human_impact: impact, institutional_nexus: institutionalNexus, concrete_condition: concreteCondition, accountability_aperture: accountabilityAperture, distinctive_sbns_value: distinctiveValue, researchability: researchable };
-  const ready = Object.values(checks).every(Boolean);
-  const reasons = Object.entries(checks).filter(([, passed]) => !passed).map(([key]) => key);
+  // Open Sweep sees only bounded metadata. It may admit a concrete, researchable
+  // lead before the headline identifies who owns the problem; ordinary analysis
+  // must verify that nexus before any evidence or accountability conclusion.
+  const hasConcreteSignal = impact || concreteCondition;
+  const hasOpportunitySignal = institutionalNexus || accountabilityAperture || fmlCandidate || strongHumanBurden;
+  const ready = researchable && hasConcreteSignal && hasOpportunitySignal;
+  const strongOpenLead = ready && impact && institutionalNexus && concreteCondition && accountabilityAperture;
+  const leadLevel = !ready ? null : strongOpenLead ? "strong_open_lead" : "open_lead";
+  const reasons = [
+    ...(!researchable ? ["researchability"] : []),
+    ...(!hasConcreteSignal ? ["human_impact_or_concrete_condition"] : []),
+    ...(!hasOpportunitySignal ? ["editorial_opportunity"] : []),
+  ];
+  const diagnosticGaps = Object.entries(checks).filter(([, passed]) => !passed).map(([key]) => key);
   const rankingSignals = [
     cluster.possible_institution_or_system ? "named_institution_in_title" : null,
     /\b(?:\d+|\$\s?\d+|\d+\s?(?:days?|weeks?|months?|years?))\b/i.test(title) ? "specific_scale_or_duration" : null,
@@ -244,15 +258,19 @@ export function triageOpenSweepCluster(cluster) {
   ].filter(Boolean);
   return {
     ready,
+    lead_level: leadLevel,
     checks,
     labels: [...labels].sort(),
-    human_burden: labels.has("human_burden"),
+    human_burden: strongHumanBurden,
     fml_candidate: fmlCandidate,
     ranking_signals: rankingSignals,
     reasons,
+    diagnostic_gaps: diagnosticGaps,
     recommendation: ready ? "EXPLORE" : "STOP / NO ACTION",
     rationale: ready
-      ? "Metadata-only Open Sweep lead: concrete human consequence and institutional nexus appear plausible. No fact, fault, motive, causation, or accuracy has been established; ordinary analysis must verify the story."
+      ? strongOpenLead
+        ? "Strong Open Lead: metadata suggests a concrete human consequence, identifiable institution, and accountability aperture. No fact, fault, motive, causation, or accuracy has been established; ordinary analysis must verify the story."
+        : "Open Lead: metadata suggests a concrete, researchable human/accountability situation worth retrieval. The institution, responsibility, or accountability nexus still requires verification during ordinary analysis. This is not an established finding."
       : `Metadata-only lead did not clear bounded intake triage: ${reasons.join(", ")}. Emotional intensity alone is not an admission signal.`,
     source_trust: "unknown — lead source only; not a trusted monitor or evidence authority",
   };

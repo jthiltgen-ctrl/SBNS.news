@@ -133,7 +133,7 @@ function assignmentCard(item) {
   bottom.append(el("span", "Analysis: " + (jobLabels[item.latest_analysis_job_state] || text(item.analysis_status))), el("span", "Human decision: " + text(item.latest_decision)), el("span", "Last activity: " + date(item.updated_at)));
   open.append(top, title, meta);
   if (candidate) open.append(el("span", candidate.discovery?.lane === "open_sweep"
-    ? "Open Sweep reporting lead — unverified · " + (candidate.discovery.event_cluster?.cluster_size || 1) + " coverage URL(s) · admitted for normal analysis"
+    ? (candidate.triage?.lead_level === "strong_open_lead" ? "Strong Open Lead" : "Open Lead") + " — unverified · " + (candidate.discovery.event_cluster?.cluster_size || 1) + " coverage URL(s) · admitted for normal analysis"
     : "Readiness: " + readiness(candidate) + " · Rabbit Hole: " + text(candidate.triage?.recommendation) + " · Burden: " + text(candidate.research_burden), "card-secondary"));
   open.append(bottom);
   open.addEventListener("click", () => loadDetail(item.id).catch((error) => { queueStatus.textContent = error.message; }));
@@ -166,6 +166,7 @@ function renderDiscovery(candidate) {
   if (candidate.discovery?.lane === "open_sweep") node.append(el("p", "OPEN SWEEP · LEAD ONLY. Search metadata and emotional language do not establish accuracy, evidence, fault, motive, causation, or institutional responsibility. The normal Story File analysis must verify the article and seek stronger records.", "warning"));
   node.append(fieldGrid([
     ["Discovery lane", candidate.discovery?.lane === "open_sweep" ? "Open Sweep — source trust unknown" : "Trusted Source — governed monitor"],
+    ...(candidate.discovery?.lane === "open_sweep" ? [["Open Sweep lead level", candidate.triage?.lead_level === "strong_open_lead" ? "Strong Open Lead — metadata suggests the institution and accountability aperture" : "Open Lead — institutional/accountability nexus requires verification during analysis"]] : []),
     ["Discovery lenses", (candidate.discovery?.lens_ids || []).join(", ") || "Trusted-source monitoring"],
     ["Event / cluster ID", candidate.discovery?.event_cluster?.cluster_id],
     ["Cluster size", candidate.discovery?.event_cluster?.cluster_size || 1],
@@ -617,7 +618,7 @@ function renderWatchdeskRun(run, target) {
   const metrics = run.metrics || {};
   [["Run ID", run.run_id], ["Status", run.status], ["Last completed", date(run.completed_at)], ["Run type", run.trigger_type], ["Mode", run.dry_run ? "Dry run" : "Live"], ["Sources checked", metrics.sources_checked ?? 0], ["Sources succeeded", metrics.sources_succeeded ?? 0], ["Source failures", run.source_failure_count ?? run.source_failures?.length ?? 0], ["Discovered items", metrics.items_discovered ?? 0], ["Discovery leads", metrics.discovery_leads ?? 0], ["Gap-ready", metrics.submission_ready_gap ?? 0], ["Aperture-ready", metrics.submission_ready_aperture ?? 0], ["Submission-ready", metrics.submission_ready ?? 0], ["Would submit", metrics.would_submit ?? 0], ["Submitted", run.submitted_count ?? metrics.submitted_to_newsroom ?? 0]].forEach(([label, value]) => metric(target, label, value));
   metric(target, "Trusted Source lane", `${metrics.trusted_scanned ?? 0} feeds · ${metrics.trusted_candidates ?? 0} hits · ${metrics.trusted_failures ?? 0} failures · ${metrics.trusted_submissions ?? 0} submitted`);
-  metric(target, "Open Sweep lane", `${metrics.open_sweep_queries_attempted ?? 0} queries / ${metrics.open_sweep_queries_failed ?? 0} failed · ${metrics.open_sweep_raw_hits ?? 0} hits · ${metrics.open_sweep_event_clusters ?? 0} event clusters · ${metrics.open_sweep_eligible_leads ?? 0} eligible leads · ${metrics.open_sweep_submissions ?? 0} submitted`);
+  metric(target, "Open Sweep lane", `${metrics.open_sweep_queries_attempted ?? 0} queries / ${metrics.open_sweep_queries_failed ?? 0} failed · ${metrics.open_sweep_raw_hits ?? 0} hits · ${metrics.open_sweep_event_clusters ?? 0} event clusters · ${metrics.open_sweep_eligible_leads ?? 0} eligible leads (${metrics.open_sweep_strong_open_leads ?? 0} strong / ${metrics.open_sweep_open_leads ?? 0} open) · ${metrics.open_sweep_submissions ?? 0} submitted`);
   metric(target, "Open Sweep triage", `${metrics.open_sweep_triaged_candidates ?? 0} triaged · ${metrics.open_sweep_human_burden_candidates ?? 0} human-burden · ${metrics.open_sweep_fml_candidates ?? 0} FML candidates · ${metrics.open_sweep_no_action_discarded ?? 0} no-action`);
   metric(target, "Combined dedupe / overlap", `${metrics.combined_duplicate_suppressions ?? 0} duplicate suppressions · ${metrics.combined_source_cluster_overlap ?? 0} cross-lane event overlaps`);
   if (run.submitted_intake_ids?.length) metric(target, "Submitted intake IDs", run.submitted_intake_ids.join(", "));

@@ -531,12 +531,27 @@ async function test() {
 
   const strongOpenCluster = eventClusters[0];
   const openAssessment = triageOpenSweepCluster(strongOpenCluster);
-  pass(openAssessment.ready && openAssessment.recommendation === "EXPLORE" && openAssessment.checks.human_impact && openAssessment.checks.institutional_nexus && openAssessment.checks.concrete_condition && openAssessment.checks.accountability_aperture && openAssessment.checks.researchability, "metadata-only Open Sweep intake requires all six lightweight human-impact/accountability/researchability checks");
+  pass(openAssessment.ready && openAssessment.recommendation === "EXPLORE" && openAssessment.lead_level === "strong_open_lead" && openAssessment.checks.human_impact && openAssessment.checks.institutional_nexus && openAssessment.checks.concrete_condition && openAssessment.checks.accountability_aperture && openAssessment.checks.researchability, "complete metadata may classify a source lead as strong without promoting it to evidence");
   pass(openAssessment.fml_candidate && openAssessment.labels.includes("human_burden") && openAssessment.source_trust.startsWith("unknown"), "FML and human-burden are discovery labels only, and unknown publishers remain leads rather than trusted sources");
   pass(openAssessment.ranking_signals.includes("named_institution_in_title") && !openAssessment.ranking_signals.some((signal) => /emotion|tone/i.test(signal)), "Open Sweep ranking favors concrete reporting signals rather than emotional intensity");
+
+  const familyWaitCluster = (await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Family has waited 18 months for an answer", url: "https://local.example/family-wait", discovery_lens_id: "human_burden" } }]))[0];
+  const familyWait = triageOpenSweepCluster(familyWaitCluster);
+  pass(familyWait.ready && familyWait.lead_level === "open_lead" && !familyWait.checks.institutional_nexus && familyWait.rationale.includes("requires verification during ordinary analysis"), "specific human burden may survive as Open Lead while institutional responsibility remains an analysis question");
+  const moneyMistakeCluster = (await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Family owes $8,400 after an alleged billing mistake she says she did not make", url: "https://local.example/billing-mistake", discovery_lens_id: "fml_discovery" } }]))[0];
+  const moneyMistake = triageOpenSweepCluster(moneyMistakeCluster);
+  pass(moneyMistake.ready && moneyMistake.lead_level === "open_lead" && moneyMistake.human_burden && moneyMistake.fml_candidate, "a concrete personal financial burden can survive without the institution being named");
+  const countyBillingCluster = (await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "County keeps billing family after admitting system error", url: "https://local.example/county-billing", discovery_lens_id: "bureaucratic_absurdity" } }]))[0];
+  const countyBilling = triageOpenSweepCluster(countyBillingCluster);
+  pass(countyBilling.ready && countyBilling.lead_level === "strong_open_lead", "a concrete human consequence with a named institution and accountability aperture is Strong Open Lead");
+  const genericAngerCluster = (await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Residents furious after a shocking decision", url: "https://local.example/generic-anger", discovery_lens_id: "emotional_intensity" } }]))[0];
+  const genericAnger = triageOpenSweepCluster(genericAngerCluster);
+  pass(!genericAnger.ready && genericAnger.reasons.includes("human_impact_or_concrete_condition"), "generic outrage without a concrete condition is not admitted");
+  const celebrityCluster = (await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Celebrity furious after shocking breakup sparks online backlash", url: "https://local.example/celebrity", discovery_lens_id: "emotional_intensity" } }]))[0];
+  pass(!triageOpenSweepCluster(celebrityCluster).ready, "high-emotion personal controversy without a plausible institutional/accountability signal is not admitted");
   const emotionalJunk = await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "A heartbreaking family lost everything in a devastating tragedy with no further details", url: "https://local.example/tragedy", discovery_lens_id: "emotional_intensity" } }]);
   const emotionalTriage = triageOpenSweepCluster(emotionalJunk[0]);
-  pass(!emotionalTriage.ready && !emotionalTriage.fml_candidate && emotionalTriage.reasons.includes("institutional_nexus"), "highly emotional coverage without a plausible institutional/accountability nexus is discarded");
+  pass(!emotionalTriage.ready && !emotionalTriage.fml_candidate && emotionalTriage.reasons.includes("editorial_opportunity"), "highly emotional coverage without a plausible institutional/accountability opportunity is discarded");
   const vagueSystemCluster = await clusterWatchdeskItems([{ lane: "open_sweep", source: { id: "gdelt-open-sweep", primary_record: false }, item: { title: "Families waited months after system error denied their benefits without recourse", url: "https://local.example/vague-system", discovery_lens_id: "human_burden" } }]);
   pass(!triageOpenSweepCluster(vagueSystemCluster[0]).checks.institutional_nexus, "a vague reference to a system alone is not an identifiable institutional nexus");
 
@@ -553,6 +568,17 @@ async function test() {
   pass(admittedCandidate.evidence_review_state === "NOT REVIEWED" && admittedCandidate.institution_or_system === null && admittedCandidate.discovery.event_cluster.cluster_size === 1 && admittedCandidate.triage.recommendation === "EXPLORE", "Open Sweep does not manufacture reviewed evidence, an accountable actor, or a factual conclusion");
   pass(admittedCandidate.submission_readiness.mode === "open_sweep_lead" && admittedCandidate.submission_readiness.evidence_verified === false && admittedCandidate.remains_unproven.includes("not been verified"), "Open Sweep admission is explicitly a lead-only handoff to the unchanged normal analysis path");
   pass(admittedCandidate.triage.ranking_signals.includes("named_institution_in_title"), "the bounded lead ordering signals persist with the admitted discovery provenance");
+
+  const weakerOpenTitle = "Families waited 18 months after repeated complaints and appeals for an answer after benefits were denied";
+  const rankedOpen = await runWatchdeskScan({}, {
+    ...runOptions, discoverSource: async () => [], openSweep: true,
+    discoverOpenSweep: async () => ({ ...sweepResult, items: [
+      { title: weakerOpenTitle, url: "https://local.example/weaker-open", seen_at: "20260930T120000Z", discovery_lens_id: "human_burden", discovery_query: "residents still waiting" },
+      { title: "County keeps billing family after admitting system error", url: "https://local.example/strong-open", seen_at: "20260920T120000Z", discovery_lens_id: "bureaucratic_absurdity", discovery_query: "administrative error appeal" },
+    ] }),
+    lookupDiscovery: async () => [], dryRun: true, runId: "synthetic_open_lead_ranking",
+  });
+  pass(rankedOpen.metrics.open_sweep_strong_open_leads === 1 && rankedOpen.metrics.open_sweep_open_leads === 1 && rankedOpen.candidates[0].triage.lead_level === "strong_open_lead", "strong Open Leads rank ahead of more recent, more specific ordinary Open Leads and both levels are measured");
 
   const publishedRelated = { ...openItem, related_story_id: "faa-bnatcs-gao-cost-schedule-review", url: "https://localnews.example/related-existing-story" };
   const publishedRepeat = await runWatchdeskScan({}, {
