@@ -148,7 +148,7 @@ async function retryAnalysis(request, env, actor, intakeId) {
   const job = latest?.state === "pending_enqueue" ? latest : { id: opaqueId("job"), intake_id: intakeId, job_type: "intake_analysis", state: "pending_enqueue", attempt: 0, created_at: createdAt, updated_at: createdAt };
   const pendingBody = { ok: true, intake, analysis_job: job, queued: false, message: "Analysis could not be queued. Try again." };
   if (job === latest) await recordAnalysisRetryWithAudit(env, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
-  else await createRetryJobWithAudit(env, job, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id }), records(actor, operation, context, 201, pendingBody, createdAt));
+  else await createRetryJobWithAudit(env, job, audit(actor, "analysis.retry_requested", intakeId, createdAt, { job_id: job.id, ...(latest ? { retry_of_job_id: latest.id } : {}) }), records(actor, operation, context, 201, pendingBody, createdAt));
   return json(await enqueueJob(env, intake, job, actor, operation, context.key, pendingBody), 201);
 }
 

@@ -1,3 +1,5 @@
+import { attachAnalysisFailureDiagnostics } from "./analysis-diagnostics.js";
+
 function database(env) {
   if (!env?.SBNS_DB) throw new Error("SBNS_DB binding is required");
   return env.SBNS_DB;
@@ -147,7 +149,7 @@ export async function getIntakeDetail(env, intakeId) {
     database(env).prepare("SELECT * FROM claims WHERE intake_id = ? ORDER BY created_at ASC, id ASC").bind(intakeId).all(),
     database(env).prepare("SELECT claim_sources.* FROM claim_sources JOIN claims ON claims.id = claim_sources.claim_id WHERE claims.intake_id = ? ORDER BY claim_sources.claim_id, claim_sources.source_id").bind(intakeId).all(),
   ]);
-  return { intake, analyses: analyses.results, drafts: drafts.results, decisions: decisions.results, audit, analysis_jobs: analysisJobs.results, sources: sources.results, claims: claims.results, claim_sources: claimSources.results };
+  return { intake, analyses: analyses.results, drafts: drafts.results, decisions: decisions.results, audit, analysis_jobs: attachAnalysisFailureDiagnostics(analysisJobs.results, audit), sources: sources.results, claims: claims.results, claim_sources: claimSources.results };
 }
 
 export async function findDiscoveryMatches(env, normalizedUrl, titleFingerprint) {
@@ -297,18 +299,20 @@ export async function markIntakeAnalyzing(env, intakeId, timestamp) {
   return run(env, "UPDATE intakes SET status='analyzing', analysis_status='running', updated_at=? WHERE id=?", [timestamp, intakeId]);
 }
 
-export async function markAnalysisRetrying(env, jobId, intakeId, timestamp, code, message) {
+export async function markAnalysisRetrying(env, jobId, intakeId, timestamp, code, message, diagnostics = null) {
   return database(env).batch([
     database(env).prepare("UPDATE analysis_jobs SET state='retrying', last_error_code=?, last_error_message=?, updated_at=? WHERE id=? AND intake_id=? AND state='running'").bind(code, message, timestamp, jobId, intakeId),
     database(env).prepare("UPDATE intakes SET status='analyzing', analysis_status='running', updated_at=? WHERE id=?").bind(timestamp, intakeId),
+    auditStatement(env, { id: `audit_${crypto.randomUUID()}`, actor_type: "system", actor_id: null, action: "analysis.retrying", entity_type: "intake", entity_id: intakeId,
+      metadata_json: JSON.stringify({ job_id: jobId, error_code: code, ...(diagnostics ? { diagnostics } : {}) }), created_at: timestamp }),
   ]);
 }
 
-export async function markAnalysisFailed(env, jobId, intakeId, timestamp, code, message, action = "analysis.failed", state = "failed") {
+export async function markAnalysisFailed(env, jobId, intakeId, timestamp, code, message, action = "analysis.failed", state = "failed", diagnostics = null) {
   return database(env).batch([
     database(env).prepare("UPDATE analysis_jobs SET state=?, completed_at=?, last_error_code=?, last_error_message=?, updated_at=? WHERE id=? AND intake_id=?").bind(state, timestamp, code, message, timestamp, jobId, intakeId),
     database(env).prepare("UPDATE intakes SET status='failed', analysis_status='failed', updated_at=? WHERE id=?").bind(timestamp, intakeId),
-    auditStatement(env, { id: `audit_${crypto.randomUUID()}`, actor_type: "system", actor_id: null, action, entity_type: "intake", entity_id: intakeId, metadata_json: JSON.stringify({ job_id: jobId, error_code: code }), created_at: timestamp }),
+    auditStatement(env, { id: `audit_${crypto.randomUUID()}`, actor_type: "system", actor_id: null, action, entity_type: "intake", entity_id: intakeId, metadata_json: JSON.stringify({ job_id: jobId, error_code: code, ...(diagnostics ? { diagnostics } : {}) }), created_at: timestamp }),
   ]);
 }
 
