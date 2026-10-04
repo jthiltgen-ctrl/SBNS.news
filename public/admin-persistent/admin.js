@@ -1,6 +1,7 @@
 import { filterAssignments, queueCounts } from "./desk-state.js";
 import { draftZero, evidenceLedger } from "./editorial-production.js";
 import { analysisFailureFields } from "./analysis-diagnostics.js";
+import { echoFailureFields } from "./echo-diagnostics.js";
 
 const views = [...document.querySelectorAll("main > section")];
 const queue = document.querySelector("#queue");
@@ -399,8 +400,13 @@ function renderEcho(data, analysis) {
   const echo = data.echo;
   const eligible = analysis?.recommendation === "publish" && analysis.echo_eligible === true && analysis.echo_issue && analysis.echo_search_terms?.length;
   if (!eligible) { node.append(el("p", "Not yet eligible: complete an evidence-backed, review-ready analysis first.")); return node; }
+  const latestEchoEvent = [...data.audit].reverse().find((event) => event.action.startsWith("echo."));
+  const latestFailure = latestEchoEvent?.action === "echo.research_failed" ? latestEchoEvent : null;
+  const failureFields = echoFailureFields(latestFailure);
+  if (failureFields.length) node.append(el("h3", "Echo research failure diagnostics"),
+    el("p", "Operational diagnostics only; they are not an editorial finding."), fieldGrid(failureFields));
   const latestAudit = [...data.audit].reverse().find((event) => event.action.startsWith("echo.research_"));
-  if (!echo && latestAudit?.action === "echo.research_failed") node.append(el("p", "Echo research failed. The story analysis and Draft 0 remain available; retry is editor-initiated.", "warning"));
+  if (!echo && latestAudit?.action === "echo.research_failed") node.append(el("p", "The story analysis and Draft 0 remain available; retry is editor-initiated.", "warning"));
   else if (!echo && latestAudit) node.append(el("p", "Echo research queued or running."));
   else if (!echo) node.append(el("p", "No Echo research has been recorded for this Story File."));
   const failedBoundPacket = echo?.packet.state === "open" && echo.jobs.at(-1)?.state === "failed" && echo.package_binding;

@@ -8,7 +8,14 @@ const EVIDENTIARY = new Set(["supports", "qualifies", "chronology", "quantitativ
 const MATCHES = new Set(["direct", "qualified", "topic_only", "misleading"]);
 const BURDENS = new Set(["low", "moderate", "high", "disproportionate"]);
 const MAX_CONTEXT_CHECKS = 6;
-
+const MAX_ADAPTER_RESULTS = 10;
+const MAX_ADAPTER_DURATION_MS = 60_000;
+const ADAPTER_ERROR_CODES = new Set([
+  "TIMEOUT", "NETWORK_FAILURE", "MALFORMED_RESPONSE", "REDIRECT_REJECTED", "RATE_LIMITED", "HTTP_FAILURE",
+  "NON_JSON_RESPONSE", "RESPONSE_TOO_LARGE", "INVALID_JSON", "INVALID_QUERY", "API_KEY_REQUIRED", "MISSING_API_KEY",
+  "INVALID_RESPONSE", "INVALID_RESULTS", "INVALID_OPTIONS", "INVALID_FETCH", "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT",
+  "INVALID_RECORD_ID", "UNAPPROVED_ENDPOINT", "INVALID_RECORD", "CONTEXT_NOT_VERIFIED", "IDENTITY_MISMATCH",
+]);
 export function echoEligible(analysis) {
   return analysis?.recommendation === "publish" && analysis.echo_eligible === true &&
     analysis.echo_issue && Array.isArray(analysis.echo_search_terms) &&
@@ -17,6 +24,73 @@ export function echoEligible(analysis) {
 
 function bounded(value, max = 500) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, max) : "";
+}
+
+function adapterErrorCode(error) {
+  return ADAPTER_ERROR_CODES.has(error?.code) ? error.code : "ADAPTER_FAILURE";
+}
+
+function adapterDuration(startedAt) {
+  return Math.max(0, Math.min(MAX_ADAPTER_DURATION_MS, Math.round(Date.now() - startedAt)));
+}
+
+function adapterDiagnostic(adapter, configured, attempted, outcome, values = {}) {
+  return {
+    adapter,
+    configured,
+    attempted,
+    outcome,
+    error_code: values.errorCode ?? null,
+    result_count: Number.isInteger(values.resultCount) ? Math.max(0, Math.min(MAX_ADAPTER_RESULTS, values.resultCount)) : null,
+    duration_ms: Number.isInteger(values.durationMs) ? Math.max(0, Math.min(MAX_ADAPTER_DURATION_MS, values.durationMs)) : null,
+  };
+}
+
+export class EchoSourceDiscoveryError extends Error {
+  constructor(adapterDiagnostics) {
+    super("Echo cultural-source discovery failed.");
+    this.name = "EchoSourceDiscoveryError";
+    this.code = "ECHO_SOURCES_UNAVAILABLE";
+    this.stage = "source_discovery";
+    this.adapterDiagnostics = adapterDiagnostics;
+  }
+}
+
+export async function discoverEchoSources(env, query, dependencies = {}) {
+  const locate = dependencies.discoverLoc ?? discoverLoc;
+  const smithsonian = dependencies.discoverSmithsonian ?? discoverSmithsonian;
+  const apiKey = env.SMITHSONIAN_API_KEY;
+  const configured = typeof apiKey === "string" && apiKey.length > 0;
+  const adapters = [
+    { adapter: "loc", configured: true, run: () => locate(query) },
+    { adapter: "smithsonian", configured, run: () => smithsonian(query, { apiKey }) },
+  ];
+  const results = await Promise.all(adapters.map(async ({ adapter, configured: isConfigured, run }) => {
+    if (!isConfigured) return { records: [], diagnostic: adapterDiagnostic(adapter, false, false, "not_configured") };
+    const startedAt = Date.now();
+    try {
+      const records = await run();
+      if (!Array.isArray(records)) {
+        return { records: [], diagnostic: adapterDiagnostic(adapter, true, true, "failed", {
+          errorCode: "INVALID_RESULTS", durationMs: adapterDuration(startedAt),
+        }) };
+      }
+      return { records, diagnostic: adapterDiagnostic(adapter, true, true, "succeeded", {
+        resultCount: records.length, durationMs: adapterDuration(startedAt),
+      }) };
+    } catch (error) {
+      return { records: [], diagnostic: adapterDiagnostic(adapter, true, true, "failed", {
+        errorCode: adapterErrorCode(error), durationMs: adapterDuration(startedAt),
+      }) };
+    }
+  }));
+  const adapterDiagnostics = results.map((result) => result.diagnostic);
+  const attempted = adapterDiagnostics.filter((diagnostic) => diagnostic.attempted);
+  if (attempted.length && attempted.every((diagnostic) => diagnostic.outcome === "failed")) {
+    throw new EchoSourceDiscoveryError(adapterDiagnostics);
+  }
+  const records = dedupeSourceRecords(results.flatMap((result) => result.records));
+  return { records, adapterDiagnostics };
 }
 
 export function buildEchoBrief({ intake, analysis, sources }) {
@@ -103,13 +177,9 @@ export function echoCandidateFromRecord({ record, brief, assessment, intakeSourc
 export async function runEchoResearch(env, { intake, analysis, sources, runKey, requestedBy, triggerType = "review_ready", at = new Date().toISOString() }, dependencies = {}) {
   const brief = buildEchoBrief({ intake, analysis, sources });
   const query = { terms: analysis.echo_search_terms };
-  const locate = dependencies.discoverLoc ?? discoverLoc;
-  const smithsonian = dependencies.discoverSmithsonian ?? discoverSmithsonian;
+  const { records, adapterDiagnostics } = await discoverEchoSources(env, query, dependencies);
   const verify = dependencies.verifyDiscoveredContext ?? verifyDiscoveredContext;
   const assess = dependencies.assessEchoAnalogy ?? assessEchoAnalogy;
-  const discoveries = await Promise.allSettled([locate(query), ...(env.SMITHSONIAN_API_KEY ? [smithsonian(query, { apiKey: env.SMITHSONIAN_API_KEY })] : [])]);
-  if (discoveries.every((result) => result.status === "rejected")) throw new Error("ECHO_SOURCES_UNAVAILABLE");
-  const records = dedupeSourceRecords(discoveries.flatMap((result) => result.status === "fulfilled" ? result.value : []));
   const candidates = [];
   for (const record of records.slice(0, MAX_CONTEXT_CHECKS)) {
     let verified;
@@ -127,5 +197,6 @@ export async function runEchoResearch(env, { intake, analysis, sources, runKey, 
     candidates.push(echoCandidateFromRecord({ record: verified, brief, assessment, intakeSource, at,
       priorUse: priorUse.status === "never_seen" ? priorUse : { ...priorUse, justification: bounded(assessment.editorialValue, 500) } }));
   }
-  return orchestrateSyntheticEcho(env, { brief, candidates, runKey, requestedBy, triggerType, at });
+  const result = await orchestrateSyntheticEcho(env, { brief, candidates, runKey, requestedBy, triggerType, at });
+  return { ...result, adapterDiagnostics };
 }

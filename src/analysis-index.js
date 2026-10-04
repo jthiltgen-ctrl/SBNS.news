@@ -25,6 +25,55 @@ async function echoAudit(env, intakeId, action, metadata) {
   catch { log("echo_audit_write_failed", { intake_id: intakeId, action }); }
 }
 
+const ECHO_FAILURE_STAGES = new Set(["source_discovery", "research"]);
+const ECHO_ADAPTERS = new Set(["loc", "smithsonian"]);
+const ECHO_ADAPTER_OUTCOMES = new Set(["succeeded", "failed", "not_configured"]);
+const ECHO_FAILURE_CODES = new Set([
+  "ECHO_SOURCES_UNAVAILABLE", "ECHO_FAILED", "ECHO_NOT_ELIGIBLE", "ECHO_VERIFIED_FACT_REQUIRED", "ECHO_MODEL_UNAVAILABLE",
+  "ECHO_INVALID_ASSESSMENT", "ECHO_CONTEXT_NOT_VERIFIED", "ACTIVE_JOB", "DUPLICATE", "FACT_SOURCE_REQUIRED", "FIELD_TOO_LONG",
+  "INVALID_ENUM", "INVALID_HASH", "INVALID_INTAKE_REFERENCE", "INVALID_ISSUE_KEY", "INVALID_JSON", "INVALID_LIST",
+  "INVALID_SCHEMA", "INVALID_SHAPE", "INVALID_TEXT", "INVALID_URL", "LIST_TOO_LONG", "MISSING_FIELD", "PRIMARY_INTAKE_REQUIRED",
+  "REPLAY_CONFLICT", "RETRY_INPUT_MISMATCH", "RIGHTS_SOURCE_MISSING", "ROLE_FIELD_MISMATCH", "SOURCE_IDENTITY_REQUIRED",
+  "SOURCE_INTAKE_MISMATCH", "STALE_PACKET", "UNKNOWN_FIELD", "UNRESOLVED_CANDIDATES", "VERIFIED_FACT_REQUIRED",
+]);
+const ECHO_ADAPTER_CODES = new Set([
+  "TIMEOUT", "NETWORK_FAILURE", "MALFORMED_RESPONSE", "REDIRECT_REJECTED", "RATE_LIMITED", "HTTP_FAILURE",
+  "NON_JSON_RESPONSE", "RESPONSE_TOO_LARGE", "INVALID_JSON", "INVALID_QUERY", "API_KEY_REQUIRED", "MISSING_API_KEY",
+  "INVALID_RESPONSE", "INVALID_RESULTS", "INVALID_OPTIONS", "INVALID_FETCH", "INVALID_TIMEOUT", "INVALID_RESPONSE_LIMIT",
+  "INVALID_RECORD_ID", "UNAPPROVED_ENDPOINT", "INVALID_RECORD", "CONTEXT_NOT_VERIFIED", "IDENTITY_MISMATCH", "ADAPTER_FAILURE",
+]);
+const SAFE_ECHO_MESSAGE_CODES = new Set([
+  "ECHO_NOT_ELIGIBLE", "ECHO_VERIFIED_FACT_REQUIRED", "ECHO_MODEL_UNAVAILABLE", "ECHO_INVALID_ASSESSMENT", "ECHO_CONTEXT_NOT_VERIFIED",
+]);
+
+function safeEchoFailure(error) {
+  const errorCode = ECHO_FAILURE_CODES.has(error?.code) ? error.code : null;
+  const messageCode = SAFE_ECHO_MESSAGE_CODES.has(error?.message) ? error.message : null;
+  const code = errorCode || messageCode || "ECHO_FAILED";
+  const stage = ECHO_FAILURE_STAGES.has(error?.stage) ? error.stage : "research";
+  return { code, stage, adapter_diagnostics: safeAdapterDiagnostics(error?.adapterDiagnostics) };
+}
+
+function safeAdapterDiagnostics(input) {
+  return Array.isArray(input) ? input.slice(0, 2).flatMap((item) => {
+    if (!item || !ECHO_ADAPTERS.has(item.adapter) || !ECHO_ADAPTER_OUTCOMES.has(item.outcome) ||
+        typeof item.configured !== "boolean" || typeof item.attempted !== "boolean") return [];
+    const validDuration = Number.isInteger(item.duration_ms) && item.duration_ms >= 0 && item.duration_ms <= 60_000;
+    const validCount = Number.isInteger(item.result_count) && item.result_count >= 0 && item.result_count <= 10;
+    return [{ adapter: item.adapter, configured: item.configured, attempted: item.attempted, outcome: item.outcome,
+      error_code: ECHO_ADAPTER_CODES.has(item.error_code) ? item.error_code : null,
+      result_count: validCount ? item.result_count : null, duration_ms: validDuration ? item.duration_ms : null }];
+  }) : [];
+}
+
+function safeEchoRunKey(value) {
+  return typeof value === "string" && value.length <= 200 && /^[A-Za-z0-9:_.-]+$/.test(value) ? value : null;
+}
+
+function safeEchoId(value, prefix) {
+  return typeof value === "string" && value.length <= 120 && new RegExp(`^${prefix}_[A-Za-z0-9_-]{1,110}$`).test(value) ? value : null;
+}
+
 export async function processAnalysisMessage(message, env, dependencies = {}) {
   if (!validMessage(message.body)) { message.ack(); return { outcome: "invalid_message" }; }
   const { job_id: jobId, intake_id: intakeId } = message.body;
@@ -101,13 +150,18 @@ export async function processEchoMessage(message, env, dependencies = {}) {
     const research = dependencies.runEchoResearch ?? runEchoResearch;
     const result = await research(env, { intake: detail.intake, analysis, sources: detail.sources,
       runKey: body.run_key, requestedBy: body.requested_by || "system:analysis", triggerType: body.trigger_type });
-    message.ack(); log("echo_research_completed", { intake_id: body.intake_id, status: result.status });
+    message.ack(); log("echo_research_completed", { intake_id: safeEchoId(body.intake_id, "intake"), analysis_id: safeEchoId(body.analysis_id, "analysis"),
+      run_key: safeEchoRunKey(body.run_key), status: result.status,
+      adapter_diagnostics: safeAdapterDiagnostics(result?.adapterDiagnostics) });
     return { outcome: "complete", result };
   } catch (error) {
     // Optional cultural research cannot rewrite or block the completed story analysis.
-    await echoAudit(env, body.intake_id, "echo.research_failed", { analysis_id: body.analysis_id, code: String(error?.code || error?.message || "ECHO_FAILED").slice(0, 80) });
-    message.ack(); log("echo_research_failed", { intake_id: body.intake_id, code: String(error?.code || error?.message || "ECHO_FAILED").slice(0, 80) });
-    return { outcome: "failed", error };
+    const failure = safeEchoFailure(error);
+    const metadata = { analysis_id: safeEchoId(body.analysis_id, "analysis"), run_key: safeEchoRunKey(body.run_key), ...failure };
+    await echoAudit(env, body.intake_id, "echo.research_failed", metadata);
+    message.ack(); log("echo_research_failed", { intake_id: safeEchoId(body.intake_id, "intake"), analysis_id: metadata.analysis_id,
+      run_key: metadata.run_key, ...failure });
+    return { outcome: "failed", code: failure.code, stage: failure.stage };
   }
 }
 

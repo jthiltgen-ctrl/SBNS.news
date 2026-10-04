@@ -355,3 +355,21 @@ equivalent normalized input; a fresh catalog fetch/model pass cannot promise
 that identity, so the draft UI and API hold the packet for deliberate forward
 repair. Reporting analysis and Draft 0 remain intact. This protects against a
 changed cultural package being blended with rows from a partial prior run.
+
+### Source-discovery failure observability
+
+The analysis Worker retains bounded per-adapter diagnostics on an
+`echo.research_failed` intake audit event when all configured cultural-source
+adapters fail. The record identifies the stage, analysis/run correlation,
+adapter configuration/attempt/outcome, stable allowlisted error code, bounded
+result count, and bounded duration. An absent optional Smithsonian key is
+recorded as `not_configured`, not as a provider failure. When one adapter
+succeeds, discovery continues and its peer's failure is included in the
+internal structured completion log without influencing candidate selection.
+
+Raw exception text, response bodies, source text, and credentials are never
+stored in these diagnostics. The authenticated Story File renders only the
+validated diagnostic fields as text. Technical discovery failure remains
+distinct from a successful `NO CULTURAL ECHO WARRANTED` result. The existing
+queue acknowledgement and editor-initiated retry policy are unchanged; this
+observability does not trigger a retry or an editorial decision.

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { filterAssignments, queueCounts } from "../public/admin-persistent/desk-state.js";
 import { draftZero, evidenceLedger } from "../public/admin-persistent/editorial-production.js";
+import { echoFailureFields } from "../public/admin-persistent/echo-diagnostics.js";
 
 const candidate = {
   discovered_title: "Synthetic watchdog report",
@@ -62,6 +63,18 @@ assert.match(js, /dry_run: dryRun/);
 assert.match(js, /data\.intake\.id/);
 assert.match(js, /textContent/);
 assert.doesNotMatch(js, /\.innerHTML\s*=/);
+assert.match(js, /echoFailureFields\(latestFailure\)/);
+const unsafeEchoFailure = { action: "echo.research_failed", metadata_json: JSON.stringify({ analysis_id: "analysis_fixture", run_key: "safe:run-1",
+  code: "ECHO_SOURCES_UNAVAILABLE", stage: "source_discovery", adapter_diagnostics: [
+    { adapter: "loc", configured: true, attempted: true, outcome: "failed", error_code: "TIMEOUT", result_count: null, duration_ms: 12 },
+    { adapter: "smithsonian", configured: false, attempted: false, outcome: "not_configured", error_code: "<img src=x onerror=alert(1)>", result_count: null, duration_ms: null },
+    { adapter: "loc", configured: true, attempted: true, outcome: "failed", error_code: "<img src=x onerror=alert(1)>", result_count: null, duration_ms: null },
+  ], raw_exception: "<script>alert('secret')</script>" }) };
+const echoFailure = echoFailureFields(unsafeEchoFailure);
+assert.ok(echoFailure.some(([label, value]) => label === "Adapter: Library of Congress error code" && value === "TIMEOUT"));
+assert.ok(echoFailure.some(([label, value]) => label === "Adapter: Smithsonian outcome" && value === "not_configured"));
+assert.equal(echoFailure.some(([, value]) => String(value).includes("<")), false);
+assert.equal(echoFailure.some(([label]) => label === "raw_exception"), false);
 assert.match(css, /:focus-visible/);
 assert.match(css, /prefers-reduced-motion/);
 assert.match(css, /max-width: 1160px/);
