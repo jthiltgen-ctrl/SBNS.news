@@ -11,13 +11,59 @@ import { listIntakes } from "../src/persistence.js";
 import { filterAssignments } from "../public/admin-persistent/desk-state.js";
 import { orchestrateSyntheticEcho } from "../src/echo-orchestration.js";
 import { syntheticBrief, syntheticCandidate, AT } from "../fixtures/echo/synthetic-fixtures.mjs";
-import { echoCandidateFromRecord, runEchoResearch } from "../src/echo-runtime.js";
+import { discoverEchoSources, echoCandidateFromRecord, runEchoResearch } from "../src/echo-runtime.js";
 import { normalizeLocResult } from "../src/echo-source-adapters.js";
+import { EchoSourceNetworkError } from "../src/echo-source-network.js";
 import { createAdminHandler } from "../src/admin-index.js";
 import { getEchoPriorUse } from "../src/echo-persistence.js";
 
 let assertions = 0;
 function pass(value, label) { assert.ok(value, label); assertions++; }
+async function rejectedValue(action) {
+  try { await action(); } catch (error) { return error; }
+  return null;
+}
+const diagnosticQuery = { terms: ["institutional recordkeeping"] };
+const diagnosticRecord = normalizeLocResult({ id: "https://www.loc.gov/item/diagnostic-echo/", title: "Synthetic diagnostic artifact",
+  contributor_names: ["Synthetic creator"], date: "1900", original_format: ["Book"] }, AT);
+const locTimeout = await rejectedValue(() => discoverEchoSources({}, diagnosticQuery, {
+  discoverLoc: async () => { throw new EchoSourceNetworkError("TIMEOUT"); },
+}));
+pass(locTimeout?.code === "ECHO_SOURCES_UNAVAILABLE" && locTimeout.stage === "source_discovery", "all-source failure has a stable discovery-stage error");
+pass(JSON.stringify(locTimeout.adapterDiagnostics) === JSON.stringify([
+  { adapter: "loc", configured: true, attempted: true, outcome: "failed", error_code: "TIMEOUT", result_count: null, duration_ms: locTimeout.adapterDiagnostics[0].duration_ms },
+  { adapter: "smithsonian", configured: false, attempted: false, outcome: "not_configured", error_code: null, result_count: null, duration_ms: null },
+]) && Number.isInteger(locTimeout.adapterDiagnostics[0].duration_ms), "LOC timeout and optional Smithsonian absence are distinguished");
+for (const code of ["NETWORK_FAILURE", "HTTP_FAILURE", "INVALID_JSON"]) {
+  const failure = await rejectedValue(() => discoverEchoSources({}, diagnosticQuery, {
+    discoverLoc: async () => { throw new EchoSourceNetworkError(code); },
+  }));
+  pass(failure?.adapterDiagnostics[0]?.error_code === code, `stable LOC ${code} code is retained`);
+}
+const providerKeyFixture = "synthetic-key-never-persisted";
+const partialDiscovery = await discoverEchoSources({ SMITHSONIAN_API_KEY: providerKeyFixture }, diagnosticQuery, {
+  discoverLoc: async () => { throw new EchoSourceNetworkError("NETWORK_FAILURE"); },
+  discoverSmithsonian: async (_query, options) => { pass(options.apiKey === providerKeyFixture, "configured Smithsonian adapter receives its test key only in memory"); return [diagnosticRecord]; },
+});
+pass(partialDiscovery.records.length === 1 && partialDiscovery.records[0].canonicalIdentifier === diagnosticRecord.canonicalIdentifier &&
+  partialDiscovery.adapterDiagnostics[0].outcome === "failed" && partialDiscovery.adapterDiagnostics[1].outcome === "succeeded",
+"a successful adapter continues discovery while retaining the other adapter failure");
+pass(!JSON.stringify(partialDiscovery.adapterDiagnostics).includes(providerKeyFixture) &&
+  !JSON.stringify(partialDiscovery.adapterDiagnostics).includes(diagnosticRecord.title) &&
+  !Object.hasOwn(partialDiscovery.records[0], "adapterDiagnostics"),
+  "partial diagnostics contain no key/source text and do not annotate normalized records");
+const bothFailed = await rejectedValue(() => discoverEchoSources({ SMITHSONIAN_API_KEY: providerKeyFixture }, diagnosticQuery, {
+  discoverLoc: async () => { throw new EchoSourceNetworkError("HTTP_FAILURE"); },
+  discoverSmithsonian: async () => { throw new EchoSourceNetworkError("INVALID_JSON"); },
+}));
+pass(bothFailed?.code === "ECHO_SOURCES_UNAVAILABLE" && bothFailed.adapterDiagnostics.map((item) => item.error_code).join(",") === "HTTP_FAILURE,INVALID_JSON",
+  "all configured adapter failures preserve their individual stable codes");
+const rawProviderMessage = "response body contains private source text and a synthetic secret";
+const boundedUnknownFailure = await rejectedValue(() => discoverEchoSources({}, diagnosticQuery, {
+  discoverLoc: async () => { throw new Error(rawProviderMessage); },
+}));
+pass(boundedUnknownFailure?.adapterDiagnostics[0]?.error_code === "ADAPTER_FAILURE" &&
+  !JSON.stringify(boundedUnknownFailure).includes(rawProviderMessage), "unclassified provider exceptions collapse without retaining their message");
 const fixture = JSON.parse(readFileSync(new URL("../intake/fixtures/publish-accountability-without-systemic-failure.json", import.meta.url), "utf8"));
 const intake = { id: "intake_synthetic_editorial", origin: "editor", submitted_url: fixture.request.submitted_url, submitted_at: fixture.request.submitted_at };
 const government = "https://www.gao.gov/products/gao-26-100000";
@@ -170,7 +216,11 @@ try {
     runKey: "fixture-live-bridge", requestedBy: "system:analysis", triggerType: "review_ready", at: AT }, {
     discoverLoc: async () => [catalog], verifyDiscoveredContext: async () => verifiedCatalog, assessEchoAnalogy: async () => analogy,
   });
-  pass(runtime.status === "NO_CULTURAL_ECHO_WARRANTED" && runtime.readyCount === 0, "bounded live-adapter bridge truthfully completes no-echo when protocol status is unresolved");
+  pass(runtime.status === "NO_CULTURAL_ECHO_WARRANTED" && runtime.readyCount === 0 && runtime.adapterDiagnostics[0].outcome === "succeeded" &&
+    runtime.adapterDiagnostics[1].outcome === "not_configured", "bounded live-adapter bridge truthfully completes no-echo and records optional provider state");
+  pass(localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='echo.no_echo_warranted' AND entity_id=?").get(runtime.packetId).n === 1 &&
+    localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM audit_events WHERE action='echo.research_failed' AND entity_id=?").get(intake.id).n === 0,
+  "successful no-echo remains distinct from technical research failure");
   pass(localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM echo_decisions").get().n === 0 &&
     localDb.sqlite.prepare("SELECT COUNT(*) AS n FROM publication_attempts").get().n === 0, "live research bridge grants no human or publication authority");
   localDb.sqlite.prepare("UPDATE intakes SET status='review_ready' WHERE id=?").run(intake.id);
@@ -183,8 +233,24 @@ try {
   const queuedEcho = await processEchoMessage(echoMessage, { SBNS_DB: localDb }, { runEchoResearch: async () => { invoked++; return { status: "READY" }; } });
   pass(queuedEcho.outcome === "complete" && echoMessage.acked && invoked === 1, "distinct Echo queue message reaches bounded research path");
   const failedEcho = await processEchoMessage({ ...echoMessage, acked: false, ack() { this.acked = true; } },
-    { SBNS_DB: localDb }, { runEchoResearch: async () => { throw new Error("SYNTHETIC_ECHO_OUTAGE"); } });
-  pass(failedEcho.outcome === "failed" && draftZero(eligible).state === "proposal" &&
+    { SBNS_DB: localDb }, { runEchoResearch: (_env, request) => runEchoResearch({ SBNS_DB: localDb }, request, {
+      discoverLoc: async () => { throw new EchoSourceNetworkError("TIMEOUT"); },
+    }) });
+  const failureAudit = localDb.sqlite.prepare("SELECT metadata_json FROM audit_events WHERE action='echo.research_failed' AND entity_type='intake' AND entity_id=? ORDER BY created_at DESC, id DESC LIMIT 1").get(intake.id);
+  const failureMetadata = JSON.parse(failureAudit.metadata_json);
+  pass(failedEcho.outcome === "failed" && failedEcho.code === "ECHO_SOURCES_UNAVAILABLE" && failedEcho.stage === "source_discovery" &&
+    failureMetadata.analysis_id === latestAnalysis.id && failureMetadata.run_key === "synthetic-queue" &&
+    failureMetadata.adapter_diagnostics[0].error_code === "TIMEOUT" && failureMetadata.adapter_diagnostics[1].outcome === "not_configured",
+  "source discovery failure persists bounded per-adapter diagnostics with analysis and run correlation");
+  pass(!failureAudit.metadata_json.includes(providerKeyFixture) && !failureAudit.metadata_json.includes(rawProviderMessage) &&
+    !failureAudit.metadata_json.includes("Synthetic diagnostic artifact"), "Echo failure audit contains no secret, raw exception, or source text");
+  const genericFailure = await processEchoMessage({ ...echoMessage, body: { ...echoMessage.body, run_key: "synthetic-unsafe" }, acked: false, ack() { this.acked = true; } },
+    { SBNS_DB: localDb }, { runEchoResearch: async () => { const error = new Error("secret body: synthetic source payload"); error.code = "SECRET_KEY_VALUE"; throw error; } });
+  const genericFailureAudit = localDb.sqlite.prepare("SELECT metadata_json FROM audit_events WHERE action='echo.research_failed' AND entity_type='intake' AND entity_id=? AND json_extract(metadata_json,'$.run_key')='synthetic-unsafe' ORDER BY created_at DESC, id DESC LIMIT 1").get(intake.id);
+  pass(genericFailure.outcome === "failed" && JSON.parse(genericFailureAudit.metadata_json).code === "ECHO_FAILED" &&
+    !genericFailureAudit.metadata_json.includes("secret body") && !genericFailureAudit.metadata_json.includes("synthetic source payload"),
+  "unclassified runtime exception text is not stored in Echo audit metadata");
+  pass(draftZero(eligible).state === "proposal" &&
     localDb.sqlite.prepare("SELECT state FROM analysis_jobs WHERE id='job_editorial'").get().state === "complete", "Echo failure cannot erase completed reporting analysis or Draft 0");
   const pinned = localDb.sqlite.prepare("SELECT id, editor_ready_assessment_id FROM echo_candidates WHERE packet_id=? AND state='editor_ready'").get(positive.packetId);
   const humanHandler = createAdminHandler({ authenticate: async () => ({ actorType: "editor", actorId: "synthetic-editor", email: "synthetic@example.test" }) });
@@ -204,6 +270,13 @@ try {
     "prior-use lookup detects a human-featured artifact across issues");
   pass((await getEchoPriorUse({ SBNS_DB: localDb }, candidate.canonicalArtifactId, brief.issueKey)).status === "never_seen",
     "a partial retry does not count its own issue packet as prior use");
+  const partialRuntime = await runEchoResearch({ SBNS_DB: localDb, SMITHSONIAN_API_KEY: providerKeyFixture }, {
+    intake, analysis: { ...eligible, echo_issue: { ...eligible.echo_issue, mechanism: "A separate synthetic evidence snapshot for partial-provider verification" } },
+    sources: sourceRows, runKey: "fixture-partial-provider", requestedBy: "system:analysis", triggerType: "review_ready", at: "2026-10-01T12:00:02.000Z",
+  }, { discoverLoc: async () => { throw new EchoSourceNetworkError("NETWORK_FAILURE"); }, discoverSmithsonian: async () => [catalog],
+    verifyDiscoveredContext: async () => verifiedCatalog, assessEchoAnalogy: async () => analogy });
+  pass(partialRuntime.status === "NO_CULTURAL_ECHO_WARRANTED" && partialRuntime.adapterDiagnostics[0].error_code === "NETWORK_FAILURE" &&
+    partialRuntime.adapterDiagnostics[1].result_count === 1, "partial provider failure does not stop successful records from the existing no-echo flow");
   pass(localDb.sqlite.prepare("PRAGMA foreign_key_check").all().length === 0, "isolated end-to-end database has zero FK violations");
 } finally { localDb.close(); }
 
